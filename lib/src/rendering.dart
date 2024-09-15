@@ -1,91 +1,116 @@
-import 'package:canvas/src/util.dart';
-import 'package:flutter/widgets.dart';
+import 'dart:math';
 
-import '../canvas.dart';
+import 'package:flutter/rendering.dart';
 
-const kDebugPaintPaintBounds = false;
+class RenderConstrainedCanvasItem extends RenderProxyBox {
+  Size _transform;
 
-class CanvasPainter extends CustomPainter implements CanvasContainer {
-  final List<CanvasItem> items;
+  RenderConstrainedCanvasItem({
+    required Size transform,
+    RenderBox? child,
+  })  : _transform = transform,
+        super(child);
+
+  set transform(Size value) {
+    if (_transform == value) return;
+    _transform = value;
+    markNeedsLayout();
+  }
+
+  Size get transform => _transform;
+
   @override
-  final CanvasTransform transform;
-  final TransformControlHandler transformControlHandler;
-
-  CanvasPainter({
-    required this.items,
-    required this.transform,
-    required this.transformControlHandler,
-  });
-
-  @override
-  CanvasItem operator [](int index) {
-    return items[index];
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    return hitTestChildren(result, position: position);
   }
 
   @override
-  int get length => items.length;
+  void performLayout() {
+    final child = this.child!;
+    child.layout(BoxConstraints.loose(Size(
+      max(_transform.width, 0),
+      max(_transform.height, 0),
+    )));
+    size = Size.zero;
+  }
+}
 
-  void paintChild(Canvas canvas, Size size, CanvasItemPointer item,
-      CanvasItemTransform itemTransform) {
-    final paintBounds = itemTransform.computePaintBounds();
-    if (!paintBounds.overlaps(Offset.zero & size)) {
-      return;
+class RenderCanvasGroup extends RenderBox
+    with ContainerRenderObjectMixin<RenderBox, StackParentData> {
+  Clip _clipBehavior;
+  RenderCanvasGroup({
+    required Clip clipBehavior,
+    List<RenderBox>? children,
+  })  : _clipBehavior = clipBehavior,
+        super() {
+    addAll(children);
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! StackParentData) {
+      child.parentData = StackParentData();
     }
-    // handlePaintItem(
-    handlePaintItem(item.item, transform, itemTransform, canvas);
-    for (int i = 0; i < item.item.length; i++) {
-      final pointer = CanvasItemPointer(item.item, i);
-      paintChild(
-        canvas,
-        size,
-        pointer,
-        itemTransform.applyToChild(pointer),
+  }
+
+  set clipBehavior(Clip value) {
+    if (_clipBehavior == value) return;
+    _clipBehavior = value;
+    markNeedsLayout();
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    return hitTestChildren(result, position: position);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    RenderBox? child = lastChild;
+    while (child != null) {
+      final childParentData = child.parentData as StackParentData;
+      final childHit = child.hitTest(result, position: position);
+      if (childHit) return true;
+      child = childParentData.previousSibling;
+    }
+    return false;
+  }
+
+  void paintStack(PaintingContext context, Offset offset) {
+    RenderBox? child = firstChild;
+    while (child != null) {
+      final childParentData = child.parentData as StackParentData;
+      context.paintChild(child, childParentData.offset + offset);
+      child = childParentData.nextSibling;
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (_clipBehavior != Clip.none) {
+      context.pushClipRect(
+        needsCompositing,
+        offset,
+        Offset.zero & size,
+        (context, offset) {
+          paintStack(context, offset);
+        },
+        clipBehavior: _clipBehavior,
+        oldLayer: null,
       );
-    }
-  }
-
-  void paintChildGizmo(Canvas canvas, Size size, CanvasItemPointer item,
-      CanvasItemTransform itemTransform) {
-    if (item.item.selected) {
-      final paintBounds = transformControlHandler.computePaintBounds(
-          transform, item.item.transform);
-      if (!paintBounds.overlaps(Offset.zero & size)) {
-        return;
-      }
-      handlePaintTransformControl(
-        transformControlHandler,
-        transform,
-        itemTransform,
-        canvas,
-      );
-    }
-    for (int i = 0; i < item.item.length; i++) {
-      final pointer = CanvasItemPointer(item.item, i);
-      paintChildGizmo(
-        canvas,
-        size,
-        pointer,
-        itemTransform.applyToChild(pointer),
-      );
+    } else {
+      paintStack(context, offset);
     }
   }
 
   @override
-  void paint(Canvas canvas, Size size) {
-    // Note: do not use `transform` from CanvasTransform, it is already handled
-    // in the `handlePaintItem` and `handlePaintItemGizmo` methods.
-    for (int i = 0; i < items.length; i++) {
-      final pointer = CanvasItemPointer(this, i);
-      paintChild(canvas, size, pointer, pointer.item.transform);
+  void performLayout() {
+    RenderBox? child = firstChild;
+    while (child != null) {
+      final childParentData = child.parentData as StackParentData;
+      child.layout(const BoxConstraints());
+      child = childParentData.nextSibling;
     }
-    for (int i = 0; i < items.length; i++) {
-      final pointer = CanvasItemPointer(this, i);
-      paintChildGizmo(canvas, size, pointer, pointer.item.transform);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CanvasPainter oldDelegate) {
-    return true;
+    size = constraints.biggest.isInfinite ? Size.zero : constraints.biggest;
   }
 }
