@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/rendering.dart';
 
 class RenderConstrainedCanvasItem extends RenderProxyBox {
@@ -25,11 +23,29 @@ class RenderConstrainedCanvasItem extends RenderProxyBox {
   }
 
   @override
+  void paint(PaintingContext context, Offset offset) {
+    double flipX = _transform.width < 0 ? -1 : 1;
+    double flipY = _transform.height < 0 ? -1 : 1;
+    if (flipX < 0 || flipY < 0) {
+      context.pushTransform(
+        needsCompositing,
+        offset,
+        Matrix4.identity()..scale(flipX, flipY),
+        (context, offset) {
+          super.paint(context, offset);
+        },
+      );
+    } else {
+      super.paint(context, offset);
+    }
+  }
+
+  @override
   void performLayout() {
     final child = this.child!;
     child.layout(BoxConstraints.loose(Size(
-      max(_transform.width, 0),
-      max(_transform.height, 0),
+      _transform.width.abs(),
+      _transform.height.abs(),
     )));
     size = Size.zero;
   }

@@ -5,11 +5,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 void main() {
-  runApp(const MaterialApp(
+  runApp(MaterialApp(
     home: Scaffold(
-      body: CanvasExample(),
+      body: _ForceUpdate(
+        child: CanvasExample(),
+      ),
     ),
   ));
+}
+
+class _ForceUpdate extends StatelessWidget {
+  final Widget child;
+
+  const _ForceUpdate({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: UniqueKey(),
+      child: child,
+    );
+  }
 }
 
 class CanvasExample extends StatefulWidget {
@@ -27,83 +43,217 @@ class _CanvasExampleState extends State<CanvasExample>
   Duration elapsed = Duration(seconds: 0);
   late Ticker _ticker;
 
-  CanvasTransform transform = CanvasTransform(
-    size: Size(100, 100),
-    rotation: _degToRad(45),
-    offset: Offset(300, 300),
-  );
-  CanvasTransform transform2 = CanvasTransform(
-    size: Size(50, 50),
-    rotation: _degToRad(25),
-    offset: Offset(0, 0),
-    scale: Size(1, 1),
-  );
+  ResizeMode resizeMode = ResizeMode.resize;
+
+  List<CanvasItem> items = [
+    CanvasItem(
+      transformControlMode: TransformControlMode.show,
+      transform: CanvasTransform(
+        size: Size(200, 200),
+        rotation: _degToRad(0),
+        offset: Offset(-200, -200),
+      ),
+      widget: GestureDetector(
+        onTap: () {
+          print('tapped purple');
+        },
+        child: Container(
+          color: Colors.purple,
+        ),
+      ),
+      children: [
+        CanvasItem(
+          transformControlMode: TransformControlMode.show,
+          transform: CanvasTransform(
+            size: Size(100, 100),
+            rotation: _degToRad(45),
+            offset: Offset(150, 150),
+            scale: Size(1, 2),
+          ),
+          widget: GestureDetector(
+            onTap: () {
+              print('tapped green');
+            },
+            child: Container(
+              color: Colors.green,
+              child: Center(
+                child: Text('brat'),
+              ),
+            ),
+          ),
+          children: [
+            CanvasItem(
+              transformControlMode: TransformControlMode.show,
+              transform: CanvasTransform(
+                size: Size(50, 50),
+                rotation: _degToRad(45),
+                offset: Offset(120, 120),
+                scale: Size(1, 1),
+              ),
+              children: [
+                CanvasItem(
+                  transformControlMode: TransformControlMode.show,
+                  transform: CanvasTransform(
+                    size: Size(100, 100),
+                    rotation: _degToRad(45),
+                    offset: Offset(150, 150),
+                    scale: Size(1, 2),
+                  ),
+                  widget: GestureDetector(
+                    onTap: () {
+                      print('tapped green');
+                    },
+                    child: Container(
+                      color: Colors.green,
+                      child: Center(
+                        child: Text('brat'),
+                      ),
+                    ),
+                  ),
+                  children: [
+                    CanvasItem(
+                      transformControlMode: TransformControlMode.show,
+                      transform: CanvasTransform(
+                        size: Size(50, 50),
+                        rotation: _degToRad(45),
+                        offset: Offset(120, 120),
+                        scale: Size(1, 1),
+                      ),
+                      children: [
+                        CanvasItem(
+                          transformControlMode: TransformControlMode.show,
+                          transform: CanvasTransform(
+                            size: Size(100, 100),
+                            rotation: _degToRad(45),
+                            offset: Offset(150, 150),
+                            scale: Size(1, 1),
+                          ),
+                          widget: GestureDetector(
+                            onTap: () {
+                              print('tapped green');
+                            },
+                            child: Container(
+                              color: Colors.green,
+                              child: Center(
+                                child: Text('brat'),
+                              ),
+                            ),
+                          ),
+                          children: [
+                            CanvasItem(
+                              transformControlMode: TransformControlMode.show,
+                              transform: CanvasTransform(
+                                size: Size(50, 50),
+                                rotation: _degToRad(45),
+                                offset: Offset(120, 120),
+                                scale: Size(1, 1),
+                              ),
+                              children: [],
+                              widget: GestureDetector(
+                                onTap: () {
+                                  print('tapped blue');
+                                },
+                                child: Container(
+                                  color: Colors.blue,
+                                  child: Center(
+                                    child: Text('Hello'),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      widget: GestureDetector(
+                        onTap: () {
+                          print('tapped blue');
+                        },
+                        child: Container(
+                          color: Colors.blue,
+                          child: Center(
+                            child: Text('Hello'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              widget: GestureDetector(
+                onTap: () {
+                  print('tapped blue');
+                },
+                child: Container(
+                  color: Colors.blue,
+                  child: Center(
+                    child: Text('Hello'),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  ];
+  late CanvasViewport controller;
 
   @override
   void initState() {
     super.initState();
+    controller = CanvasViewport(items: items);
     _ticker = createTicker((elapsed) {
-      setState(() {
-        // this.elapsed = elapsed;
-      });
+      // setState(() {
+      //   items[0].children[0].transform =
+      //       items[0].children[0].transform.copyWith(
+      //             rotation: _degToRad(elapsed.inMilliseconds / 50),
+      //           );
+      //   items[0].children[0].children[0].transform =
+      //       items[0].children[0].children[0].transform.copyWith(
+      //             rotation: _degToRad(elapsed.inMilliseconds / 10),
+      //           );
+      //   items[0].transform = items[0].transform.copyWith(
+      //         rotation: _degToRad(elapsed.inMilliseconds / 100),
+      //         // scale: Size(1 + sin(elapsed.inMilliseconds / 1000),
+      //         //     1 + sin(elapsed.inMilliseconds / 1000) * 0.5),
+      //       );
+      // });
     });
     _ticker.start();
   }
 
   @override
   void dispose() {
+    controller.dispose();
     _ticker.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.red,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () {
-          print('tapped container');
-        },
-        child: CanvasGroup(
-          children: [
-            CanvasItem(
-              transform: transform,
-              children: [
-                CanvasItem(
-                  transform: transform2,
-                  background: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      print('tapped 2');
-                    },
-                    child: Container(
-                      color: Colors.green,
-                      child: Center(
-                        child: Text('Hello'),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              controls: [
-                TransformControl(
-                  transform: transform2,
-                ),
-              ],
-              background: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () {
-                  print('tapped');
-                },
-                child: Container(
-                  color: Colors.purple,
-                ),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        CheckboxListTile(
+          title: const Text('Resize Mode'),
+          value: resizeMode == ResizeMode.resize,
+          onChanged: (value) {
+            setState(() {
+              resizeMode = value! ? ResizeMode.resize : ResizeMode.scale;
+            });
+          },
         ),
-      ),
+        Expanded(
+          child: Container(
+            color: Colors.red,
+            child: CanvasViewportWidget(
+              controller: controller,
+              resizeMode: resizeMode,
+              control: StandardTransformControl(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

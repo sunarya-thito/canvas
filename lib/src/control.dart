@@ -2,37 +2,32 @@ import 'dart:math';
 
 import 'package:canvas/canvas.dart';
 import 'package:flutter/widgets.dart';
+import 'package:vector_math/vector_math_64.dart';
 
-class TransformControlThemeData {
+class StandardTransformControlThemeData {
   final Decoration macroDecoration;
   final Decoration microDecoration;
   final Decoration macroScaleDecoration;
   final Decoration microScaleDecoration;
-  final Decoration selectionDecoration;
-  final BorderSide rotationLineBorder;
-  final double rotationLineLength;
-  final Decoration rotationHandleDecoration;
+  final Color selectionBorderColor;
+  final double selectionBorderWidth;
 
-  final Size rotationHandleSize;
   final Size macroSize;
   final Size microSize;
 
-  const TransformControlThemeData({
+  const StandardTransformControlThemeData({
     required this.macroDecoration,
     required this.microDecoration,
     required this.macroScaleDecoration,
     required this.microScaleDecoration,
-    required this.selectionDecoration,
-    required this.rotationLineBorder,
-    required this.rotationLineLength,
-    required this.rotationHandleDecoration,
-    required this.rotationHandleSize,
+    required this.selectionBorderColor,
+    required this.selectionBorderWidth,
     required this.macroSize,
     required this.microSize,
   });
 
-  factory TransformControlThemeData.defaultThemeData() {
-    return TransformControlThemeData(
+  factory StandardTransformControlThemeData.defaultThemeData() {
+    return StandardTransformControlThemeData(
       macroDecoration: BoxDecoration(
         border: Border.all(color: const Color(0xFF000000), width: 1),
         color: const Color(0xFFFFFFFF),
@@ -49,24 +44,15 @@ class TransformControlThemeData {
         border: Border.all(color: const Color(0xFF000000), width: 1),
         color: const Color(0xFFFF0000),
       ),
-      selectionDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF000000), width: 1),
-      ),
-      rotationLineBorder: const BorderSide(color: Color(0xFF000000), width: 1),
-      rotationLineLength: 20,
-      rotationHandleDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF000000), width: 1),
-        shape: BoxShape.circle,
-        color: const Color(0xFFFFFFFF),
-      ),
-      rotationHandleSize: const Size(10, 10),
+      selectionBorderColor: const Color(0xFF000000),
+      selectionBorderWidth: 1,
       macroSize: const Size(10, 10),
       microSize: const Size(8, 8),
     );
   }
 }
 
-typedef UnaryOpertor<T> = T Function(T value);
+typedef UnaryOpertor<T> = T Function(T oldValue, T value);
 
 enum ResizeMode {
   none,
@@ -74,371 +60,558 @@ enum ResizeMode {
   resize,
 }
 
-class TransformControl extends StatefulWidget {
-  final CanvasTransform transform;
-  final UnaryOpertor<CanvasTransform>? onChanging;
-  final ValueChanged<CanvasTransform>? onChanged;
-  final TransformControlThemeData? themeData;
+class TransformControlWidget extends StatefulWidget {
+  final TransformControl control;
+  final CanvasItemNode node;
+  final Matrix4? parentTransform;
   final ResizeMode resizeMode;
-  final bool canRotate;
-  final bool canDrag;
 
-  const TransformControl({
+  const TransformControlWidget({
     super.key,
-    required this.transform,
-    this.onChanging,
-    this.onChanged,
-    this.themeData,
-    this.resizeMode = ResizeMode.resize,
-    this.canRotate = true,
-    this.canDrag = true,
+    required this.node,
+    required this.control,
+    this.parentTransform,
+    required this.resizeMode,
   });
 
   @override
-  State<TransformControl> createState() => _TransformControlState();
+  State<TransformControlWidget> createState() => _TransformControlWidgetState();
 }
 
-class _TransformControlState extends State<TransformControl> {
-  late CanvasTransform _transform;
-
+class _TransformControlWidgetState extends State<TransformControlWidget>
+    implements TransformControlHandler {
   @override
-  void initState() {
-    super.initState();
-    _transform = widget.transform;
-  }
-
-  void _endResize() {
-    if (widget.onChanged != null) {
-      widget.onChanged!(_transform);
-    }
-    _transform = widget.transform;
-  }
-
-  set _newTransform(CanvasTransform value) {
-    setState(() {
-      _transform = widget.onChanging?.call(value) ?? value;
-    });
-  }
-
-  void _drag(Offset delta) {
-    _newTransform = _transform.copyWith(offset: _transform.offset + delta);
-  }
-
-  @override
-  void didUpdateWidget(TransformControl oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // _transform = widget.transform;
-  }
-
-  Size _normalizeSize(Size size) {
-    return Size(
-        size.width < 0 ? 0 : size.width, size.height < 0 ? 0 : size.height);
-  }
-
-  Offset _rotate(Offset point, double angle) {
-    final cosA = cos(angle);
-    final sinA = sin(angle);
-    return Offset(
-      point.dx * cosA - point.dy * sinA,
-      point.dx * sinA + point.dy * cosA,
-    );
-  }
-
-  void _resizeTopLeft(Offset delta) {
-    delta = _rotate(delta, _transform.rotation);
-    print('resize top left: $delta');
-    if (_isScale) {
-    } else {
-      _newTransform = _transform.copyWith(
-        size: _normalizeSize(Size(_transform.size.width - delta.dx,
-            _transform.size.height - delta.dy)),
-        offset: _transform.offset + delta * 0.5,
-      );
-    }
-  }
-
-  /// if _isScale is true, use scale instead of size
-  bool get _isScale => widget.resizeMode == ResizeMode.scale;
-
-  void _resizeTopRight(Offset delta) {}
-
-  void _resizeBottomLeft(Offset delta) {}
-
-  void _resizeBottomRight(Offset delta) {}
-
-  void _resizeTop(Offset delta) {}
-
-  void _resizeBottom(Offset delta) {}
-
-  void _resizeLeft(Offset delta) {}
-
-  void _resizeRight(Offset delta) {}
+  CanvasItemNode get node => widget.node;
 
   @override
   Widget build(BuildContext context) {
-    var themeData =
-        widget.themeData ?? TransformControlThemeData.defaultThemeData();
-    var transform = _transform;
-    final origin = transform.alignment.alongSize(transform.scaledSize);
-    return Transform(
-      transform: transform.nonScalingMatrix,
-      child: ConstrainedCanvasItem(
-        transform: transform.scaledSize,
-        child: CanvasGroup(children: [
-          // selection box
-          CanvasItem(
-            transform: CanvasTransform(
-              size: transform.scaledSize,
-              offset: origin,
+    return ListenableBuilder(
+      listenable: Listenable.merge({
+        node.item.transformNotifier,
+        node.item.childrenNotifier,
+        node.item.controlFlagNotifier,
+        node.item.transformControlModeNotifier,
+      }),
+      builder: (context, child) {
+        List<Widget> children = [];
+        var matrix = node.item.transform.computeMatrix(node);
+        if (widget.parentTransform != null) {
+          matrix = widget.parentTransform! * matrix;
+        }
+        for (var child in node.children) {
+          children.add(
+            TransformControlWidget(
+              node: child,
+              control: widget.control,
+              resizeMode: widget.resizeMode,
+              parentTransform: matrix,
             ),
-            background: MouseRegion(
-              cursor: widget.canDrag
-                  ? SystemMouseCursors.move
-                  : SystemMouseCursors.basic,
-              child: GestureDetector(
-                onPanUpdate: (details) {
-                  _drag(details.delta);
-                },
-                onPanEnd: (details) {
-                  _endResize();
-                },
-                child: Container(
-                  decoration: themeData.selectionDecoration,
-                ),
-              ),
+          );
+        }
+        return GroupWidget(
+          children: [
+            widget.control.buildControl(
+              context,
+              this,
+              matrix,
             ),
-          ),
-          // rotation line
-          if (widget.canRotate)
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset(transform.scaledSize.width / 2,
-                    -themeData.rotationLineLength / 2),
-                size: Size(1, themeData.rotationLineLength),
-              ),
-              background: Container(
-                decoration: BoxDecoration(
-                  border: Border(
-                    left: themeData.rotationLineBorder,
-                  ),
-                ),
-              ),
-            ),
-          // rotation handle
-          if (widget.canRotate)
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset(
-                    transform.scaledSize.width /
-                        2, // the half of the border width
-                    -themeData.rotationLineLength -
-                        themeData.rotationHandleSize.height / 2),
-                size: themeData.rotationHandleSize,
-              ),
-              background: MouseRegion(
-                cursor: SystemMouseCursors.grab,
-                child: GestureDetector(
-                  child: Container(
-                    decoration: themeData.rotationHandleDecoration,
-                  ),
-                ),
-              ),
-            ),
-          // top left
-          if (widget.resizeMode != ResizeMode.none) ...[
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset.zero,
-                size: themeData.macroSize,
-              ),
-              background: MouseRegion(
-                cursor: SystemMouseCursors.resizeUpLeft,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    _resizeTopLeft(details.delta);
-                  },
-                  onPanEnd: (details) {
-                    _endResize();
-                  },
-                  child: Container(
-                    // decoration: themeData.macroDecoration,
-                    decoration: widget.resizeMode == ResizeMode.resize
-                        ? themeData.macroDecoration
-                        : themeData.macroScaleDecoration,
-                  ),
-                ),
-              ),
-            ),
-            // top right
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset(transform.scaledSize.width, 0),
-                size: themeData.macroSize,
-              ),
-              background: MouseRegion(
-                cursor: SystemMouseCursors.resizeUpRight,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    _resizeTopRight(details.delta);
-                  },
-                  onPanEnd: (details) {
-                    _endResize();
-                  },
-                  child: Container(
-                    // decoration: themeData.macroDecoration,
-                    decoration: widget.resizeMode == ResizeMode.resize
-                        ? themeData.macroDecoration
-                        : themeData.macroScaleDecoration,
-                  ),
-                ),
-              ),
-            ),
-            // bottom left
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset(0, transform.scaledSize.height),
-                size: themeData.macroSize,
-              ),
-              background: MouseRegion(
-                cursor: SystemMouseCursors.resizeDownLeft,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    _resizeBottomLeft(details.delta);
-                  },
-                  onPanEnd: (details) {
-                    _endResize();
-                  },
-                  child: Container(
-                    // decoration: themeData.macroDecoration,
-                    decoration: widget.resizeMode == ResizeMode.resize
-                        ? themeData.macroDecoration
-                        : themeData.macroScaleDecoration,
-                  ),
-                ),
-              ),
-            ),
-            // bottom right
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset(
-                    transform.scaledSize.width, transform.scaledSize.height),
-                size: themeData.macroSize,
-              ),
-              background: MouseRegion(
-                cursor: SystemMouseCursors.resizeDownRight,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    _resizeBottomRight(details.delta);
-                  },
-                  onPanEnd: (details) {
-                    _endResize();
-                  },
-                  child: Container(
-                    // decoration: themeData.macroDecoration,
-                    decoration: widget.resizeMode == ResizeMode.resize
-                        ? themeData.macroDecoration
-                        : themeData.macroScaleDecoration,
-                  ),
-                ),
-              ),
-            ),
-            // top
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset(transform.scaledSize.width / 2, 0),
-                size: themeData.microSize,
-              ),
-              background: MouseRegion(
-                cursor: SystemMouseCursors.resizeUpDown,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    _resizeTop(details.delta);
-                  },
-                  onPanEnd: (details) {
-                    _endResize();
-                  },
-                  child: Container(
-                    decoration: widget.resizeMode == ResizeMode.resize
-                        ? themeData.microDecoration
-                        : themeData.microScaleDecoration,
-                  ),
-                ),
-              ),
-            ),
-            // bottom
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset(transform.scaledSize.width / 2,
-                    transform.scaledSize.height),
-                size: themeData.microSize,
-              ),
-              background: MouseRegion(
-                cursor: SystemMouseCursors.resizeUpDown,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    _resizeBottom(details.delta);
-                  },
-                  onPanEnd: (details) {
-                    _endResize();
-                  },
-                  child: Container(
-                    decoration: widget.resizeMode == ResizeMode.resize
-                        ? themeData.microDecoration
-                        : themeData.microScaleDecoration,
-                  ),
-                ),
-              ),
-            ),
-            // left
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset(0, transform.scaledSize.height / 2),
-                size: themeData.microSize,
-              ),
-              background: MouseRegion(
-                cursor: SystemMouseCursors.resizeLeftRight,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    _resizeLeft(details.delta);
-                  },
-                  onPanEnd: (details) {
-                    _endResize();
-                  },
-                  child: Container(
-                    decoration: widget.resizeMode == ResizeMode.resize
-                        ? themeData.microDecoration
-                        : themeData.microScaleDecoration,
-                  ),
-                ),
-              ),
-            ),
-            // right
-            CanvasItem(
-              transform: CanvasTransform(
-                offset: Offset(transform.scaledSize.width,
-                    transform.scaledSize.height / 2),
-                size: themeData.microSize,
-              ),
-              background: MouseRegion(
-                cursor: SystemMouseCursors.resizeLeftRight,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    _resizeRight(details.delta);
-                  },
-                  onPanEnd: (details) {
-                    _endResize();
-                  },
-                  child: Container(
-                    decoration: widget.resizeMode == ResizeMode.resize
-                        ? themeData.microDecoration
-                        : themeData.microScaleDecoration,
-                  ),
-                ),
-              ),
-            ),
-          ]
-        ]),
-      ),
+            ...children,
+          ],
+        );
+      },
     );
+  }
+
+  @override
+  void move(Offset delta) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.drag(delta),
+    );
+  }
+
+  @override
+  void resizeBottom(Offset delta) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.resizeBottom(delta),
+    );
+  }
+
+  @override
+  void resizeBottomLeft(Offset delta) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.resizeBottomLeft(delta),
+    );
+  }
+
+  @override
+  void resizeBottomRight(Offset delta) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.resizeBottomRight(delta),
+    );
+  }
+
+  @override
+  void resizeLeft(Offset delta) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.resizeLeft(delta),
+    );
+  }
+
+  @override
+  ResizeMode get resizeMode => widget.resizeMode;
+
+  @override
+  void resizeRight(Offset delta) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.resizeRight(delta),
+    );
+  }
+
+  @override
+  void resizeTop(Offset delta) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.resizeTop(delta),
+    );
+  }
+
+  @override
+  void resizeTopLeft(Offset delta) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.resizeTopLeft(delta),
+    );
+  }
+
+  @override
+  void resizeTopRight(Offset delta) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.resizeTopRight(delta),
+    );
+  }
+
+  @override
+  void rotate(double delta, Offset origin) {
+    // TODO: implement rotate
+  }
+
+  @override
+  void scaleBottom(Offset delta) {
+    // TODO: implement scaleBottom
+  }
+
+  @override
+  void scaleBottomLeft(Offset delta) {
+    // TODO: implement scaleBottomLeft
+  }
+
+  @override
+  void scaleBottomRight(Offset delta) {
+    // TODO: implement scaleBottomRight
+  }
+
+  @override
+  void scaleLeft(Offset delta) {
+    // TODO: implement scaleLeft
+  }
+
+  @override
+  void scaleRight(Offset delta) {
+    // TODO: implement scaleRight
+  }
+
+  @override
+  void scaleTop(Offset delta) {
+    // TODO: implement scaleTop
+  }
+
+  @override
+  void scaleTopLeft(Offset delta) {
+    // TODO: implement scaleTopLeft
+  }
+
+  @override
+  void scaleTopRight(Offset delta) {
+    // TODO: implement scaleTopRight
+  }
+}
+
+abstract class TransformControlHandler {
+  CanvasItemNode get node;
+  ResizeMode get resizeMode;
+  void resizeTopLeft(Offset delta);
+  void resizeTopRight(Offset delta);
+  void resizeBottomLeft(Offset delta);
+  void resizeBottomRight(Offset delta);
+  void resizeTop(Offset delta);
+  void resizeLeft(Offset delta);
+  void resizeRight(Offset delta);
+  void resizeBottom(Offset delta);
+  void rotate(double delta, Offset origin);
+  void scaleTopLeft(Offset delta);
+  void scaleTopRight(Offset delta);
+  void scaleBottomLeft(Offset delta);
+  void scaleBottomRight(Offset delta);
+  void scaleTop(Offset delta);
+  void scaleLeft(Offset delta);
+  void scaleRight(Offset delta);
+  void scaleBottom(Offset delta);
+  void move(Offset delta);
+}
+
+double matrixRotationToAngle(Matrix4 matrix) {
+  // We only care about the 2D rotation part (the z-axis)
+  final double angleFromMatrix = atan2(matrix.entry(1, 0), matrix.entry(0, 0));
+  return angleFromMatrix;
+}
+
+abstract class TransformControl {
+  Widget buildControl(
+      BuildContext context, TransformControlHandler handler, Matrix4 matrix);
+}
+
+class StandardTransformControlTheme extends InheritedTheme {
+  final StandardTransformControlThemeData data;
+
+  const StandardTransformControlTheme({
+    super.key,
+    required this.data,
+    required Widget child,
+  }) : super(child: child);
+
+  static StandardTransformControlThemeData of(BuildContext context) {
+    final StandardTransformControlTheme? result = context
+        .dependOnInheritedWidgetOfExactType<StandardTransformControlTheme>();
+    return result?.data ?? StandardTransformControlThemeData.defaultThemeData();
+  }
+
+  @override
+  bool updateShouldNotify(StandardTransformControlTheme oldWidget) {
+    return data != oldWidget.data;
+  }
+
+  @override
+  Widget wrap(BuildContext context, Widget child) {
+    final StandardTransformControlTheme? ancestor =
+        context.findAncestorWidgetOfExactType<StandardTransformControlTheme>();
+    return identical(this, ancestor)
+        ? child
+        : StandardTransformControlTheme(data: data, child: child);
+  }
+}
+
+Offset _transformPoint(Matrix4 matrix, Offset point) {
+  final Vector3 vector = Vector3(point.dx, point.dy, 0);
+  final Vector3 transformed = matrix.transform3(vector);
+  return Offset(transformed.x, transformed.y);
+}
+
+double _angleOfLine(Offset start, Offset end) {
+  return atan2(end.dy - start.dy, end.dx - start.dx);
+}
+
+class StandardTransformControl extends TransformControl {
+  @override
+  Widget buildControl(
+      BuildContext context, TransformControlHandler handler, Matrix4 matrix) {
+    return _StandardTransformControlWidget(
+      handler: handler,
+      matrix: matrix,
+    );
+  }
+}
+
+int _findClosestAngle(double radians) {
+  var degrees = radians * 180 / pi;
+  degrees = degrees % 360;
+  if (degrees < 0) {
+    degrees += 360;
+  }
+  return ((degrees + 22.5) ~/ 45) % 8;
+}
+
+List<MouseCursor> _cursorRotations = [
+  SystemMouseCursors.resizeUpDown, // 0
+  SystemMouseCursors.resizeUpRight, // 45
+  SystemMouseCursors.resizeLeftRight, // 90
+  SystemMouseCursors.resizeDownRight, // 135
+  SystemMouseCursors.resizeUpDown, // 180
+  SystemMouseCursors.resizeDownLeft, // 225
+  SystemMouseCursors.resizeLeftRight, // 270
+  SystemMouseCursors.resizeUpLeft, // 315
+];
+
+enum _MouseCursor {
+  _top,
+  _topRight,
+  _right,
+  _bottomRight,
+  _bottom,
+  _bottomLeft,
+  _left,
+  _topLeft;
+
+  double get angle {
+    return index * 45 * pi / 180;
+  }
+
+  MouseCursor _rotate(double angle) {
+    angle += this.angle;
+    return _cursorRotations[_findClosestAngle(angle)];
+  }
+}
+
+class _StandardTransformControlWidget extends StatelessWidget {
+  final TransformControlHandler handler;
+  final Matrix4 matrix;
+
+  const _StandardTransformControlWidget({
+    required this.handler,
+    required this.matrix,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = StandardTransformControlTheme.of(context);
+    var size = handler.node.item.transform.size;
+    var topLeftPoint = _transformPoint(matrix, Offset(0, 0));
+    var topRightPoint = _transformPoint(matrix, Offset(size.width, 0));
+    var bottomLeftPoint = _transformPoint(matrix, Offset(0, size.height));
+    var bottomRightPoint =
+        _transformPoint(matrix, Offset(size.width, size.height));
+    var topPoint = _transformPoint(matrix, Offset(size.width / 2, 0));
+    var leftPoint = _transformPoint(matrix, Offset(0, size.height / 2));
+    var rightPoint =
+        _transformPoint(matrix, Offset(size.width, size.height / 2));
+    var bottomPoint =
+        _transformPoint(matrix, Offset(size.width / 2, size.height));
+    var topLeftAngle = _angleOfLine(topLeftPoint, topRightPoint);
+    var topRightAngle = _angleOfLine(topRightPoint, bottomRightPoint);
+    var bottomLeftAngle = _angleOfLine(topLeftPoint, bottomLeftPoint);
+    var bottomRightAngle = _angleOfLine(bottomLeftPoint, bottomRightPoint);
+    var topAngle = _angleOfLine(topLeftPoint, topRightPoint);
+    var leftAngle = _angleOfLine(topLeftPoint, bottomLeftPoint);
+    var rightAngle = _angleOfLine(topRightPoint, bottomRightPoint);
+    var bottomAngle = _angleOfLine(bottomLeftPoint, bottomRightPoint);
+    var isResizeMode = handler.resizeMode == ResizeMode.resize;
+    var macroDecoration =
+        isResizeMode ? theme.macroDecoration : theme.macroScaleDecoration;
+    var macroSize = theme.macroSize;
+    var microSize = theme.microSize;
+    var microDecoration =
+        isResizeMode ? theme.microDecoration : theme.microScaleDecoration;
+
+    return GroupWidget(
+      children: handler.node.item.transformControlMode ==
+              TransformControlMode.show
+          ? [
+              CustomPaint(
+                painter: _StandardTransformControlPainter(
+                  theme: theme,
+                  topLeftPoint: topLeftPoint,
+                  topRightPoint: topRightPoint,
+                  bottomLeftPoint: bottomLeftPoint,
+                  bottomRightPoint: bottomRightPoint,
+                ),
+              ),
+              CanvasTransformed(
+                matrix4: matrix,
+                size: size,
+                background: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  hitTestBehavior: HitTestBehavior.translucent,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onPanUpdate: (details) {
+                      handler.move(details.delta);
+                    },
+                  ),
+                ),
+              ),
+              // Top left
+              CanvasTransformed(
+                matrix4: _getPointMatrix(topLeftPoint, topLeftAngle, macroSize),
+                size: macroSize,
+                background: MouseRegion(
+                  cursor: _MouseCursor._topLeft._rotate(topLeftAngle),
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      handler.resizeTopLeft(details.delta);
+                    },
+                    child: Container(
+                      decoration: macroDecoration,
+                    ),
+                  ),
+                ),
+              ),
+              // Top right
+              CanvasTransformed(
+                matrix4:
+                    _getPointMatrix(topRightPoint, topRightAngle, macroSize),
+                size: macroSize,
+                background: MouseRegion(
+                  cursor:
+                      _MouseCursor._topRight._rotate(topRightAngle - pi / 2),
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      handler.resizeTopRight(details.delta);
+                    },
+                    child: Container(
+                      decoration: macroDecoration,
+                    ),
+                  ),
+                ),
+              ),
+              // Bottom left
+              CanvasTransformed(
+                matrix4: _getPointMatrix(
+                    bottomLeftPoint, bottomLeftAngle, macroSize),
+                size: macroSize,
+                background: MouseRegion(
+                  cursor: _MouseCursor._bottomLeft
+                      ._rotate(bottomLeftAngle - pi / 2),
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      handler.resizeBottomLeft(details.delta);
+                    },
+                    child: Container(
+                      decoration: macroDecoration,
+                    ),
+                  ),
+                ),
+              ),
+              // Bottom right
+              CanvasTransformed(
+                matrix4: _getPointMatrix(
+                    bottomRightPoint, bottomRightAngle, macroSize),
+                size: macroSize,
+                background: MouseRegion(
+                  cursor: _MouseCursor._bottomRight._rotate(bottomRightAngle),
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      handler.resizeBottomRight(details.delta);
+                    },
+                    child: Container(
+                      decoration: macroDecoration,
+                    ),
+                  ),
+                ),
+              ),
+              // Top
+              CanvasTransformed(
+                matrix4: _getPointMatrix(topPoint, topAngle, microSize),
+                size: microSize,
+                background: MouseRegion(
+                  cursor: _MouseCursor._top._rotate(topAngle),
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      handler.resizeTop(details.delta);
+                    },
+                    child: Container(
+                      decoration: microDecoration,
+                    ),
+                  ),
+                ),
+              ),
+              // Left
+              CanvasTransformed(
+                matrix4: _getPointMatrix(leftPoint, leftAngle, microSize),
+                size: microSize,
+                background: MouseRegion(
+                  cursor: _MouseCursor._left._rotate(leftAngle - pi / 2),
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      handler.resizeLeft(details.delta);
+                    },
+                    child: Container(
+                      decoration: microDecoration,
+                    ),
+                  ),
+                ),
+              ),
+              // Right
+              CanvasTransformed(
+                matrix4: _getPointMatrix(rightPoint, rightAngle, microSize),
+                size: microSize,
+                background: MouseRegion(
+                  cursor: _MouseCursor._right._rotate(rightAngle - pi / 2),
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      handler.resizeRight(details.delta);
+                    },
+                    child: Container(
+                      decoration: microDecoration,
+                    ),
+                  ),
+                ),
+              ),
+              // Bottom
+              CanvasTransformed(
+                matrix4: _getPointMatrix(bottomPoint, bottomAngle, microSize),
+                size: microSize,
+                background: MouseRegion(
+                  cursor: _MouseCursor._bottom._rotate(bottomAngle),
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      handler.resizeBottom(details.delta);
+                    },
+                    child: Container(
+                      decoration: microDecoration,
+                    ),
+                  ),
+                ),
+              ),
+            ]
+          : [],
+    );
+  }
+}
+
+Matrix4 _inverseMatrix(Matrix4 matrix) {
+  final inverse = Matrix4.inverted(matrix);
+  return inverse;
+}
+
+Matrix4 _getPointMatrix(Offset offset, double angle, Size size) {
+  return Matrix4.identity()
+    ..translate(offset.dx, offset.dy)
+    ..rotateZ(angle)
+    ..translate(-size.width / 2, -size.height / 2);
+}
+
+class _StandardTransformControlPainter extends CustomPainter {
+  final Offset topLeftPoint;
+  final Offset topRightPoint;
+  final Offset bottomLeftPoint;
+  final Offset bottomRightPoint;
+  final StandardTransformControlThemeData theme;
+
+  const _StandardTransformControlPainter({
+    required this.theme,
+    required this.topLeftPoint,
+    required this.topRightPoint,
+    required this.bottomLeftPoint,
+    required this.bottomRightPoint,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final selectionPaint = Paint()
+      ..color = theme.selectionBorderColor
+      ..strokeWidth = theme.selectionBorderWidth
+      ..style = PaintingStyle.stroke;
+    Path selectionPath = Path()
+      ..moveTo(topLeftPoint.dx, topLeftPoint.dy)
+      ..lineTo(topRightPoint.dx, topRightPoint.dy)
+      ..lineTo(bottomRightPoint.dx, bottomRightPoint.dy)
+      ..lineTo(bottomLeftPoint.dx, bottomLeftPoint.dy)
+      ..close();
+    canvas.drawPath(selectionPath, selectionPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _StandardTransformControlPainter oldDelegate) {
+    return oldDelegate.topLeftPoint != topLeftPoint ||
+        oldDelegate.topRightPoint != topRightPoint ||
+        oldDelegate.bottomLeftPoint != bottomLeftPoint ||
+        oldDelegate.bottomRightPoint != bottomRightPoint;
   }
 }
