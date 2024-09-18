@@ -53,19 +53,6 @@ class CanvasTransform {
     }
   }
 
-  IntrinsicComputation computeIntrinsic(CanvasItemNode node,
-      {bool minWidth = false,
-      bool maxWidth = false,
-      bool minHeight = false,
-      bool maxHeight = false}) {
-    return IntrinsicComputation(
-      minIntrinsicWidth: minWidth ? size.width : null,
-      maxIntrinsicWidth: maxWidth ? size.width : null,
-      minIntrinsicHeight: minHeight ? size.height : null,
-      maxIntrinsicHeight: maxHeight ? size.height : null,
-    );
-  }
-
   Matrix4 _computeMatrix() {
     final matrix = Matrix4.identity();
     matrix.translate(offset.dx, offset.dy);
