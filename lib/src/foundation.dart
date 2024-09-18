@@ -1,15 +1,19 @@
-import 'dart:math';
-
 import 'package:canvas/canvas.dart';
 import 'package:flutter/widgets.dart';
+import 'package:vector_math/vector_math_64.dart';
 
-Offset _rotate(Offset point, double angle) {
-  final cosA = cos(angle);
-  final sinA = sin(angle);
-  return Offset(
-    point.dx * cosA - point.dy * sinA,
-    point.dx * sinA + point.dy * cosA,
-  );
+class IntrinsicComputation {
+  final double? minIntrinsicWidth;
+  final double? maxIntrinsicWidth;
+  final double? minIntrinsicHeight;
+  final double? maxIntrinsicHeight;
+
+  const IntrinsicComputation({
+    this.minIntrinsicWidth,
+    this.maxIntrinsicWidth,
+    this.minIntrinsicHeight,
+    this.maxIntrinsicHeight,
+  });
 }
 
 class CanvasTransform {
@@ -40,17 +44,36 @@ class CanvasTransform {
     );
   }
 
-  Matrix4 computeMatrix(CanvasItemNode node) {
+  void performLayout(CanvasItemNode node) {
+    final matrix = _computeMatrix();
+    node.matrix = matrix;
+    node.size = size;
+    for (final child in node.children) {
+      child.item.transform.performLayout(child);
+    }
+  }
+
+  IntrinsicComputation computeIntrinsic(CanvasItemNode node,
+      {bool minWidth = false,
+      bool maxWidth = false,
+      bool minHeight = false,
+      bool maxHeight = false}) {
+    return IntrinsicComputation(
+      minIntrinsicWidth: minWidth ? size.width : null,
+      maxIntrinsicWidth: maxWidth ? size.width : null,
+      minIntrinsicHeight: minHeight ? size.height : null,
+      maxIntrinsicHeight: maxHeight ? size.height : null,
+    );
+  }
+
+  Matrix4 _computeMatrix() {
     final matrix = Matrix4.identity();
     matrix.translate(offset.dx, offset.dy);
     matrix.rotateZ(rotation);
-    matrix.scale(scale.width, scale.height);
     return matrix;
   }
 
   CanvasTransform drag(Offset delta) {
-    delta = delta.scaleBySize(scale);
-    delta = delta.rotate(rotation);
     return copyWith(offset: offset + delta);
   }
 
@@ -66,53 +89,104 @@ class CanvasTransform {
     return copyWith(scale: Size(-scale.width, -scale.height));
   }
 
-  CanvasTransform resizeTopLeft(Offset delta, [Offset origin = Offset.zero]) {
+  CanvasTransform resizeTopLeft(Offset delta,
+      [Alignment alignment = Alignment.bottomRight]) {
+    final align = _alignmentToOffset(alignment);
+    final newOffset = offset + delta;
+    return copyWith(offset: newOffset, size: size);
+  }
+
+  CanvasTransform resizeTop(Offset delta,
+      [Alignment alignment = Alignment.bottomCenter]) {
     // TODO
     return this;
   }
 
-  CanvasTransform resizeTop(Offset delta, [Offset origin = Offset.zero]) {
+  CanvasTransform resizeTopRight(Offset delta,
+      [Alignment alignment = Alignment.bottomLeft]) {
     // TODO
     return this;
   }
 
-  CanvasTransform resizeTopRight(Offset delta, [Offset origin = Offset.zero]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform resizeRight(Offset delta, [Offset origin = Offset.zero]) {
+  CanvasTransform resizeRight(Offset delta,
+      [Alignment alignment = Alignment.centerLeft]) {
     // TODO
     return this;
   }
 
   CanvasTransform resizeBottomRight(Offset delta,
-      [Offset origin = Offset.zero]) {
+      [Alignment alignment = Alignment.topLeft]) {
     // TODO
     return this;
   }
 
-  CanvasTransform resizeBottom(Offset delta, [Offset origin = Offset.zero]) {
+  CanvasTransform resizeBottom(Offset delta,
+      [Alignment alignment = Alignment.topCenter]) {
     // TODO
     return this;
   }
 
   CanvasTransform resizeBottomLeft(Offset delta,
-      [Offset origin = Offset.zero]) {
+      [Alignment alignment = Alignment.topRight]) {
     // TODO
     return this;
   }
 
-  CanvasTransform resizeLeft(Offset delta, [Offset origin = Offset.zero]) {
+  CanvasTransform resizeLeft(Offset delta,
+      [Alignment alignment = Alignment.centerRight]) {
     // TODO
     return this;
   }
 
-  CanvasTransform rotate(double angle, [Offset origin = Offset.zero]) {
+  CanvasTransform rotate(double angle,
+      [Alignment alignment = Alignment.center]) {
     return copyWith(rotation: rotation + angle);
   }
 
-  CanvasTransform scaleTopLeft(Offset delta) {
+  CanvasTransform scaleTopLeft(Offset delta,
+      [Alignment alignment = Alignment.bottomRight]) {
+    // TODO
+    return this;
+  }
+
+  CanvasTransform scaleTop(Offset delta,
+      [Alignment alignment = Alignment.bottomCenter]) {
+    // TODO
+    return this;
+  }
+
+  CanvasTransform scaleTopRight(Offset delta,
+      [Alignment alignment = Alignment.bottomLeft]) {
+    // TODO
+    return this;
+  }
+
+  CanvasTransform scaleRight(Offset delta,
+      [Alignment alignment = Alignment.centerLeft]) {
+    // TODO
+    return this;
+  }
+
+  CanvasTransform scaleBottomRight(Offset delta,
+      [Alignment alignment = Alignment.topLeft]) {
+    // TODO
+    return this;
+  }
+
+  CanvasTransform scaleBottom(Offset delta,
+      [Alignment alignment = Alignment.topCenter]) {
+    // TODO
+    return this;
+  }
+
+  CanvasTransform scaleBottomLeft(Offset delta,
+      [Alignment alignment = Alignment.topRight]) {
+    // TODO
+    return this;
+  }
+
+  CanvasTransform scaleLeft(Offset delta,
+      [Alignment alignment = Alignment.centerRight]) {
     // TODO
     return this;
   }
@@ -121,6 +195,15 @@ class CanvasTransform {
   String toString() {
     return 'CanvasTransform{offset: $offset, scale: $scale, rotation: $rotation, size: $size}';
   }
+
+  bool get parentCanLayout => true;
+}
+
+double _divideOrZero(double a, double b) {
+  if (b == 0) {
+    return 0;
+  }
+  return a / b;
 }
 
 extension SizeExtension on Size {
@@ -130,16 +213,8 @@ extension SizeExtension on Size {
 }
 
 extension OffsetExtension on Offset {
-  Offset scaleBySize(Size scale) {
-    return Offset(dx * scale.width, dy * scale.height);
-  }
-
-  Offset divideBySize(Size scale) {
-    return Offset(dx / scale.width, dy / scale.height);
-  }
-
-  Offset rotate(double angle) {
-    return _rotate(this, angle);
+  Vector3 get vector3 {
+    return Vector3(dx, dy, 0);
   }
 
   Offset onlyX() {
@@ -148,6 +223,12 @@ extension OffsetExtension on Offset {
 
   Offset onlyY() {
     return Offset(0, dy);
+  }
+}
+
+extension Vector3Extension on Vector3 {
+  Offset get offset {
+    return Offset(x, y);
   }
 }
 
@@ -190,9 +271,115 @@ class TransformControlFlag {
   }
 }
 
-class CanvasItem {
+class TextCanvasItem extends CanvasItem {
+  final ValueNotifier<InlineSpan> textNotifier;
+  final ValueNotifier<TextDirection> textDirectionNotifier;
+
+  TextCanvasItem({
+    required super.transform,
+    super.transformControlMode = TransformControlMode.show,
+    super.controlFlag = const TransformControlFlag(),
+    super.onTransforming,
+    super.children = const [],
+    super.selected = false,
+    super.onTransformed,
+    InlineSpan text = const TextSpan(),
+    TextDirection textDirection = TextDirection.ltr,
+  })  : textNotifier = ValueNotifier(text),
+        textDirectionNotifier = ValueNotifier(textDirection),
+        super();
+
+  @override
+  IntrinsicComputation computeIntrinsic(
+    CanvasItemNode node, {
+    bool minWidth = false,
+    bool maxWidth = false,
+    bool minHeight = false,
+    bool maxHeight = false,
+    double? width,
+    double? height,
+  }) {
+    TextPainter painter = TextPainter(
+      text: textNotifier.value,
+      textDirection: textDirectionNotifier.value,
+    );
+    painter.layout(minWidth: width ?? 0, maxWidth: width ?? double.infinity);
+    return IntrinsicComputation(
+      minIntrinsicWidth: minWidth ? painter.width : null,
+      maxIntrinsicWidth: maxWidth ? painter.width : null,
+      minIntrinsicHeight: minHeight ? painter.height : null,
+      maxIntrinsicHeight: maxHeight ? painter.height : null,
+    );
+  }
+
+  @override
+  void addListener(VoidCallback listener) {
+    textNotifier.addListener(listener);
+    textDirectionNotifier.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    textNotifier.removeListener(listener);
+    textDirectionNotifier.removeListener(listener);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      textNotifier.value,
+      textDirection: textDirectionNotifier.value,
+    );
+  }
+}
+
+class BoxCanvasItem extends CanvasItem {
+  final ValueNotifier<Widget> widgetNotifier;
+
+  BoxCanvasItem({
+    required super.transform,
+    super.transformControlMode = TransformControlMode.show,
+    super.controlFlag = const TransformControlFlag(),
+    super.onTransforming,
+    super.children = const [],
+    super.selected = false,
+    super.onTransformed,
+    Widget? widget,
+  })  : widgetNotifier = ValueNotifier(widget ?? const SizedBox()),
+        super();
+
+  @override
+  Widget build(BuildContext context) {
+    return widgetNotifier.value;
+  }
+
+  @override
+  void addListener(VoidCallback listener) {
+    widgetNotifier.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    widgetNotifier.removeListener(listener);
+  }
+}
+
+class _RootCanvasItem extends CanvasItem {
+  _RootCanvasItem({
+    required super.transform,
+    super.children = const [],
+  }) : super(
+          transformControlMode: TransformControlMode.viewport,
+        );
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox();
+  }
+}
+
+abstract class CanvasItem implements Listenable {
   final ValueNotifier<CanvasTransform> transformNotifier;
-  final ValueNotifier<Widget?> widgetNotifier;
   final ValueNotifier<TransformControlMode> transformControlModeNotifier;
   final ValueNotifier<bool> selectedNotifier;
   final ValueNotifier<TransformControlFlag> controlFlagNotifier;
@@ -201,15 +388,13 @@ class CanvasItem {
 
   CanvasItem({
     required CanvasTransform transform,
-    Widget? widget,
-    TransformControlMode transformControlMode = TransformControlMode.hide,
+    TransformControlMode transformControlMode = TransformControlMode.show,
     TransformControlFlag controlFlag = const TransformControlFlag(),
     CanvasTransform Function(CanvasTransform, CanvasTransform)? onTransforming,
     void Function(CanvasTransform)? onTransformed,
     List<CanvasItem> children = const [],
     bool selected = false,
-  })  : widgetNotifier = ValueNotifier(widget),
-        onTransformingNotifier = ValueNotifier(onTransforming),
+  })  : onTransformingNotifier = ValueNotifier(onTransforming),
         childrenNotifier = ValueNotifier(children),
         controlFlagNotifier = ValueNotifier(controlFlag),
         transformControlModeNotifier = ValueNotifier(transformControlMode),
@@ -222,8 +407,29 @@ class CanvasItem {
         transform;
   }
 
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
+
+  Widget build(BuildContext context);
+
   CanvasItemNode toNode([CanvasItemNode? parent]) {
     return CanvasItemNode(item: this, parent: parent);
+  }
+
+  IntrinsicComputation computeIntrinsic(CanvasItemNode node,
+      {bool minWidth = false,
+      bool maxWidth = false,
+      bool minHeight = false,
+      bool maxHeight = false}) {
+    return IntrinsicComputation(
+      minIntrinsicWidth: minWidth ? transform.size.width : null,
+      maxIntrinsicWidth: maxWidth ? transform.size.width : null,
+      minIntrinsicHeight: minHeight ? transform.size.height : null,
+      maxIntrinsicHeight: maxHeight ? transform.size.height : null,
+    );
   }
 
   CanvasTransform get transform => transformNotifier.value;
@@ -234,11 +440,6 @@ class CanvasItem {
   bool get selected => selectedNotifier.value;
   set selected(bool value) {
     selectedNotifier.value = value;
-  }
-
-  Widget? get widget => widgetNotifier.value;
-  set widget(Widget? value) {
-    widgetNotifier.value = value;
   }
 
   TransformControlMode get transformControlMode =>
@@ -263,24 +464,54 @@ class CanvasItem {
   set children(List<CanvasItem> value) {
     childrenNotifier.value = value;
   }
-
-  @override
-  String toString() {
-    return 'CanvasItem{transform: $transform, widget: $widget, transformControlMode: $transformControlMode, controlFlag: $controlFlag, onTransforming: $onTransforming, children: $children}';
-  }
 }
 
 class CanvasItemNode {
-  final CanvasItem item;
+  CanvasItem _item;
   late List<CanvasItemNode> _children;
-  final CanvasItemNode? parent;
+  CanvasItemNode? _parent;
+  final ValueNotifier<Matrix4> matrixNotifier =
+      ValueNotifier(Matrix4.identity());
+  final ValueNotifier<Size> sizeNotifier = ValueNotifier(Size.zero);
 
   CanvasItemNode({
-    required this.item,
-    this.parent,
-  }) {
+    required CanvasItem item,
+    CanvasItemNode? parent,
+  })  : _item = item,
+        _parent = parent {
+    _onChildrenChanged();
+    _relayout();
+  }
+
+  CanvasItem get item => _item;
+  CanvasItemNode? get parent => _parent;
+
+  void initState() {
     item.childrenNotifier.addListener(_onChildrenChanged);
-    _children = item.children.map((child) => child.toNode(this)).toList();
+    item.transformNotifier.addListener(_onTransformChanged);
+  }
+
+  CanvasTransform get transform => item.transform;
+  set transform(CanvasTransform value) {
+    item.transform = value;
+  }
+
+  void _onTransformChanged() {
+    item.transform.performLayout(this);
+  }
+
+  Matrix4 get matrix => matrixNotifier.value;
+  set matrix(Matrix4 value) {
+    matrixNotifier.value = value;
+  }
+
+  Size get size => sizeNotifier.value;
+  set size(Size value) {
+    sizeNotifier.value = value;
+  }
+
+  void _relayout() {
+    item.transform.performLayout(this);
   }
 
   void _onChildrenChanged() {
@@ -316,6 +547,7 @@ class CanvasItemNode {
 
   void dispose() {
     item.childrenNotifier.removeListener(_onChildrenChanged);
+    item.transformNotifier.removeListener(_onTransformChanged);
     for (final child in _children) {
       child.dispose();
     }
@@ -334,7 +566,7 @@ class CanvasViewport {
     Offset offset = Offset.zero,
     double zoom = 1.0,
     List<CanvasItem> items = const [],
-  }) : _root = CanvasItem(
+  }) : _root = _RootCanvasItem(
                 transform: CanvasTransform(
                   offset: offset,
                   scale: Size(zoom, zoom),
@@ -355,4 +587,12 @@ class CanvasViewport {
   void dispose() {
     _root.dispose();
   }
+}
+
+Offset _alignmentToOffset(Alignment alignment) {
+  // alignment is a double from -1 to 1
+  // convert it to a double from 0 to 1
+  final x = (alignment.x + 1) / 2;
+  final y = (alignment.y + 1) / 2;
+  return Offset(x, y);
 }

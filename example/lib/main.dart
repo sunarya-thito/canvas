@@ -46,7 +46,7 @@ class _CanvasExampleState extends State<CanvasExample>
   ResizeMode resizeMode = ResizeMode.resize;
 
   List<CanvasItem> items = [
-    CanvasItem(
+    BoxCanvasItem(
       transformControlMode: TransformControlMode.show,
       transform: CanvasTransform(
         size: Size(200, 200),
@@ -62,11 +62,11 @@ class _CanvasExampleState extends State<CanvasExample>
         ),
       ),
       children: [
-        CanvasItem(
+        BoxCanvasItem(
           transformControlMode: TransformControlMode.show,
           transform: CanvasTransform(
             size: Size(100, 100),
-            rotation: _degToRad(45),
+            // rotation: _degToRad(45),
             offset: Offset(150, 150),
             scale: Size(1, 2),
           ),
@@ -82,20 +82,20 @@ class _CanvasExampleState extends State<CanvasExample>
             ),
           ),
           children: [
-            CanvasItem(
+            BoxCanvasItem(
               transformControlMode: TransformControlMode.show,
               transform: CanvasTransform(
                 size: Size(50, 50),
                 rotation: _degToRad(45),
                 offset: Offset(120, 120),
-                scale: Size(1, 1),
+                scale: Size(1, 2),
               ),
               children: [
-                CanvasItem(
+                BoxCanvasItem(
                   transformControlMode: TransformControlMode.show,
                   transform: CanvasTransform(
                     size: Size(100, 100),
-                    rotation: _degToRad(45),
+                    // rotation: _degToRad(45),
                     offset: Offset(150, 150),
                     scale: Size(1, 2),
                   ),
@@ -111,16 +111,16 @@ class _CanvasExampleState extends State<CanvasExample>
                     ),
                   ),
                   children: [
-                    CanvasItem(
+                    BoxCanvasItem(
                       transformControlMode: TransformControlMode.show,
                       transform: CanvasTransform(
                         size: Size(50, 50),
-                        rotation: _degToRad(45),
+                        // rotation: _degToRad(45),
                         offset: Offset(120, 120),
                         scale: Size(1, 1),
                       ),
                       children: [
-                        CanvasItem(
+                        BoxCanvasItem(
                           transformControlMode: TransformControlMode.show,
                           transform: CanvasTransform(
                             size: Size(100, 100),
@@ -140,7 +140,7 @@ class _CanvasExampleState extends State<CanvasExample>
                             ),
                           ),
                           children: [
-                            CanvasItem(
+                            BoxCanvasItem(
                               transformControlMode: TransformControlMode.show,
                               transform: CanvasTransform(
                                 size: Size(50, 50),

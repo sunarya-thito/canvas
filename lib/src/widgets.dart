@@ -18,37 +18,32 @@ class CanvasViewportWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRect(
       child: LayoutBuilder(builder: (context, constraints) {
-        return ListenableBuilder(
-          listenable: controller.rootNode.item.childrenNotifier,
-          builder: (context, child) {
-            return GroupWidget(
-              children: [
-                CanvasTransformed(
-                  matrix4: Matrix4.identity()
-                    ..translate(constraints.biggest.width / 2,
-                        constraints.biggest.height / 2),
-                  size: constraints.biggest,
-                  background: GroupWidget(
-                    children: [
-                      CanvasNodeWidget(node: controller.rootNode),
-                      TransformControlWidget(
-                        node: controller.rootNode,
-                        control: control,
-                        resizeMode: resizeMode,
-                      ),
-                    ],
+        return GroupWidget(
+          children: [
+            CanvasTransformed(
+              matrix4: Matrix4.identity()
+                ..translate(constraints.biggest.width / 2,
+                    constraints.biggest.height / 2),
+              size: constraints.biggest,
+              background: GroupWidget(
+                children: [
+                  CanvasNodeWidget(node: controller.rootNode),
+                  TransformControlWidget(
+                    node: controller.rootNode,
+                    control: control,
+                    resizeMode: resizeMode,
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              ),
+            ),
+          ],
         );
       }),
     );
   }
 }
 
-class CanvasNodeWidget extends StatelessWidget {
+class CanvasNodeWidget extends StatefulWidget {
   final CanvasItemNode node;
 
   const CanvasNodeWidget({
@@ -57,25 +52,54 @@ class CanvasNodeWidget extends StatelessWidget {
   });
 
   @override
+  State<CanvasNodeWidget> createState() => _CanvasNodeWidgetState();
+}
+
+class _CanvasNodeWidgetState extends State<CanvasNodeWidget> {
+  @override
+  void initState() {
+    super.initState();
+    widget.node.initState();
+  }
+
+  @override
+  void didUpdateWidget(covariant CanvasNodeWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.node != oldWidget.node) {
+      oldWidget.node.dispose();
+      widget.node.initState();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.node.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
         listenable: Listenable.merge({
-          node.item.transformNotifier,
-          node.item.childrenNotifier,
+          widget.node.item,
+          widget.node.matrixNotifier,
+          widget.node.sizeNotifier,
+          widget.node.item.childrenNotifier,
         }),
-        child: ListenableBuilder(
-          listenable: node.item.widgetNotifier,
-          builder: (context, child) {
-            return node.item.widget ?? const SizedBox();
-          },
-        ),
+        child: widget.node.item.build(context),
         builder: (context, background) {
           return CanvasTransformed(
-            matrix4: node.item.transform.computeMatrix(node),
-            size: node.item.transform.size,
-            background: background!,
-            children:
-                node.children.map((e) => CanvasNodeWidget(node: e)).toList(),
+            matrix4: widget.node.matrix,
+            size: widget.node.size,
+            background: Transform.scale(
+              alignment: Alignment.topLeft,
+              scaleX: widget.node.item.transform.scale.width,
+              scaleY: widget.node.item.transform.scale.height,
+              child: background!,
+            ),
+            children: widget.node.children
+                .map((e) => CanvasNodeWidget(node: e))
+                .toList(),
           );
         });
   }
@@ -86,12 +110,14 @@ class CanvasTransformed extends StatelessWidget {
   final Size size;
   final Widget background;
   final List<Widget> children;
+  final bool transformHitTests;
 
   const CanvasTransformed({
     super.key,
     required this.matrix4,
     required this.size,
     required this.background,
+    this.transformHitTests = true,
     this.children = const [],
   });
 
@@ -99,6 +125,7 @@ class CanvasTransformed extends StatelessWidget {
   Widget build(BuildContext context) {
     return Transform(
       transform: matrix4,
+      transformHitTests: transformHitTests,
       child: GroupWidget(
         children: [
           ConstrainedCanvasItem(

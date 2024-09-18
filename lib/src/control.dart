@@ -1,8 +1,8 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/util.dart';
 import 'package:flutter/widgets.dart';
-import 'package:vector_math/vector_math_64.dart';
 
 class StandardTransformControlThemeData {
   final Decoration macroDecoration;
@@ -11,9 +11,14 @@ class StandardTransformControlThemeData {
   final Decoration microScaleDecoration;
   final Color selectionBorderColor;
   final double selectionBorderWidth;
+  final Decoration rotationHandleDecoration;
+  final double rotationLineLength;
+  final double rotationLineBorderWidth;
+  final Color rotationLineBorderColor;
 
   final Size macroSize;
   final Size microSize;
+  final Size rotationHandleSize;
 
   const StandardTransformControlThemeData({
     required this.macroDecoration,
@@ -24,6 +29,11 @@ class StandardTransformControlThemeData {
     required this.selectionBorderWidth,
     required this.macroSize,
     required this.microSize,
+    required this.rotationHandleDecoration,
+    required this.rotationLineLength,
+    required this.rotationLineBorderWidth,
+    required this.rotationLineBorderColor,
+    required this.rotationHandleSize,
   });
 
   factory StandardTransformControlThemeData.defaultThemeData() {
@@ -48,6 +58,15 @@ class StandardTransformControlThemeData {
       selectionBorderWidth: 1,
       macroSize: const Size(10, 10),
       microSize: const Size(8, 8),
+      rotationHandleDecoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFF000000), width: 1),
+        color: const Color(0xFFFFFFFF),
+        shape: BoxShape.circle,
+      ),
+      rotationHandleSize: const Size(10, 10),
+      rotationLineLength: 20,
+      rotationLineBorderWidth: 1,
+      rotationLineBorderColor: const Color(0xFF000000),
     );
   }
 }
@@ -87,14 +106,14 @@ class _TransformControlWidgetState extends State<TransformControlWidget>
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge({
-        node.item.transformNotifier,
+        node.matrixNotifier,
         node.item.childrenNotifier,
         node.item.controlFlagNotifier,
         node.item.transformControlModeNotifier,
       }),
       builder: (context, child) {
         List<Widget> children = [];
-        var matrix = node.item.transform.computeMatrix(node);
+        var matrix = node.matrix;
         if (widget.parentTransform != null) {
           matrix = widget.parentTransform! * matrix;
         }
@@ -124,6 +143,7 @@ class _TransformControlWidgetState extends State<TransformControlWidget>
 
   @override
   void move(Offset delta) {
+    delta = rotatePoint(delta, node.item.transform.rotation);
     node.item.dispatchTransformChanging(
       node.item.transform.drag(delta),
     );
@@ -176,6 +196,9 @@ class _TransformControlWidgetState extends State<TransformControlWidget>
 
   @override
   void resizeTopLeft(Offset delta) {
+    // delta = delta.scale(
+    //     node.item.transform.scale.width, node.item.transform.scale.height);
+    // delta = rotatePoint(delta, node.item.transform.rotation);
     node.item.dispatchTransformChanging(
       node.item.transform.resizeTopLeft(delta),
     );
@@ -189,13 +212,17 @@ class _TransformControlWidgetState extends State<TransformControlWidget>
   }
 
   @override
-  void rotate(double delta, Offset origin) {
-    // TODO: implement rotate
+  void rotate(double delta, Alignment alignment) {
+    node.item.dispatchTransformChanging(
+      node.item.transform.rotate(delta, alignment),
+    );
   }
 
   @override
   void scaleBottom(Offset delta) {
-    // TODO: implement scaleBottom
+    node.item.dispatchTransformChanging(
+      node.item.transform.scaleBottom(delta),
+    );
   }
 
   @override
@@ -245,7 +272,7 @@ abstract class TransformControlHandler {
   void resizeLeft(Offset delta);
   void resizeRight(Offset delta);
   void resizeBottom(Offset delta);
-  void rotate(double delta, Offset origin);
+  void rotate(double delta, Alignment alignment);
   void scaleTopLeft(Offset delta);
   void scaleTopRight(Offset delta);
   void scaleBottomLeft(Offset delta);
@@ -299,9 +326,7 @@ class StandardTransformControlTheme extends InheritedTheme {
 }
 
 Offset _transformPoint(Matrix4 matrix, Offset point) {
-  final Vector3 vector = Vector3(point.dx, point.dy, 0);
-  final Vector3 transformed = matrix.transform3(vector);
-  return Offset(transformed.x, transformed.y);
+  return MatrixUtils.transformPoint(matrix, point);
 }
 
 double _angleOfLine(Offset start, Offset end) {
@@ -372,6 +397,8 @@ class _StandardTransformControlWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = StandardTransformControlTheme.of(context);
     var size = handler.node.item.transform.size;
+    var scale = handler.node.item.transform.scale;
+    size = Size(size.width * scale.width, size.height * scale.height);
     var topLeftPoint = _transformPoint(matrix, Offset(0, 0));
     var topRightPoint = _transformPoint(matrix, Offset(size.width, 0));
     var bottomLeftPoint = _transformPoint(matrix, Offset(0, size.height));
@@ -430,14 +457,14 @@ class _StandardTransformControlWidget extends StatelessWidget {
               CanvasTransformed(
                 matrix4: _getPointMatrix(topLeftPoint, topLeftAngle, macroSize),
                 size: macroSize,
-                background: MouseRegion(
-                  cursor: _MouseCursor._topLeft._rotate(topLeftAngle),
+                background: Container(
+                  decoration: macroDecoration,
                   child: GestureDetector(
                     onPanUpdate: (details) {
-                      handler.resizeTopLeft(details.delta);
+                      // handler.resizeTopLeft(details);
                     },
-                    child: Container(
-                      decoration: macroDecoration,
+                    child: MouseRegion(
+                      cursor: _MouseCursor._topLeft._rotate(topLeftAngle),
                     ),
                   ),
                 ),
@@ -566,8 +593,9 @@ class _StandardTransformControlWidget extends StatelessWidget {
 }
 
 Matrix4 _inverseMatrix(Matrix4 matrix) {
-  final inverse = Matrix4.inverted(matrix);
-  return inverse;
+  Matrix4 copy = Matrix4.copy(matrix);
+  copy.invert();
+  return copy;
 }
 
 Matrix4 _getPointMatrix(Offset offset, double angle, Size size) {
@@ -575,6 +603,15 @@ Matrix4 _getPointMatrix(Offset offset, double angle, Size size) {
     ..translate(offset.dx, offset.dy)
     ..rotateZ(angle)
     ..translate(-size.width / 2, -size.height / 2);
+}
+
+Matrix4 _inversePointMatrix(double angle) {
+  return Matrix4.identity()..rotateZ(-angle);
+}
+
+Offset _inverseOffset(Offset offset, double angle) {
+  final matrix = _inversePointMatrix(angle);
+  return _transformPoint(matrix, offset);
 }
 
 class _StandardTransformControlPainter extends CustomPainter {
