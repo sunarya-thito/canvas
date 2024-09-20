@@ -16,22 +16,107 @@ class IntrinsicComputation {
   });
 }
 
+abstract class SizeConstraint {
+  const SizeConstraint._();
+
+  const factory SizeConstraint.box(double min, double max) = _BoxSizeConstraint;
+  const factory SizeConstraint.tight(double value) = _BoxSizeConstraint.tight;
+  const factory SizeConstraint.hugTight(double value) = _HugConstraint.tight;
+  const factory SizeConstraint.fillTight(double value) = _FillConstraint.tight;
+  const factory SizeConstraint.hugLoose() = _HugConstraint.loose;
+  const factory SizeConstraint.fillLoose() = _FillConstraint.loose;
+  const factory SizeConstraint.hug(double min, double max) = _HugConstraint;
+  const factory SizeConstraint.fill(double min, double max) = _FillConstraint;
+}
+
+class _BoxSizeConstraint extends SizeConstraint {
+  final double min;
+  final double max;
+
+  const _BoxSizeConstraint(this.min, this.max) : super._();
+  const _BoxSizeConstraint.tight(double value)
+      : min = value,
+        max = value,
+        super._();
+}
+
+class _HugConstraint extends _BoxSizeConstraint {
+  const _HugConstraint(super.min, super.max);
+  const _HugConstraint.tight(double value) : super.tight(value);
+  const _HugConstraint.loose() : super(0, double.infinity);
+}
+
+class _FillConstraint extends _BoxSizeConstraint {
+  const _FillConstraint(super.min, super.max);
+  const _FillConstraint.tight(double value) : super.tight(value);
+  const _FillConstraint.loose() : super(0, double.infinity);
+}
+
+abstract base class ContainerTransform extends CanvasTransform {
+  final EdgeInsets padding;
+  final Alignment alignment;
+  final Anchor? anchor;
+  const ContainerTransform({
+    super.offset,
+    super.scale,
+    super.rotation,
+    super.size,
+    this.padding = EdgeInsets.zero,
+    this.alignment = Alignment.center,
+    this.anchor,
+  });
+}
+
+class Anchor {
+  final double? left;
+  final double? top;
+  final double? right;
+  final double? bottom;
+
+  const Anchor({
+    this.left,
+    this.top,
+    this.right,
+    this.bottom,
+  })  : assert(left != null || right != null, 'left or right must be set'),
+        assert(top != null || bottom != null, 'top or bottom must be set'),
+        assert(left == null || right == null,
+            'left and right cannot be set at the same time'),
+        assert(top == null || bottom == null,
+            'top and bottom cannot be set at the same time');
+}
+
+final class FlexContainerTransform extends ContainerTransform {
+  final AxisDirection direction;
+  final double gap;
+  const FlexContainerTransform({
+    super.offset,
+    super.scale,
+    super.rotation,
+    super.size,
+    super.alignment,
+    super.padding,
+    required this.direction,
+    this.gap = 0.0,
+  });
+}
+
 class CanvasTransform {
   final Offset offset;
-  final Size scale;
+  final Offset scale;
   final double rotation;
   final Size size;
 
   const CanvasTransform({
     this.offset = Offset.zero,
-    this.scale = const Size(1.0, 1.0),
+    this.scale = const Offset(1.0, 1.0),
     this.rotation = 0.0,
     this.size = Size.zero,
   });
 
   CanvasTransform copyWith({
     Offset? offset,
-    Size? scale,
+    Offset? scale,
     double? rotation,
     Alignment? alignment,
     Size? size,
@@ -60,121 +145,29 @@ class CanvasTransform {
     return matrix;
   }
 
-  CanvasTransform drag(Offset delta) {
+  CanvasTransform drag(CanvasItemNode node, Offset delta) {
+    if (delta == Offset.zero) return this;
     return copyWith(offset: offset + delta);
   }
 
-  CanvasTransform flipHorizontal() {
-    return copyWith(scale: Size(-scale.width, scale.height));
-  }
-
-  CanvasTransform flipVertical() {
-    return copyWith(scale: Size(scale.width, -scale.height));
-  }
-
-  CanvasTransform flip() {
-    return copyWith(scale: Size(-scale.width, -scale.height));
-  }
-
-  CanvasTransform resizeTopLeft(Offset delta,
-      [Alignment alignment = Alignment.bottomRight]) {
-    final align = _alignmentToOffset(alignment);
-    final newOffset = offset + delta;
-    return copyWith(offset: newOffset, size: size);
-  }
-
-  CanvasTransform resizeTop(Offset delta,
-      [Alignment alignment = Alignment.bottomCenter]) {
-    // TODO
+  CanvasTransform resize(CanvasItemNode node, Offset delta, Alignment handle,
+      [Alignment? alignment]) {
+    if (handle == alignment || delta == Offset.zero) return this;
+    alignment ??= handle * -1;
     return this;
   }
 
-  CanvasTransform resizeTopRight(Offset delta,
-      [Alignment alignment = Alignment.bottomLeft]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform resizeRight(Offset delta,
-      [Alignment alignment = Alignment.centerLeft]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform resizeBottomRight(Offset delta,
-      [Alignment alignment = Alignment.topLeft]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform resizeBottom(Offset delta,
-      [Alignment alignment = Alignment.topCenter]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform resizeBottomLeft(Offset delta,
-      [Alignment alignment = Alignment.topRight]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform resizeLeft(Offset delta,
-      [Alignment alignment = Alignment.centerRight]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform rotate(double angle,
+  CanvasTransform rotate(CanvasItemNode node, double angle,
       [Alignment alignment = Alignment.center]) {
+    if (angle == 0) return this;
     return copyWith(rotation: rotation + angle);
   }
 
-  CanvasTransform scaleTopLeft(Offset delta,
-      [Alignment alignment = Alignment.bottomRight]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform scaleTop(Offset delta,
-      [Alignment alignment = Alignment.bottomCenter]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform scaleTopRight(Offset delta,
-      [Alignment alignment = Alignment.bottomLeft]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform scaleRight(Offset delta,
-      [Alignment alignment = Alignment.centerLeft]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform scaleBottomRight(Offset delta,
-      [Alignment alignment = Alignment.topLeft]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform scaleBottom(Offset delta,
-      [Alignment alignment = Alignment.topCenter]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform scaleBottomLeft(Offset delta,
-      [Alignment alignment = Alignment.topRight]) {
-    // TODO
-    return this;
-  }
-
-  CanvasTransform scaleLeft(Offset delta,
-      [Alignment alignment = Alignment.centerRight]) {
-    // TODO
+  CanvasTransform scaleTransform(
+      CanvasItemNode node, Offset delta, Alignment handle,
+      [Alignment? alignment]) {
+    if (handle == alignment || delta == Offset.zero) return this;
+    alignment ??= handle * -1;
     return this;
   }
 
@@ -459,6 +452,8 @@ class CanvasItemNode {
   CanvasItemNode? _parent;
   final ValueNotifier<Matrix4> matrixNotifier =
       ValueNotifier(Matrix4.identity());
+  final ValueNotifier<Matrix4> transformControlMatrixNotifier =
+      ValueNotifier(Matrix4.identity());
   final ValueNotifier<Size> sizeNotifier = ValueNotifier(Size.zero);
 
   CanvasItemNode({
@@ -556,7 +551,7 @@ class CanvasViewport {
   }) : _root = _RootCanvasItem(
                 transform: CanvasTransform(
                   offset: offset,
-                  scale: Size(zoom, zoom),
+                  scale: Offset(zoom, zoom),
                 ),
                 children: items)
             .toNode();

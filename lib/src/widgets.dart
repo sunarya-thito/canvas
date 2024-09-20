@@ -93,8 +93,8 @@ class _CanvasNodeWidgetState extends State<CanvasNodeWidget> {
             size: widget.node.size,
             background: Transform.scale(
               alignment: Alignment.topLeft,
-              scaleX: widget.node.item.transform.scale.width,
-              scaleY: widget.node.item.transform.scale.height,
+              scaleX: widget.node.item.transform.scale.dx,
+              scaleY: widget.node.item.transform.scale.dy,
               child: background!,
             ),
             children: widget.node.children

@@ -68,7 +68,7 @@ class _CanvasExampleState extends State<CanvasExample>
             size: Size(100, 100),
             // rotation: _degToRad(45),
             offset: Offset(150, 150),
-            scale: Size(1, 2),
+            scale: Offset(1, 2),
           ),
           widget: GestureDetector(
             onTap: () {
@@ -88,7 +88,7 @@ class _CanvasExampleState extends State<CanvasExample>
                 size: Size(50, 50),
                 rotation: _degToRad(45),
                 offset: Offset(120, 120),
-                scale: Size(1, 2),
+                scale: Offset(1, 2),
               ),
               children: [
                 BoxCanvasItem(
@@ -97,7 +97,7 @@ class _CanvasExampleState extends State<CanvasExample>
                     size: Size(100, 100),
                     // rotation: _degToRad(45),
                     offset: Offset(150, 150),
-                    scale: Size(1, 2),
+                    scale: Offset(1, 2),
                   ),
                   widget: GestureDetector(
                     onTap: () {
@@ -117,7 +117,7 @@ class _CanvasExampleState extends State<CanvasExample>
                         size: Size(50, 50),
                         // rotation: _degToRad(45),
                         offset: Offset(120, 120),
-                        scale: Size(1, 1),
+                        scale: Offset(1, 1),
                       ),
                       children: [
                         BoxCanvasItem(
@@ -126,7 +126,7 @@ class _CanvasExampleState extends State<CanvasExample>
                             size: Size(100, 100),
                             rotation: _degToRad(45),
                             offset: Offset(150, 150),
-                            scale: Size(1, 1),
+                            scale: Offset(1, 1),
                           ),
                           widget: GestureDetector(
                             onTap: () {
@@ -146,7 +146,7 @@ class _CanvasExampleState extends State<CanvasExample>
                                 size: Size(50, 50),
                                 rotation: _degToRad(45),
                                 offset: Offset(120, 120),
-                                scale: Size(1, 1),
+                                scale: Offset(1, 1),
                               ),
                               children: [],
                               widget: GestureDetector(
