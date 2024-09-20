@@ -101,6 +101,37 @@ final class FlexContainerTransform extends ContainerTransform {
   });
 }
 
+class ScaledCanvasTransform extends CanvasTransform {
+  const ScaledCanvasTransform({
+    super.offset,
+    super.scale,
+    super.size,
+  });
+
+  @override
+  Matrix4 _computeMatrix() {
+    final matrix = Matrix4.identity();
+    matrix.translate(offset.dx, offset.dy);
+    matrix.scale(scale.dx, scale.dy);
+    return matrix;
+  }
+
+  @override
+  ScaledCanvasTransform copyWith({
+    Offset? offset,
+    Offset? scale,
+    double? rotation,
+    Alignment? alignment,
+    Size? size,
+  }) {
+    return ScaledCanvasTransform(
+      offset: offset ?? this.offset,
+      scale: scale ?? this.scale,
+      size: size ?? this.size,
+    );
+  }
+}
+
 class CanvasTransform {
   final Offset offset;
   final Offset scale;
@@ -133,6 +164,7 @@ class CanvasTransform {
     final matrix = _computeMatrix();
     node.matrix = matrix;
     node.size = size;
+    node.scale = scale;
     for (final child in node.children) {
       child.item.transform.performLayout(child);
     }
@@ -179,13 +211,6 @@ class CanvasTransform {
   bool get parentCanLayout => true;
 }
 
-double _divideOrZero(double a, double b) {
-  if (b == 0) {
-    return 0;
-  }
-  return a / b;
-}
-
 extension SizeExtension on Size {
   Size abs() {
     return Size(width.abs(), height.abs());
@@ -218,9 +243,6 @@ enum TransformControlMode {
 
   /// Show the control
   show,
-
-  /// Hide the control, but can still be dragged and has zoom control
-  viewport,
 }
 
 class TransformControlFlag {
@@ -344,13 +366,11 @@ class BoxCanvasItem extends CanvasItem {
   }
 }
 
-class _RootCanvasItem extends CanvasItem {
-  _RootCanvasItem({
+class RootCanvasItem extends CanvasItem {
+  RootCanvasItem({
     required super.transform,
     super.children = const [],
-  }) : super(
-          transformControlMode: TransformControlMode.viewport,
-        );
+  }) : super();
 
   @override
   Widget build(BuildContext context) {
@@ -363,7 +383,7 @@ abstract class CanvasItem implements Listenable {
   final ValueNotifier<TransformControlMode> transformControlModeNotifier;
   final ValueNotifier<bool> selectedNotifier;
   final ValueNotifier<TransformControlFlag> controlFlagNotifier;
-  final ValueNotifier<UnaryOpertor<CanvasTransform>?> onTransformingNotifier;
+  final ValueNotifier<UnaryOpertor<CanvasTransform>?> onTransformChangeNotifier;
   final ValueNotifier<List<CanvasItem>> childrenNotifier;
 
   CanvasItem({
@@ -374,15 +394,15 @@ abstract class CanvasItem implements Listenable {
     void Function(CanvasTransform)? onTransformed,
     List<CanvasItem> children = const [],
     bool selected = false,
-  })  : onTransformingNotifier = ValueNotifier(onTransforming),
+  })  : onTransformChangeNotifier = ValueNotifier(onTransforming),
         childrenNotifier = ValueNotifier(children),
         controlFlagNotifier = ValueNotifier(controlFlag),
         transformControlModeNotifier = ValueNotifier(transformControlMode),
         selectedNotifier = ValueNotifier(selected),
         transformNotifier = ValueNotifier(transform);
 
-  void dispatchTransformChanging(CanvasTransform transform) {
-    transformNotifier.value = onTransformingNotifier.value
+  void dispatchTransformChange(CanvasTransform transform) {
+    transformNotifier.value = onTransformChangeNotifier.value
             ?.call(transform, transformNotifier.value) ??
         transform;
   }
@@ -395,8 +415,8 @@ abstract class CanvasItem implements Listenable {
 
   Widget build(BuildContext context);
 
-  CanvasItemNode toNode([CanvasItemNode? parent]) {
-    return CanvasItemNode(item: this, parent: parent);
+  CanvasItemNode toNode(CanvasViewport viewport, [CanvasItemNode? parent]) {
+    return CanvasItemNode(item: this, parent: parent, viewport: viewport);
   }
 
   IntrinsicComputation computeIntrinsic(CanvasItemNode node,
@@ -434,10 +454,10 @@ abstract class CanvasItem implements Listenable {
   }
 
   CanvasTransform Function(CanvasTransform, CanvasTransform)?
-      get onTransforming => onTransformingNotifier.value;
+      get onTransforming => onTransformChangeNotifier.value;
   set onTransforming(
       CanvasTransform Function(CanvasTransform, CanvasTransform)? value) {
-    onTransformingNotifier.value = value;
+    onTransformChangeNotifier.value = value;
   }
 
   List<CanvasItem> get children => childrenNotifier.value;
@@ -447,22 +467,36 @@ abstract class CanvasItem implements Listenable {
 }
 
 class CanvasItemNode {
-  CanvasItem _item;
+  final CanvasViewport viewport;
+  final CanvasItem _item;
   late List<CanvasItemNode> _children;
-  CanvasItemNode? _parent;
+  final CanvasItemNode? _parent;
   final ValueNotifier<Matrix4> matrixNotifier =
       ValueNotifier(Matrix4.identity());
   final ValueNotifier<Matrix4> transformControlMatrixNotifier =
       ValueNotifier(Matrix4.identity());
   final ValueNotifier<Size> sizeNotifier = ValueNotifier(Size.zero);
+  final ValueNotifier<Offset> scaleNotifier = ValueNotifier(Offset.zero);
 
   CanvasItemNode({
+    required this.viewport,
     required CanvasItem item,
     CanvasItemNode? parent,
   })  : _item = item,
         _parent = parent {
     _onChildrenChanged();
     _relayout();
+  }
+
+  bool get isParentSelected {
+    var parent = this.parent;
+    while (parent != null) {
+      if (parent.item.selected) {
+        return true;
+      }
+      parent = parent.parent;
+    }
+    return false;
   }
 
   CanvasItem get item => _item;
@@ -492,12 +526,18 @@ class CanvasItemNode {
     sizeNotifier.value = value;
   }
 
+  Offset get scale => scaleNotifier.value;
+  set scale(Offset value) {
+    scaleNotifier.value = value;
+  }
+
   void _relayout() {
     item.transform.performLayout(this);
   }
 
   void _onChildrenChanged() {
-    _children = item.children.map((child) => child.toNode(this)).toList();
+    _children =
+        item.children.map((child) => child.toNode(viewport, this)).toList();
   }
 
   List<CanvasItemNode> get children => _children;
@@ -542,26 +582,66 @@ class CanvasItemNode {
 }
 
 class CanvasViewport {
-  final CanvasItemNode _root;
+  late final CanvasItemNode _root;
+  final double minZoom;
+  final double maxZoom;
 
   CanvasViewport({
     Offset offset = Offset.zero,
     double zoom = 1.0,
+    this.minZoom = 0.1,
+    this.maxZoom = 10.0,
     List<CanvasItem> items = const [],
-  }) : _root = _RootCanvasItem(
-                transform: CanvasTransform(
-                  offset: offset,
-                  scale: Offset(zoom, zoom),
-                ),
-                children: items)
-            .toNode();
+  }) {
+    _root = RootCanvasItem(
+            transform: ScaledCanvasTransform(
+              offset: offset,
+              scale: Offset(zoom, zoom),
+            ),
+            children: items)
+        .toNode(this);
+  }
+
+  double get zoom => transform.scale.dx;
+  set zoom(double value) {
+    transform = transform.copyWith(scale: Offset(value, value));
+  }
+
+  Offset get offset => transform.offset;
+  set offset(Offset value) {
+    transform = transform.copyWith(offset: value);
+  }
 
   ValueNotifier<CanvasTransform> get transformNotifier =>
       _root.item.transformNotifier;
 
-  CanvasTransform get transform => _root.item.transform;
-  set transform(CanvasTransform value) {
+  ScaledCanvasTransform get transform =>
+      _root.item.transform as ScaledCanvasTransform;
+  set transform(ScaledCanvasTransform value) {
     _root.item.transform = value;
+  }
+
+  void drag(Offset delta) {
+    transform = transform.drag(_root, delta) as ScaledCanvasTransform;
+  }
+
+  void zoomAt(Offset position, double delta) {
+    // delta = 0;
+    position = Offset.zero;
+    print('zoomAt $position $delta');
+    var scale = transform.scale;
+    var offset = transform.offset;
+    Offset newScale = scale * (1 + delta);
+    newScale = Offset(
+      newScale.dx.clamp(minZoom, maxZoom),
+      newScale.dy.clamp(minZoom, maxZoom),
+    );
+    Offset scaleFactor = Offset(
+      newScale.dx / scale.dx,
+      newScale.dy / scale.dy,
+    );
+    Offset newOffset = offset - ((position - offset) * scaleFactor.dx);
+    transform = transform.copyWith(offset: newOffset, scale: newScale);
   }
 
   CanvasItemNode get rootNode => _root;
@@ -569,12 +649,4 @@ class CanvasViewport {
   void dispose() {
     _root.dispose();
   }
-}
-
-Offset _alignmentToOffset(Alignment alignment) {
-  // alignment is a double from -1 to 1
-  // convert it to a double from 0 to 1
-  final x = (alignment.x + 1) / 2;
-  final y = (alignment.y + 1) / 2;
-  return Offset(x, y);
 }

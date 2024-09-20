@@ -47,7 +47,20 @@ class _CanvasExampleState extends State<CanvasExample>
 
   List<CanvasItem> items = [
     BoxCanvasItem(
-      transformControlMode: TransformControlMode.show,
+      transform: CanvasTransform(
+        size: Size(200, 200),
+        rotation: _degToRad(0),
+        offset: Offset(200, 0),
+      ),
+      widget: GestureDetector(
+        onTap: () {},
+        child: Container(
+          color: Colors.yellow,
+        ),
+      ),
+      selected: true,
+    ),
+    BoxCanvasItem(
       transform: CanvasTransform(
         size: Size(200, 200),
         rotation: _degToRad(0),
@@ -66,10 +79,11 @@ class _CanvasExampleState extends State<CanvasExample>
           transformControlMode: TransformControlMode.show,
           transform: CanvasTransform(
             size: Size(100, 100),
-            // rotation: _degToRad(45),
+            rotation: _degToRad(45),
             offset: Offset(150, 150),
             scale: Offset(1, 2),
           ),
+          selected: true,
           widget: GestureDetector(
             onTap: () {
               print('tapped green');
@@ -90,6 +104,7 @@ class _CanvasExampleState extends State<CanvasExample>
                 offset: Offset(120, 120),
                 scale: Offset(1, 2),
               ),
+              selected: true,
               children: [
                 BoxCanvasItem(
                   transformControlMode: TransformControlMode.show,
@@ -201,7 +216,7 @@ class _CanvasExampleState extends State<CanvasExample>
   @override
   void initState() {
     super.initState();
-    controller = CanvasViewport(items: items);
+    controller = CanvasViewport(items: items, zoom: 2.0);
     _ticker = createTicker((elapsed) {
       // setState(() {
       //   items[0].children[0].transform =

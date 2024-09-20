@@ -124,7 +124,7 @@ class RenderCanvasGroup extends RenderBox
     RenderBox? child = firstChild;
     while (child != null) {
       final childParentData = child.parentData as StackParentData;
-      child.layout(const BoxConstraints());
+      child.layout(BoxConstraints.loose(constraints.biggest));
       child = childParentData.nextSibling;
     }
     size = constraints.biggest.isInfinite ? Size.zero : constraints.biggest;

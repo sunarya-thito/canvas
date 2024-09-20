@@ -1,6 +1,9 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 
 import '../canvas.dart';
+
+typedef CanvasItemNodeVisitor = void Function(CanvasItemNode node);
 
 class CanvasViewportWidget extends StatelessWidget {
   final CanvasViewport controller;
@@ -16,30 +19,58 @@ class CanvasViewportWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRect(
-      child: LayoutBuilder(builder: (context, constraints) {
-        return GroupWidget(
-          children: [
-            CanvasTransformed(
-              matrix4: Matrix4.identity()
-                ..translate(constraints.biggest.width / 2,
-                    constraints.biggest.height / 2),
-              size: constraints.biggest,
-              background: GroupWidget(
-                children: [
-                  CanvasNodeWidget(node: controller.rootNode),
-                  TransformControlWidget(
-                    node: controller.rootNode,
-                    control: control,
-                    resizeMode: resizeMode,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      }),
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      return Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerSignal: (event) {
+          if (event is PointerScrollEvent) {
+            var delta = event.scrollDelta.dy > 0.0 ? 0.1 : -0.1;
+            var position = event.localPosition;
+            position += Offset(
+              -constraints.biggest.width / 2,
+              -constraints.biggest.height / 2,
+            );
+            print(position);
+            controller.zoomAt(position, delta);
+          }
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onPanUpdate: (details) {
+            controller.drag(details.delta);
+          },
+          child: ClipRect(
+            child: ListenableBuilder(
+                listenable: controller.transformNotifier,
+                builder: (context, _) {
+                  return GroupWidget(
+                    children: [
+                      CanvasTransformed(
+                        matrix4: Matrix4.identity()
+                          ..translate(constraints.biggest.width / 2,
+                              constraints.biggest.height / 2),
+                        size: constraints.biggest,
+                        background: GroupWidget(
+                          children: [
+                            CanvasNodeWidget(node: controller.rootNode),
+                            DraggerControlWidget(
+                              node: controller.rootNode,
+                            ),
+                            TransformControlWidget(
+                              node: controller.rootNode,
+                              control: control,
+                              resizeMode: resizeMode,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+          ),
+        ),
+      );
+    });
   }
 }
 
@@ -84,17 +115,20 @@ class _CanvasNodeWidgetState extends State<CanvasNodeWidget> {
           widget.node.item,
           widget.node.matrixNotifier,
           widget.node.sizeNotifier,
+          widget.node.scaleNotifier,
           widget.node.item.childrenNotifier,
         }),
         child: widget.node.item.build(context),
         builder: (context, background) {
+          var size = widget.node.size;
+          var scale = widget.node.scale;
           return CanvasTransformed(
             matrix4: widget.node.matrix,
-            size: widget.node.size,
+            size: size,
             background: Transform.scale(
               alignment: Alignment.topLeft,
-              scaleX: widget.node.item.transform.scale.dx,
-              scaleY: widget.node.item.transform.scale.dy,
+              scaleX: scale.dx,
+              scaleY: scale.dy,
               child: background!,
             ),
             children: widget.node.children
