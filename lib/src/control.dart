@@ -86,38 +86,27 @@ List<MouseCursor> _cursorRotations = [
   SystemMouseCursors.resizeUpLeft, // 315
 ];
 
-List<MouseCursor> _horizontalFlipCursorRotations = [
-  SystemMouseCursors.resizeUpDown, // 0
-  SystemMouseCursors.resizeUpLeft, // 45
-  SystemMouseCursors.resizeLeftRight, // 90
-  SystemMouseCursors.resizeDownLeft, // 135
-  SystemMouseCursors.resizeUpDown, // 180
-  SystemMouseCursors.resizeDownRight, // 225
-  SystemMouseCursors.resizeLeftRight, // 270
-  SystemMouseCursors.resizeUpRight, // 315
-];
+const Map<_MouseCursor, _MouseCursor> _flipXMapper = {
+  _MouseCursor._top: _MouseCursor._top,
+  _MouseCursor._topRight: _MouseCursor._topLeft,
+  _MouseCursor._right: _MouseCursor._left,
+  _MouseCursor._bottomRight: _MouseCursor._bottomLeft,
+  _MouseCursor._bottom: _MouseCursor._bottom,
+  _MouseCursor._bottomLeft: _MouseCursor._bottomRight,
+  _MouseCursor._left: _MouseCursor._right,
+  _MouseCursor._topLeft: _MouseCursor._topRight,
+};
 
-List<MouseCursor> _verticalFlipCursorRotations = [
-  SystemMouseCursors.resizeUpDown, // 0
-  SystemMouseCursors.resizeDownRight, // 45
-  SystemMouseCursors.resizeLeftRight, // 90
-  SystemMouseCursors.resizeUpRight, // 135
-  SystemMouseCursors.resizeUpDown, // 180
-  SystemMouseCursors.resizeUpLeft, // 225
-  SystemMouseCursors.resizeLeftRight, // 270
-  SystemMouseCursors.resizeDownLeft, // 315
-];
-
-List<MouseCursor> _bothFlipCursorRotations = [
-  SystemMouseCursors.resizeUpDown, // 0
-  SystemMouseCursors.resizeDownLeft, // 45
-  SystemMouseCursors.resizeLeftRight, // 90
-  SystemMouseCursors.resizeUpLeft, // 135
-  SystemMouseCursors.resizeUpDown, // 180
-  SystemMouseCursors.resizeUpRight, // 225
-  SystemMouseCursors.resizeLeftRight, // 270
-  SystemMouseCursors.resizeDownRight, // 315
-];
+const Map<_MouseCursor, _MouseCursor> _flipYMapper = {
+  _MouseCursor._top: _MouseCursor._bottom,
+  _MouseCursor._topRight: _MouseCursor._bottomRight,
+  _MouseCursor._right: _MouseCursor._right,
+  _MouseCursor._bottomRight: _MouseCursor._topRight,
+  _MouseCursor._bottom: _MouseCursor._top,
+  _MouseCursor._bottomLeft: _MouseCursor._topLeft,
+  _MouseCursor._left: _MouseCursor._left,
+  _MouseCursor._topLeft: _MouseCursor._bottomLeft,
+};
 
 enum _MouseCursor {
   _top,
@@ -129,22 +118,27 @@ enum _MouseCursor {
   _left,
   _topLeft;
 
+  const _MouseCursor();
+
   double get angle {
     return index * 45 * pi / 180;
   }
 
-  MouseCursor _rotate(double angle, bool flipX, bool flipY) {
-    angle += this.angle;
-    var findClosestAngle = _findClosestAngle(angle);
-    if (flipX && flipY) {
-      return _bothFlipCursorRotations[findClosestAngle];
-    } else if (flipX) {
-      return _horizontalFlipCursorRotations[findClosestAngle];
-    } else if (flipY) {
-      return _verticalFlipCursorRotations[findClosestAngle];
-    } else {
-      return _cursorRotations[findClosestAngle];
+  _MouseCursor flip(bool flipX, bool flipY) {
+    _MouseCursor cursor = this;
+    if (flipX) {
+      cursor = _flipXMapper[cursor]!;
     }
+    if (flipY) {
+      cursor = _flipYMapper[cursor]!;
+    }
+    return cursor;
+  }
+
+  MouseCursor _rotate(double angle, bool flipX, bool flipY) {
+    _MouseCursor cursor = flip(flipX, flipY);
+    int index = _findClosestAngle(angle + cursor.angle);
+    return _cursorRotations[index];
   }
 }
 
