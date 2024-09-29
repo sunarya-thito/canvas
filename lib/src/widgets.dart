@@ -1,5 +1,6 @@
 import 'package:canvas/src/foundation.dart';
 import 'package:canvas/src/helper_widget.dart';
+import 'package:canvas/src/util.dart';
 import 'package:flutter/widgets.dart';
 
 import '../canvas.dart';
@@ -148,24 +149,144 @@ class CanvasViewport extends StatelessWidget {
   Widget build(BuildContext context) {
     var textDirection = Directionality.of(context);
     var resolvedAlignment = alignment.resolve(textDirection);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        var offset = resolvedAlignment.alongSize(constraints.biggest);
+    return CanvasViewportData(
+      controller: controller,
+      resizeMode: resizeMode,
+      transformControl: transformControl,
+      multiSelect: multiSelect,
+      symmetricResize: symmetricResize,
+      proportionalResize: proportionalResize,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          var offset = resolvedAlignment.alongSize(constraints.biggest);
+          return Transform.translate(
+            offset: offset,
+            child: GroupWidget(
+              children: [
+                CanvasItemWidget(item: controller._root),
+                _CanvasItemBoundingBox(item: controller._root),
+                transformControl.build(context, controller._root),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CanvasItemBoundingBox extends StatefulWidget {
+  final CanvasItem item;
+  final double parentRotation;
+
+  const _CanvasItemBoundingBox(
+      {Key? key, required this.item, this.parentRotation = 0})
+      : super(key: key);
+
+  @override
+  State<_CanvasItemBoundingBox> createState() => _CanvasItemBoundingBoxState();
+}
+
+class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
+  TransformSession? _session;
+  Offset? _totalOffset;
+
+  double get globalRotation {
+    return widget.item.transform.rotation + widget.parentRotation;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    CanvasViewportData viewportData = CanvasViewportData.of(context);
+    return ListenableBuilder(
+      listenable: widget.item.transformNotifier,
+      builder: (context, child) {
+        var transform = widget.item.transform;
+        var size = transform.scaledSize;
+        Offset flipOffset = Offset(
+          size.width < 0 ? size.width : 0,
+          size.height < 0 ? size.height : 0,
+        );
+        size = size.abs();
         return Transform.translate(
-          offset: offset,
-          child: GroupWidget(
-            children: [
-              CanvasItemWidget(item: controller._root),
-              CanvasViewportData(
-                controller: controller,
-                resizeMode: resizeMode,
-                transformControl: transformControl,
-                multiSelect: multiSelect,
-                symmetricResize: symmetricResize,
-                proportionalResize: proportionalResize,
-                child: transformControl.build(context, controller._root),
-              ),
-            ],
+          offset: transform.offset,
+          child: Transform.rotate(
+            angle: transform.rotation,
+            alignment: Alignment.topLeft,
+            child: GroupWidget(
+              children: [
+                Transform.translate(
+                  offset: flipOffset,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () {
+                      if (viewportData.multiSelect) {
+                        widget.item.selected = !widget.item.selected;
+                      } else {
+                        viewportData.visit(
+                          (item) {
+                            item.selected = item == widget.item;
+                          },
+                        );
+                      }
+                    },
+                    child: PanGesture(
+                      onPanStart: (details) {
+                        if (!widget.item.selected) {
+                          if (viewportData.multiSelect) {
+                            widget.item.selected = !widget.item.selected;
+                          } else {
+                            viewportData.visit(
+                              (item) {
+                                item.selected = item == widget.item;
+                              },
+                            );
+                          }
+                        }
+                        _session = viewportData.beginTransform(
+                            rootSelectionOnly: true);
+                        _totalOffset = Offset.zero;
+                      },
+                      onPanUpdate: (details) {
+                        Offset delta = details.delta;
+                        delta = rotatePoint(delta, globalRotation);
+                        _totalOffset = _totalOffset! + delta;
+                        _session!.visit(
+                          (node) {
+                            Offset localDelta = _totalOffset!;
+                            if (node.parentTransform != null) {
+                              localDelta = rotatePoint(
+                                  localDelta, -node.parentTransform!.rotation);
+                            }
+                            node.newLayout = node.layout.drag(localDelta);
+                          },
+                        );
+                        _session!.apply();
+                      },
+                      onPanEnd: (details) {
+                        _session = null;
+                        _totalOffset = null;
+                      },
+                      onPanCancel: () {
+                        if (_session != null) {
+                          _session!.reset();
+                          _session = null;
+                        }
+                        _totalOffset = null;
+                      },
+                      child: SizedBox.fromSize(
+                        size: size,
+                      ),
+                    ),
+                  ),
+                ),
+                for (var child in widget.item.children)
+                  _CanvasItemBoundingBox(
+                    item: child,
+                    parentRotation: globalRotation,
+                  ),
+              ],
+            ),
           ),
         );
       },

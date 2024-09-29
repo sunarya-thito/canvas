@@ -216,13 +216,24 @@ class _StandardTransformControlWidgetState
     double xEnd = size.width;
     double yStart = 0;
     double yEnd = size.height;
+    double xRotStart = -halfSize.dx;
+    double yRotStart = -halfSize.dy;
+    double xRotEnd = size.width + halfSize.dx;
+    double yRotEnd = size.height + halfSize.dy;
     bool flipX = size.width < 0;
     bool flipY = size.height < 0;
-    Offset flip = Offset(flipX ? -1 : 1, flipY ? -1 : 1);
+    if (flipX) {
+      xRotEnd = size.width - halfSize.dx - sizeRotation.dx;
+      xRotStart = halfSize.dx + sizeRotation.dx;
+    }
+    if (flipY) {
+      yRotEnd = size.height - halfSize.dy - sizeRotation.dy;
+      yRotStart = halfSize.dy + sizeRotation.dy;
+    }
     return [
       // top left rotation
       Transform.translate(
-        offset: Offset(xStart, yStart) - halfSize - sizeRotation,
+        offset: Offset(xRotStart, yRotStart) - sizeRotation,
         child: MouseRegion(
           cursor: ResizeCursor.bottomLeft
               .getMouseCursor(globalRotation, flipX, flipY),
@@ -237,8 +248,7 @@ class _StandardTransformControlWidgetState
       ),
       // top right rotation
       Transform.translate(
-        offset: Offset(xEnd, yStart) +
-            Offset(halfSize.dx, -halfSize.dy - sizeRotation.dy),
+        offset: Offset(xRotEnd, yRotStart) + Offset(0, -sizeRotation.dy),
         child: MouseRegion(
           cursor: ResizeCursor.bottomRight
               .getMouseCursor(globalRotation, flipX, flipY),
@@ -253,7 +263,7 @@ class _StandardTransformControlWidgetState
       ),
       // bottom right rotation
       Transform.translate(
-        offset: Offset(xEnd, yEnd) + Offset(halfSize.dx, halfSize.dy),
+        offset: Offset(xRotEnd, yRotEnd),
         child: MouseRegion(
           cursor: ResizeCursor.topRight
               .getMouseCursor(globalRotation, flipX, flipY),
@@ -268,8 +278,7 @@ class _StandardTransformControlWidgetState
       ),
       // bottom left rotation
       Transform.translate(
-        offset: Offset(xStart, yEnd) +
-            Offset(-halfSize.dx - sizeRotation.dx, halfSize.dy),
+        offset: Offset(xRotStart, yRotEnd) + Offset(-sizeRotation.dx, 0),
         child: MouseRegion(
           cursor:
               ResizeCursor.topLeft.getMouseCursor(globalRotation, flipX, flipY),
@@ -534,6 +543,36 @@ class _StandardTransformControlWidgetState
     return ListenableBuilder(
         listenable: widget.item.selectedNotifier,
         builder: (context, child) {
+          return Transform.translate(
+            offset: flipOffset,
+            child: MouseRegion(
+              hitTestBehavior: HitTestBehavior.translucent,
+              cursor: widget.item.selected
+                  ? SystemMouseCursors.move
+                  : SystemMouseCursors.click,
+              opaque: false,
+              onEnter: (_) {
+                setState(() {
+                  _hover = true;
+                });
+              },
+              onExit: (_) {
+                setState(() {
+                  _hover = false;
+                });
+              },
+              child: IgnorePointer(
+                child: SizedBox.fromSize(
+                  size: size,
+                  child: Container(
+                    decoration: _hover || widget.item.selected
+                        ? theme.selectionDecoration
+                        : null,
+                  ),
+                ),
+              ),
+            ),
+          );
           return Transform.translate(
             offset: flipOffset,
             child: MouseRegion(

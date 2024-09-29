@@ -33,18 +33,6 @@ extension OffsetExtension on Offset {
   Offset divideBy(Offset other) {
     return Offset(dx / other.dx, dy / other.dy);
   }
-
-  Offset flip({bool flipX = false, bool flipY = false}) {
-    double dx = this.dx;
-    double dy = this.dy;
-    if (flipX) {
-      dx = -dx;
-    }
-    if (flipY) {
-      dy = -dy;
-    }
-    return Offset(dx, dy);
-  }
 }
 
 int _findClosestAngle(double radians) {
