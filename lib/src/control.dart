@@ -197,6 +197,8 @@ class _StandardTransformControlWidgetState
     return child;
   }
 
+  bool get _isScaling => viewportData.resizeMode == ResizeMode.scale;
+
   List<Widget> _buildControls(BuildContext context) {
     Offset halfSize =
         Offset(theme.handleSize.width / 2, theme.handleSize.height / 2);
@@ -258,6 +260,13 @@ class _StandardTransformControlWidgetState
           cursor: _MouseCursor._top._rotate(globalRotation),
           child: _wrapWithPanHandler(
             visitor: (node, delta) {
+              if (_isScaling) {
+                node.newLayout = node.layout.rescaleTop(
+                  delta,
+                  symmetric: viewportData.symmetricResize,
+                );
+                return;
+              }
               node.newLayout = node.layout.resizeTop(
                 delta,
                 symmetric: viewportData.symmetricResize,
@@ -277,6 +286,13 @@ class _StandardTransformControlWidgetState
           cursor: _MouseCursor._right._rotate(globalRotation),
           child: _wrapWithPanHandler(
             visitor: (node, delta) {
+              if (_isScaling) {
+                node.newLayout = node.layout.rescaleRight(
+                  delta,
+                  symmetric: viewportData.symmetricResize,
+                );
+                return;
+              }
               node.newLayout = node.layout.resizeRight(
                 delta,
                 symmetric: viewportData.symmetricResize,
@@ -296,6 +312,13 @@ class _StandardTransformControlWidgetState
           cursor: _MouseCursor._bottom._rotate(globalRotation),
           child: _wrapWithPanHandler(
             visitor: (node, delta) {
+              if (_isScaling) {
+                node.newLayout = node.layout.rescaleBottom(
+                  delta,
+                  symmetric: viewportData.symmetricResize,
+                );
+                return;
+              }
               node.newLayout = node.layout.resizeBottom(
                 delta,
                 symmetric: viewportData.symmetricResize,
@@ -315,6 +338,13 @@ class _StandardTransformControlWidgetState
           cursor: _MouseCursor._left._rotate(globalRotation),
           child: _wrapWithPanHandler(
             visitor: (node, delta) {
+              if (_isScaling) {
+                node.newLayout = node.layout.rescaleLeft(
+                  delta,
+                  symmetric: viewportData.symmetricResize,
+                );
+                return;
+              }
               node.newLayout = node.layout.resizeLeft(
                 delta,
                 symmetric: viewportData.symmetricResize,
@@ -335,6 +365,14 @@ class _StandardTransformControlWidgetState
           cursor: _MouseCursor._topLeft._rotate(globalRotation),
           child: _wrapWithPanHandler(
             visitor: (node, delta) {
+              if (_isScaling) {
+                node.newLayout = node.layout.rescaleTopLeft(
+                  delta,
+                  proportional: viewportData.proportionalResize,
+                  symmetric: viewportData.symmetricResize,
+                );
+                return;
+              }
               node.newLayout = node.layout.resizeTopLeft(
                 delta,
                 proportional: viewportData.proportionalResize,
@@ -344,7 +382,8 @@ class _StandardTransformControlWidgetState
             child: Container(
               width: theme.handleSize.width,
               height: theme.handleSize.height,
-              decoration: theme.decoration,
+              decoration:
+                  !_isScaling ? theme.decoration : theme.scaleDecoration,
             ),
           ),
         ),
@@ -356,6 +395,14 @@ class _StandardTransformControlWidgetState
           cursor: _MouseCursor._topRight._rotate(globalRotation),
           child: _wrapWithPanHandler(
             visitor: (node, delta) {
+              if (_isScaling) {
+                node.newLayout = node.layout.rescaleTopRight(
+                  delta,
+                  proportional: viewportData.proportionalResize,
+                  symmetric: viewportData.symmetricResize,
+                );
+                return;
+              }
               node.newLayout = node.layout.resizeTopRight(
                 delta,
                 proportional: viewportData.proportionalResize,
@@ -365,7 +412,8 @@ class _StandardTransformControlWidgetState
             child: Container(
               width: theme.handleSize.width,
               height: theme.handleSize.height,
-              decoration: theme.decoration,
+              decoration:
+                  !_isScaling ? theme.decoration : theme.scaleDecoration,
             ),
           ),
         ),
@@ -377,6 +425,14 @@ class _StandardTransformControlWidgetState
           cursor: _MouseCursor._bottomLeft._rotate(globalRotation),
           child: _wrapWithPanHandler(
             visitor: (node, delta) {
+              if (_isScaling) {
+                node.newLayout = node.layout.rescaleBottomLeft(
+                  delta,
+                  proportional: viewportData.proportionalResize,
+                  symmetric: viewportData.symmetricResize,
+                );
+                return;
+              }
               node.newLayout = node.layout.resizeBottomLeft(
                 delta,
                 proportional: viewportData.proportionalResize,
@@ -386,7 +442,8 @@ class _StandardTransformControlWidgetState
             child: Container(
               width: theme.handleSize.width,
               height: theme.handleSize.height,
-              decoration: theme.decoration,
+              decoration:
+                  !_isScaling ? theme.decoration : theme.scaleDecoration,
             ),
           ),
         ),
@@ -398,6 +455,14 @@ class _StandardTransformControlWidgetState
           cursor: _MouseCursor._bottomRight._rotate(globalRotation),
           child: _wrapWithPanHandler(
             visitor: (node, delta) {
+              if (_isScaling) {
+                node.newLayout = node.layout.rescaleBottomRight(
+                  delta,
+                  proportional: viewportData.proportionalResize,
+                  symmetric: viewportData.symmetricResize,
+                );
+                return;
+              }
               node.newLayout = node.layout.resizeBottomRight(
                 delta,
                 proportional: viewportData.proportionalResize,
@@ -407,7 +472,8 @@ class _StandardTransformControlWidgetState
             child: Container(
               width: theme.handleSize.width,
               height: theme.handleSize.height,
-              decoration: theme.decoration,
+              decoration:
+                  !_isScaling ? theme.decoration : theme.scaleDecoration,
             ),
           ),
         ),

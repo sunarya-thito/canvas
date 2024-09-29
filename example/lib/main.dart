@@ -209,6 +209,7 @@ class _CanvasExampleState extends State<CanvasExample>
         child: CanvasViewport(
           controller: _controller,
           multiSelect: _multiSelect,
+          resizeMode: ResizeMode.scale,
           proportionalResize: _proportionalResize,
           symmetricResize: _symmetricResize,
         ),

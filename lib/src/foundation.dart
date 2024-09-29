@@ -57,6 +57,19 @@ abstract class Layout {
   Layout resizeLeft(Offset delta, {bool symmetric = false});
   Layout resizeRight(Offset delta, {bool symmetric = false});
   Layout resizeBottom(Offset delta, {bool symmetric = false});
+  Layout rescaleTopLeft(Offset delta,
+      {bool symmetric = false, bool proportional = false});
+  Layout rescaleTopRight(Offset delta,
+      {bool symmetric = false, bool proportional = false});
+  Layout rescaleBottomLeft(Offset delta,
+      {bool symmetric = false, bool proportional = false});
+  Layout rescaleBottomRight(Offset delta,
+      {bool symmetric = false, bool proportional = false});
+  Layout rescaleTop(Offset delta, {bool symmetric = false});
+  Layout rescaleLeft(Offset delta, {bool symmetric = false});
+  Layout rescaleRight(Offset delta, {bool symmetric = false});
+  Layout rescaleBottom(Offset delta, {bool symmetric = false});
+  bool get shouldHandleChildLayout;
 }
 
 class AbsoluteLayout extends Layout {
@@ -229,6 +242,126 @@ class AbsoluteLayout extends Layout {
     }
     return result;
   }
+
+  @override
+  Layout rescaleBottom(Offset delta, {bool symmetric = false}) {
+    Offset originalDelta = delta;
+    Layout result = AbsoluteLayout(
+      offset: offset,
+      size: size,
+      rotation: rotation,
+      scale: Offset(scale.dx, scale.dy + delta.dy / size.height),
+    );
+    if (symmetric) {
+      result = result.rescaleTop(-originalDelta);
+    }
+    return result;
+  }
+
+  @override
+  Layout rescaleBottomLeft(Offset delta,
+      {bool symmetric = false, bool proportional = false}) {
+    if (proportional) {
+      delta = proportionalDelta(delta, aspectRatio);
+    }
+    Layout result = rescaleBottom(delta).rescaleLeft(delta);
+    if (symmetric) {
+      result = result.rescaleTopRight(-delta);
+    }
+    return result;
+  }
+
+  @override
+  Layout rescaleBottomRight(Offset delta,
+      {bool symmetric = false, bool proportional = false}) {
+    if (proportional) {
+      delta = proportionalDelta(delta, aspectRatio);
+    }
+    Layout result = rescaleBottom(delta).rescaleRight(delta);
+    if (symmetric) {
+      result = result.rescaleTopLeft(-delta);
+    }
+    return result;
+  }
+
+  @override
+  Layout rescaleLeft(Offset delta, {bool symmetric = false}) {
+    Offset originalDelta = delta;
+    delta = delta.onlyX();
+    Offset rotatedDelta = rotatePoint(delta, rotation);
+    Layout result = AbsoluteLayout(
+      offset: offset + rotatedDelta,
+      size: size,
+      rotation: rotation,
+      scale: Offset(scale.dx - delta.dx / size.width, scale.dy),
+    );
+    if (symmetric) {
+      result = result.rescaleRight(-originalDelta);
+    }
+    return result;
+  }
+
+  @override
+  Layout rescaleRight(Offset delta, {bool symmetric = false}) {
+    Offset originalDelta = delta;
+    delta = delta.onlyX();
+    Layout result = AbsoluteLayout(
+      offset: offset,
+      size: size,
+      rotation: rotation,
+      scale: Offset(scale.dx + delta.dx / size.width, scale.dy),
+    );
+    if (symmetric) {
+      result = result.rescaleLeft(-originalDelta);
+    }
+    return result;
+  }
+
+  @override
+  Layout rescaleTop(Offset delta, {bool symmetric = false}) {
+    Offset originalDelta = delta;
+    delta = delta.onlyY();
+    Offset rotatedDelta = rotatePoint(delta, rotation);
+    Layout result = AbsoluteLayout(
+      offset: offset + rotatedDelta,
+      size: size,
+      rotation: rotation,
+      scale: Offset(scale.dx, scale.dy - delta.dy / size.height),
+    );
+    if (symmetric) {
+      result = result.rescaleBottom(-originalDelta);
+    }
+    return result;
+  }
+
+  @override
+  Layout rescaleTopLeft(Offset delta,
+      {bool symmetric = false, bool proportional = false}) {
+    if (proportional) {
+      delta = proportionalDelta(delta, aspectRatio);
+    }
+    Layout result = rescaleTop(delta).rescaleLeft(delta);
+    if (symmetric) {
+      result = result.rescaleBottomRight(-delta);
+    }
+    return result;
+  }
+
+  @override
+  Layout rescaleTopRight(Offset delta,
+      {bool symmetric = false, bool proportional = false}) {
+    if (proportional) {
+      delta = proportionalDelta(delta, aspectRatio);
+    }
+    Layout result = rescaleTop(delta).rescaleRight(delta);
+    if (symmetric) {
+      result = result.rescaleBottomLeft(-delta);
+    }
+    return result;
+  }
+
+  @override
+  bool get shouldHandleChildLayout => false;
 }
 
 abstract class CanvasItem {

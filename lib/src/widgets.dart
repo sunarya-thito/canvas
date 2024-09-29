@@ -174,10 +174,12 @@ class CanvasViewport extends StatelessWidget {
 }
 
 class CanvasItemWidget extends StatefulWidget {
+  final CanvasItem? parent;
   final CanvasItem item;
 
   const CanvasItemWidget({
     Key? key,
+    this.parent,
     required this.item,
   }) : super(key: key);
 
@@ -194,6 +196,9 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   }
 
   void _onLayoutChanged() {
+    if (widget.parent?.layout.shouldHandleChildLayout == true) {
+      return;
+    }
     widget.item.layoutNotifier.value.performLayout(widget.item);
   }
 
@@ -232,7 +237,10 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
                     builder: (context, child) {
                       return GroupWidget(
                         children: widget.item.children.map((child) {
-                          return CanvasItemWidget(item: child);
+                          return CanvasItemWidget(
+                            item: child,
+                            parent: widget.item,
+                          );
                         }).toList(),
                       );
                     },
