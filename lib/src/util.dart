@@ -1,6 +1,15 @@
 import 'dart:math';
 
-import 'package:flutter/rendering.dart';
+import 'package:flutter/material.dart';
+
+Size calculateTextSize(TextSpan textSpan,
+    [TextDirection textDirection = TextDirection.ltr]) {
+  final TextPainter textPainter = TextPainter(
+    text: textSpan,
+    textDirection: textDirection,
+  )..layout();
+  return textPainter.size;
+}
 
 Offset rotatePoint(Offset point, double angle) {
   final double cosAngle = cos(angle);
@@ -108,5 +117,56 @@ enum ResizeCursor {
     ResizeCursor cursor = flip(flipX, flipY);
     int index = _findClosestAngle(angle + cursor.angle);
     return _cursorRotations[index];
+  }
+}
+
+class DebugPosition extends StatefulWidget {
+  final Widget child;
+
+  const DebugPosition({Key? key, required this.child}) : super(key: key);
+
+  @override
+  State<DebugPosition> createState() => _DebugPositionState();
+}
+
+class _DebugPositionState extends State<DebugPosition> {
+  Offset? _position;
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      hitTestBehavior: HitTestBehavior.translucent,
+      opaque: false,
+      onEnter: (event) {
+        setState(() {
+          _position = event.localPosition;
+        });
+      },
+      onHover: (event) {
+        setState(() {
+          _position = event.localPosition;
+        });
+      },
+      onExit: (event) {
+        setState(() {
+          _position = null;
+        });
+      },
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          widget.child,
+          if (_position != null)
+            Transform.translate(
+              offset: _position!,
+              child: IgnorePointer(
+                child: Container(
+                  color: Colors.red,
+                  child: Text('$_position'),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

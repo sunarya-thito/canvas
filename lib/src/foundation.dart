@@ -1,5 +1,73 @@
 import 'package:canvas/src/util.dart';
+import 'package:canvas/src/widgets.dart';
 import 'package:flutter/widgets.dart';
+
+class SnappingConfiguration {
+  static const List<double> defaultSnappingAngles = [
+    0,
+    45,
+    90,
+    135,
+    180,
+    225,
+    270,
+    315,
+  ];
+  final bool enableObjectSnapping;
+  final bool enableRotationSnapping;
+  final double threshold;
+  final List<double> angles;
+
+  const SnappingConfiguration({
+    this.enableObjectSnapping = true,
+    this.enableRotationSnapping = true,
+    this.threshold = 10,
+    this.angles = defaultSnappingAngles,
+  });
+
+  double snapAngle(double angle) {
+    double minDiff = double.infinity;
+    double result = angle;
+    for (final snappingAngle in angles) {
+      double diff = (angle - snappingAngle).abs();
+      if (diff < minDiff) {
+        minDiff = diff;
+        result = snappingAngle;
+      }
+    }
+    return result;
+  }
+}
+
+class SnappingPoint {
+  final Offset position;
+  final double angle;
+
+  SnappingPoint({
+    required this.position,
+    required this.angle,
+  });
+
+  Offset? snap(SnappingPoint other, SnappingConfiguration config) {
+    Offset diff = other.position - position;
+    double diffAngle = diff.direction - angle;
+    return null;
+  }
+}
+
+typedef Snapper = Offset? Function(SnappingPoint snappingPoint);
+
+class ReparentDetails {
+  final CanvasItem item;
+  final CanvasItem? oldParent;
+  final CanvasItem? newParent;
+
+  ReparentDetails({
+    required this.item,
+    this.oldParent,
+    this.newParent,
+  });
+}
 
 class LayoutTransform {
   final Offset offset;
@@ -15,6 +83,18 @@ class LayoutTransform {
   });
 
   Size get scaledSize => Size(size.width * scale.dx, size.height * scale.dy);
+
+  Offset transformFromParent(Offset offset) {
+    offset = offset - this.offset;
+    offset = rotatePoint(offset, -rotation);
+    return offset;
+  }
+
+  Offset transformToParent(Offset offset) {
+    offset = rotatePoint(offset, rotation);
+    offset = offset + this.offset;
+    return offset;
+  }
 
   LayoutTransform copyWith({
     Offset? offset,
@@ -37,6 +117,11 @@ class LayoutTransform {
       scale: scale,
       size: size,
     );
+  }
+
+  @override
+  String toString() {
+    return 'LayoutTransform(offset: $offset, rotation: $rotation, scale: $scale, size: $size)';
   }
 }
 
@@ -422,6 +507,55 @@ abstract class CanvasItem {
           parentTransform: transform, rootSelectionOnly: rootSelectionOnly);
     }
   }
+
+  void hitTest(CanvasHitTestResult result, Offset position) {
+    var transform = this.transform;
+    position = position - transform.offset;
+    position = rotatePoint(position, -transform.rotation);
+    hitTestSelf(result, position);
+    hitTestChildren(result, position);
+  }
+
+  void hitTestSelf(CanvasHitTestResult result, Offset position);
+
+  void hitTestChildren(CanvasHitTestResult result, Offset position) {
+    for (final child in children) {
+      child.hitTest(result, position);
+    }
+  }
+
+  CanvasItemNode toNode([CanvasItemNode? parent]) {
+    return CanvasItemNode(parent, this);
+  }
+
+  void visitSnappingPoints(void Function(SnappingPoint snappingPoint) visitor,
+      [LayoutTransform? parentTransform]) {
+    var currentTransform =
+        parentTransform == null ? transform : parentTransform * transform;
+    var scaledSize = currentTransform.scaledSize;
+    Offset topLeft = currentTransform.offset;
+    Offset topRight = currentTransform.offset +
+        rotatePoint(Offset(scaledSize.width, 0), currentTransform.rotation);
+    Offset bottomLeft = currentTransform.offset +
+        rotatePoint(Offset(0, scaledSize.height), currentTransform.rotation);
+    Offset bottomRight = currentTransform.offset +
+        rotatePoint(Offset(scaledSize.width, scaledSize.height),
+            currentTransform.rotation);
+    Offset center = currentTransform.offset +
+        rotatePoint(Offset(scaledSize.width / 2, scaledSize.height / 2),
+            currentTransform.rotation);
+    visitor(SnappingPoint(position: topLeft, angle: currentTransform.rotation));
+    visitor(
+        SnappingPoint(position: topRight, angle: currentTransform.rotation));
+    visitor(
+        SnappingPoint(position: bottomLeft, angle: currentTransform.rotation));
+    visitor(
+        SnappingPoint(position: bottomRight, angle: currentTransform.rotation));
+    visitor(SnappingPoint(position: center, angle: currentTransform.rotation));
+    for (final child in children) {
+      child.visitSnappingPoints(visitor, currentTransform);
+    }
+  }
 }
 
 class RootCanvasItem extends CanvasItem {
@@ -432,15 +566,20 @@ class RootCanvasItem extends CanvasItem {
     this.children = children;
     this.layout = layout;
   }
+
+  @override
+  void hitTestSelf(CanvasHitTestResult result, Offset position) {}
 }
 
 class BoxCanvasItem extends CanvasItem {
   final Widget? decoration;
+  final String? debugLabel;
   BoxCanvasItem({
     this.decoration,
     List<CanvasItem> children = const [],
     required Layout layout,
     bool selected = false,
+    this.debugLabel,
   }) {
     this.children = children;
     this.layout = layout;
@@ -448,8 +587,24 @@ class BoxCanvasItem extends CanvasItem {
   }
 
   @override
+  void hitTestSelf(CanvasHitTestResult result, Offset position) {
+    var scaledSize = transform.scaledSize;
+    if (position.dx >= 0 &&
+        position.dx <= scaledSize.width &&
+        position.dy >= 0 &&
+        position.dy <= scaledSize.height) {
+      result.path.add(CanvasHitTestEntry(this, position));
+    }
+  }
+
+  @override
   Widget? build(BuildContext context) {
     return decoration;
+  }
+
+  @override
+  String toString() {
+    return 'BoxCanvasItem($debugLabel)';
   }
 }
 

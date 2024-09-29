@@ -101,12 +101,21 @@ class _StandardTransformControlWidgetState
             child: GroupWidget(
               children: [
                 _buildSelection(context),
-                for (final child in widget.item.children)
-                  StandardTransformControlWidget(
-                    item: child,
-                    parent: widget.item,
-                    parentRotation: globalRotation,
-                  ),
+                ListenableBuilder(
+                  listenable: widget.item.childrenNotifier,
+                  builder: (context, child) {
+                    return GroupWidget(
+                      children: [
+                        for (final child in widget.item.children)
+                          StandardTransformControlWidget(
+                            item: child,
+                            parent: widget.item,
+                            parentRotation: globalRotation,
+                          ),
+                      ],
+                    );
+                  },
+                ),
                 if (widget.item.selected) ..._buildControls(context),
               ],
             ),
@@ -540,124 +549,35 @@ class _StandardTransformControlWidgetState
       size.height < 0 ? size.height : 0,
     );
     size = size.abs();
-    return ListenableBuilder(
-        listenable: widget.item.selectedNotifier,
-        builder: (context, child) {
-          return Transform.translate(
-            offset: flipOffset,
-            child: MouseRegion(
-              hitTestBehavior: HitTestBehavior.translucent,
-              cursor: widget.item.selected
-                  ? SystemMouseCursors.move
-                  : SystemMouseCursors.click,
-              opaque: false,
-              onEnter: (_) {
-                setState(() {
-                  _hover = true;
-                });
-              },
-              onExit: (_) {
-                setState(() {
-                  _hover = false;
-                });
-              },
-              child: IgnorePointer(
-                child: SizedBox.fromSize(
-                  size: size,
-                  child: Container(
-                    decoration: _hover || widget.item.selected
-                        ? theme.selectionDecoration
-                        : null,
-                  ),
-                ),
-              ),
+    return Transform.translate(
+      offset: flipOffset,
+      child: MouseRegion(
+        hitTestBehavior: HitTestBehavior.translucent,
+        cursor: widget.item.selected
+            ? SystemMouseCursors.move
+            : SystemMouseCursors.click,
+        opaque: false,
+        onEnter: (_) {
+          setState(() {
+            _hover = true;
+          });
+        },
+        onExit: (_) {
+          setState(() {
+            _hover = false;
+          });
+        },
+        child: IgnorePointer(
+          child: SizedBox.fromSize(
+            size: size,
+            child: Container(
+              decoration: _hover || widget.item.selected
+                  ? theme.selectionDecoration
+                  : null,
             ),
-          );
-          return Transform.translate(
-            offset: flipOffset,
-            child: MouseRegion(
-              hitTestBehavior: HitTestBehavior.translucent,
-              cursor: widget.item.selected
-                  ? SystemMouseCursors.move
-                  : SystemMouseCursors.click,
-              onEnter: (_) {
-                setState(() {
-                  _hover = true;
-                });
-              },
-              onExit: (_) {
-                setState(() {
-                  _hover = false;
-                });
-              },
-              child: GestureDetector(
-                onTap: () {
-                  if (viewportData.multiSelect) {
-                    widget.item.selected = !widget.item.selected;
-                  } else {
-                    viewportData.visit(
-                      (item) {
-                        item.selected = item == widget.item;
-                      },
-                    );
-                  }
-                },
-                child: PanGesture(
-                  onPanStart: (_) {
-                    if (!widget.item.selected) {
-                      if (viewportData.multiSelect) {
-                        widget.item.selected = !widget.item.selected;
-                      } else {
-                        viewportData.visit(
-                          (item) {
-                            item.selected = item == widget.item;
-                          },
-                        );
-                      }
-                    }
-                    _session =
-                        viewportData.beginTransform(rootSelectionOnly: true);
-                    _totalOffset = Offset.zero;
-                  },
-                  onPanUpdate: (details) {
-                    Offset delta = details.delta;
-                    delta = rotatePoint(delta, globalRotation);
-                    _totalOffset = _totalOffset! + delta;
-                    _session!.visit(
-                      (node) {
-                        Offset localDelta = _totalOffset!;
-                        if (node.parentTransform != null) {
-                          localDelta = rotatePoint(
-                              localDelta, -node.parentTransform!.rotation);
-                        }
-                        node.newLayout = node.layout.drag(localDelta);
-                      },
-                    );
-                    _session!.apply();
-                  },
-                  onPanEnd: (_) {
-                    _totalOffset = null;
-                    _session = null;
-                  },
-                  onPanCancel: () {
-                    if (_session != null) {
-                      _session!.reset();
-                    }
-                    _totalOffset = null;
-                    _session = null;
-                  },
-                  child: SizedBox.fromSize(
-                    size: size,
-                    child: Container(
-                      decoration: _hover || widget.item.selected
-                          ? theme.selectionDecoration
-                          : null,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        });
+          ),
+        ),
+      ),
+    );
   }
 }

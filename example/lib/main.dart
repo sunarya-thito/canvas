@@ -48,6 +48,7 @@ class _CanvasExampleState extends State<CanvasExample>
     _controller = CanvasController(
       children: [
         BoxCanvasItem(
+            debugLabel: 'Red',
             decoration: GestureDetector(
               onTap: () {
                 print('Red tapped');
@@ -67,22 +68,30 @@ class _CanvasExampleState extends State<CanvasExample>
             ),
             children: [
               BoxCanvasItem(
+                debugLabel: 'Green',
                 decoration: GestureDetector(
                   onTap: () {
                     print('Green tapped');
                   },
                   child: Container(
                     color: Colors.green,
+                    child: Center(
+                      child: Text('Green'),
+                    ),
                   ),
                 ),
                 children: [
                   BoxCanvasItem(
+                    debugLabel: 'Orange',
                     decoration: GestureDetector(
                       onTap: () {
                         print('Orange tapped');
                       },
                       child: Container(
                         color: Colors.orange,
+                        child: Center(
+                          child: Text('Orange'),
+                        ),
                       ),
                     ),
                     layout: AbsoluteLayout(
@@ -100,53 +109,66 @@ class _CanvasExampleState extends State<CanvasExample>
               ),
             ]),
         BoxCanvasItem(
-            decoration: GestureDetector(
-              onTap: () {
-                print('Purple tapped');
-              },
-              child: Container(
-                color: Colors.purple,
+          debugLabel: 'Purple',
+          decoration: GestureDetector(
+            onTap: () {
+              print('Purple tapped');
+            },
+            child: Container(
+              color: Colors.purple,
+              child: Center(
+                child: Text('Purple'),
               ),
             ),
-            layout: AbsoluteLayout(
-              offset: Offset(200, 0),
-              size: Size(100, 100),
-              scale: Offset(1, 1),
-              rotation: _degToRad(25),
-            ),
-            children: [
-              BoxCanvasItem(
-                decoration: GestureDetector(
-                  onTap: () {
-                    print('Yellow tapped');
-                  },
-                  child: Container(
-                    color: Colors.yellow,
+          ),
+          layout: AbsoluteLayout(
+            offset: Offset(200, 0),
+            size: Size(100, 100),
+            scale: Offset(1, 1),
+            rotation: _degToRad(25),
+          ),
+          children: [
+            BoxCanvasItem(
+              debugLabel: 'Yellow',
+              decoration: GestureDetector(
+                onTap: () {
+                  print('Yellow tapped');
+                },
+                child: Container(
+                  color: Colors.yellow,
+                  child: Center(
+                    child: Text('Yellow'),
                   ),
                 ),
-                children: [
-                  BoxCanvasItem(
-                    decoration: GestureDetector(
-                      onTap: () {
-                        print('Blue tapped');
-                      },
-                      child: Container(
-                        color: Colors.blue,
+              ),
+              children: [
+                BoxCanvasItem(
+                  debugLabel: 'Blue',
+                  decoration: GestureDetector(
+                    onTap: () {
+                      print('Blue tapped');
+                    },
+                    child: Container(
+                      color: Colors.blue,
+                      child: Center(
+                        child: Text('Blue'),
                       ),
                     ),
-                    layout: AbsoluteLayout(
-                      offset: Offset(50, 50),
-                      size: Size(50, 50),
-                    ),
                   ),
-                ],
-                layout: AbsoluteLayout(
-                  offset: Offset(100, 100),
-                  size: Size(50, 50),
-                  scale: Offset(2, 2),
+                  layout: AbsoluteLayout(
+                    offset: Offset(50, 50),
+                    size: Size(50, 50),
+                  ),
                 ),
+              ],
+              layout: AbsoluteLayout(
+                offset: Offset(100, 100),
+                size: Size(50, 50),
+                scale: Offset(2, 2),
               ),
-            ]),
+            ),
+          ],
+        ),
       ],
     );
   }

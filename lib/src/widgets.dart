@@ -66,6 +66,17 @@ class TransformNode {
   TransformNode(this.item, this.transform, this.parentTransform, this.layout);
 }
 
+class CanvasHitTestEntry {
+  final CanvasItem item;
+  final Offset localPosition;
+
+  CanvasHitTestEntry(this.item, this.localPosition);
+}
+
+class CanvasHitTestResult {
+  final List<CanvasHitTestEntry> path = [];
+}
+
 class CanvasViewportData extends InheritedWidget {
   final CanvasController controller;
   final ResizeMode resizeMode;
@@ -73,17 +84,19 @@ class CanvasViewportData extends InheritedWidget {
   final bool multiSelect;
   final bool symmetricResize;
   final bool proportionalResize;
+  final EventConsumer<ReparentDetails>? onReparent;
 
   const CanvasViewportData({
-    Key? key,
+    super.key,
     required this.controller,
     required this.resizeMode,
     required this.transformControl,
     required this.multiSelect,
     required this.symmetricResize,
     required this.proportionalResize,
-    required Widget child,
-  }) : super(key: key, child: child);
+    required this.onReparent,
+    required super.child,
+  });
 
   void visit(void Function(CanvasItem item) visitor) {
     controller._root.visit(visitor);
@@ -94,6 +107,14 @@ class CanvasViewportData extends InheritedWidget {
       {bool rootSelectionOnly = false}) {
     controller._root
         .visitWithTransform(visitor, rootSelectionOnly: rootSelectionOnly);
+  }
+
+  void visitSnappingPoints(void Function(SnappingPoint snappingPoint) visitor) {
+    controller._root.visitSnappingPoints(visitor);
+  }
+
+  void hitTest(CanvasHitTestResult result, Offset position) {
+    controller._root.hitTest(result, position);
   }
 
   TransformSession beginTransform(
@@ -125,6 +146,8 @@ class CanvasViewportData extends InheritedWidget {
 
 enum ResizeMode { resize, scale }
 
+typedef EventConsumer<T> = bool Function(T details);
+
 class CanvasViewport extends StatelessWidget {
   final CanvasController controller;
   final AlignmentGeometry alignment;
@@ -133,6 +156,7 @@ class CanvasViewport extends StatelessWidget {
   final bool multiSelect;
   final bool symmetricResize;
   final bool proportionalResize;
+  final EventConsumer<ReparentDetails>? onReparent;
 
   const CanvasViewport({
     Key? key,
@@ -143,6 +167,7 @@ class CanvasViewport extends StatelessWidget {
     this.multiSelect = false,
     this.symmetricResize = false,
     this.proportionalResize = false,
+    this.onReparent,
   }) : super(key: key);
 
   @override
@@ -156,6 +181,7 @@ class CanvasViewport extends StatelessWidget {
       multiSelect: multiSelect,
       symmetricResize: symmetricResize,
       proportionalResize: proportionalResize,
+      onReparent: onReparent,
       child: LayoutBuilder(
         builder: (context, constraints) {
           var offset = resolvedAlignment.alongSize(constraints.biggest);
@@ -164,7 +190,10 @@ class CanvasViewport extends StatelessWidget {
             child: GroupWidget(
               children: [
                 CanvasItemWidget(item: controller._root),
-                _CanvasItemBoundingBox(item: controller._root),
+                _CanvasItemBoundingBox(
+                  item: controller._root,
+                  node: controller._root.toNode(),
+                ),
                 transformControl.build(context, controller._root),
               ],
             ),
@@ -175,12 +204,66 @@ class CanvasViewport extends StatelessWidget {
   }
 }
 
+class CanvasItemNode {
+  final CanvasItemNode? parent;
+  final CanvasItem item;
+  final List<CanvasItemNode> children = [];
+
+  CanvasItemNode(this.parent, this.item);
+
+  void initState() {
+    item.childrenNotifier.addListener(_handleChildrenChanged);
+    _handleChildrenChanged();
+  }
+
+  void _handleChildrenChanged() {
+    children.clear();
+    for (var child in item.children) {
+      children.add(child.toNode(this));
+    }
+  }
+
+  void dispose() {
+    item.childrenNotifier.removeListener(_handleChildrenChanged);
+  }
+
+  Offset toGlobal(Offset local) {
+    CanvasItemNode? current = this;
+    while (current != null) {
+      local = current.item.transform.transformToParent(local);
+      current = current.parent;
+    }
+    return local;
+  }
+
+  Offset toLocal(Offset global) {
+    CanvasItemNode? current = this;
+    while (current != null) {
+      global = current.item.transform.transformFromParent(global);
+      current = current.parent;
+    }
+    return global;
+  }
+
+  bool contains(Offset localPosition) {
+    var scaledSize = item.transform.scaledSize;
+    return localPosition.dx >= 0 &&
+        localPosition.dy >= 0 &&
+        localPosition.dx <= scaledSize.width &&
+        localPosition.dy <= scaledSize.height;
+  }
+}
+
 class _CanvasItemBoundingBox extends StatefulWidget {
   final CanvasItem item;
   final double parentRotation;
+  final CanvasItemNode node;
 
   const _CanvasItemBoundingBox(
-      {Key? key, required this.item, this.parentRotation = 0})
+      {Key? key,
+      required this.item,
+      this.parentRotation = 0,
+      required this.node})
       : super(key: key);
 
   @override
@@ -193,6 +276,27 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
 
   double get globalRotation {
     return widget.item.transform.rotation + widget.parentRotation;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.node.initState();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CanvasItemBoundingBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item != widget.item) {
+      oldWidget.node.dispose();
+      widget.node.initState();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.node.dispose();
+    super.dispose();
   }
 
   @override
@@ -230,6 +334,11 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
                         );
                       }
                     },
+                    onTapDown: (details) {
+                      var position =
+                          widget.node.toGlobal(details.localPosition);
+                      print('down at $position');
+                    },
                     child: PanGesture(
                       onPanStart: (details) {
                         if (!widget.item.selected) {
@@ -266,6 +375,15 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
                       onPanEnd: (details) {
                         _session = null;
                         _totalOffset = null;
+                        CanvasHitTestResult result = CanvasHitTestResult();
+                        var position =
+                            widget.node.toGlobal(details.localPosition);
+                        viewportData.hitTest(result, position);
+                        print('count: ${result.path.length} at $position');
+                        print('--------------');
+                        for (final entry in result.path) {
+                          print(entry.item);
+                        }
                       },
                       onPanCancel: () {
                         if (_session != null) {
@@ -274,17 +392,30 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
                         }
                         _totalOffset = null;
                       },
-                      child: SizedBox.fromSize(
-                        size: size,
+                      child: MetaData(
+                        metaData: this,
+                        child: SizedBox.fromSize(
+                          size: size,
+                        ),
                       ),
                     ),
                   ),
                 ),
-                for (var child in widget.item.children)
-                  _CanvasItemBoundingBox(
-                    item: child,
-                    parentRotation: globalRotation,
-                  ),
+                ListenableBuilder(
+                  listenable: widget.item.childrenNotifier,
+                  builder: (context, child) {
+                    return GroupWidget(
+                      children: [
+                        for (var child in widget.node.children)
+                          _CanvasItemBoundingBox(
+                            item: child.item,
+                            parentRotation: globalRotation,
+                            node: child,
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -317,10 +448,6 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   }
 
   void _onLayoutChanged() {
-    if (widget.parent?.layout.shouldHandleChildLayout == true) {
-      widget.parent!.layoutNotifier.value.performLayout(widget.parent!);
-      return;
-    }
     widget.item.layoutNotifier.value.performLayout(widget.item);
   }
 
