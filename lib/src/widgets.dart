@@ -197,6 +197,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
 
   void _onLayoutChanged() {
     if (widget.parent?.layout.shouldHandleChildLayout == true) {
+      widget.parent!.layoutNotifier.value.performLayout(widget.parent!);
       return;
     }
     widget.item.layoutNotifier.value.performLayout(widget.item);
