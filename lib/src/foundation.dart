@@ -42,7 +42,8 @@ class LayoutTransform {
 
 abstract class Layout {
   const Layout();
-  void performLayout(CanvasItem item);
+  void performLayout(CanvasItem item, [CanvasItem? parent]);
+  void performSelfLayout(CanvasItem item);
   Layout drag(Offset delta);
   Layout rotate(double delta, [Alignment alignment = Alignment.center]);
   Layout resizeTopLeft(Offset delta,
@@ -93,7 +94,16 @@ class AbsoluteLayout extends Layout {
   }
 
   @override
-  void performLayout(CanvasItem item) {
+  void performLayout(CanvasItem item, [CanvasItem? parent]) {
+    if (parent != null && parent.layout.shouldHandleChildLayout) {
+      parent.layoutNotifier.value.performLayout(parent);
+      return;
+    }
+    performSelfLayout(item);
+  }
+
+  @override
+  void performSelfLayout(CanvasItem item) {
     item.transform = LayoutTransform(
       offset: offset,
       size: size,

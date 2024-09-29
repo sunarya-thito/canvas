@@ -86,6 +86,39 @@ List<MouseCursor> _cursorRotations = [
   SystemMouseCursors.resizeUpLeft, // 315
 ];
 
+List<MouseCursor> _horizontalFlipCursorRotations = [
+  SystemMouseCursors.resizeUpDown, // 0
+  SystemMouseCursors.resizeUpLeft, // 45
+  SystemMouseCursors.resizeLeftRight, // 90
+  SystemMouseCursors.resizeDownLeft, // 135
+  SystemMouseCursors.resizeUpDown, // 180
+  SystemMouseCursors.resizeDownRight, // 225
+  SystemMouseCursors.resizeLeftRight, // 270
+  SystemMouseCursors.resizeUpRight, // 315
+];
+
+List<MouseCursor> _verticalFlipCursorRotations = [
+  SystemMouseCursors.resizeUpDown, // 0
+  SystemMouseCursors.resizeDownRight, // 45
+  SystemMouseCursors.resizeLeftRight, // 90
+  SystemMouseCursors.resizeUpRight, // 135
+  SystemMouseCursors.resizeUpDown, // 180
+  SystemMouseCursors.resizeUpLeft, // 225
+  SystemMouseCursors.resizeLeftRight, // 270
+  SystemMouseCursors.resizeDownLeft, // 315
+];
+
+List<MouseCursor> _bothFlipCursorRotations = [
+  SystemMouseCursors.resizeUpDown, // 0
+  SystemMouseCursors.resizeDownLeft, // 45
+  SystemMouseCursors.resizeLeftRight, // 90
+  SystemMouseCursors.resizeUpLeft, // 135
+  SystemMouseCursors.resizeUpDown, // 180
+  SystemMouseCursors.resizeUpRight, // 225
+  SystemMouseCursors.resizeLeftRight, // 270
+  SystemMouseCursors.resizeDownRight, // 315
+];
+
 enum _MouseCursor {
   _top,
   _topRight,
@@ -100,9 +133,18 @@ enum _MouseCursor {
     return index * 45 * pi / 180;
   }
 
-  MouseCursor _rotate(double angle) {
+  MouseCursor _rotate(double angle, bool flipX, bool flipY) {
     angle += this.angle;
-    return _cursorRotations[_findClosestAngle(angle)];
+    var findClosestAngle = _findClosestAngle(angle);
+    if (flipX && flipY) {
+      return _bothFlipCursorRotations[findClosestAngle];
+    } else if (flipX) {
+      return _horizontalFlipCursorRotations[findClosestAngle];
+    } else if (flipY) {
+      return _verticalFlipCursorRotations[findClosestAngle];
+    } else {
+      return _cursorRotations[findClosestAngle];
+    }
   }
 }
 
@@ -161,6 +203,7 @@ class _StandardTransformControlWidgetState
   Widget _wrapWithPanHandler({
     required Widget child,
     required void Function(TransformNode node, Offset delta) visitor,
+    String? debugName,
   }) {
     return PanGesture(
       onPanStart: (details) {
@@ -197,6 +240,10 @@ class _StandardTransformControlWidgetState
     return child;
   }
 
+  double _normalizeSize(double size) {
+    return size <= 0 ? 0 : size;
+  }
+
   bool get _isScaling => viewportData.resizeMode == ResizeMode.scale;
 
   List<Widget> _buildControls(BuildContext context) {
@@ -206,12 +253,19 @@ class _StandardTransformControlWidgetState
     Offset sizeRotation =
         Offset(theme.rotationHandleSize.width, theme.rotationHandleSize.height);
     Size size = widget.item.transform.scaledSize;
+    double xStart = 0;
+    double xEnd = size.width;
+    double yStart = 0;
+    double yEnd = size.height;
+    bool flipX = size.width < 0;
+    bool flipY = size.height < 0;
     return [
       // top left rotation
       Transform.translate(
-        offset: -halfSize - sizeRotation,
+        offset: Offset(xStart, yStart) - halfSize - sizeRotation,
         child: MouseRegion(
-          cursor: _MouseCursor._bottomLeft._rotate(globalRotation),
+          cursor:
+              _MouseCursor._bottomLeft._rotate(globalRotation, flipX, flipY),
           child: SizedBox(
             width: theme.rotationHandleSize.width,
             height: theme.rotationHandleSize.height,
@@ -220,10 +274,11 @@ class _StandardTransformControlWidgetState
       ),
       // top right rotation
       Transform.translate(
-        offset:
-            Offset(size.width + halfSize.dx, -halfSize.dy - sizeRotation.dy),
+        offset: Offset(xEnd, yStart) +
+            Offset(halfSize.dx, -halfSize.dy - sizeRotation.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._bottomRight._rotate(globalRotation),
+          cursor:
+              _MouseCursor._bottomRight._rotate(globalRotation, flipX, flipY),
           child: SizedBox(
             width: theme.rotationHandleSize.width,
             height: theme.rotationHandleSize.height,
@@ -232,9 +287,9 @@ class _StandardTransformControlWidgetState
       ),
       // bottom right rotation
       Transform.translate(
-        offset: Offset(size.width + halfSize.dx, size.height + halfSize.dy),
+        offset: Offset(xEnd, yEnd) + Offset(halfSize.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._topRight._rotate(globalRotation),
+          cursor: _MouseCursor._topRight._rotate(globalRotation, flipX, flipY),
           child: SizedBox(
             width: theme.rotationHandleSize.width,
             height: theme.rotationHandleSize.height,
@@ -243,10 +298,10 @@ class _StandardTransformControlWidgetState
       ),
       // bottom left rotation
       Transform.translate(
-        offset:
-            Offset(-halfSize.dx - sizeRotation.dx, size.height + halfSize.dy),
+        offset: Offset(xStart, yEnd) +
+            Offset(-halfSize.dx - sizeRotation.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._topLeft._rotate(globalRotation),
+          cursor: _MouseCursor._topLeft._rotate(globalRotation, flipX, flipY),
           child: SizedBox(
             width: theme.rotationHandleSize.width,
             height: theme.rotationHandleSize.height,
@@ -255,10 +310,11 @@ class _StandardTransformControlWidgetState
       ),
       // top
       Transform.translate(
-        offset: Offset(halfSize.dx, -halfSize.dy),
+        offset: Offset(0, yStart) + Offset(halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._top._rotate(globalRotation),
+          cursor: _MouseCursor._top._rotate(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
+            debugName: 'top',
             visitor: (node, delta) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleTop(
@@ -273,7 +329,7 @@ class _StandardTransformControlWidgetState
               );
             },
             child: SizedBox(
-              width: size.width - handleSize.dx,
+              width: _normalizeSize(size.width - handleSize.dx),
               height: theme.handleSize.height,
             ),
           ),
@@ -281,10 +337,11 @@ class _StandardTransformControlWidgetState
       ),
       // right
       Transform.translate(
-        offset: Offset(size.width - halfSize.dx, halfSize.dy),
+        offset: Offset(xEnd, 0) + Offset(-halfSize.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._right._rotate(globalRotation),
+          cursor: _MouseCursor._right._rotate(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
+            debugName: 'right',
             visitor: (node, delta) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleRight(
@@ -300,17 +357,18 @@ class _StandardTransformControlWidgetState
             },
             child: SizedBox(
               width: theme.handleSize.width,
-              height: size.height - handleSize.dy,
+              height: _normalizeSize(size.height - handleSize.dy),
             ),
           ),
         ),
       ),
       // bottom
       Transform.translate(
-        offset: Offset(halfSize.dx, size.height - halfSize.dy),
+        offset: Offset(0, yEnd) + Offset(halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._bottom._rotate(globalRotation),
+          cursor: _MouseCursor._bottom._rotate(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
+            debugName: 'bottom',
             visitor: (node, delta) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleBottom(
@@ -325,7 +383,7 @@ class _StandardTransformControlWidgetState
               );
             },
             child: SizedBox(
-              width: size.width - handleSize.dx,
+              width: _normalizeSize(size.width - handleSize.dx),
               height: theme.handleSize.height,
             ),
           ),
@@ -333,10 +391,11 @@ class _StandardTransformControlWidgetState
       ),
       // left
       Transform.translate(
-        offset: Offset(-halfSize.dx, halfSize.dy),
+        offset: Offset(xStart, 0) + Offset(-halfSize.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._left._rotate(globalRotation),
+          cursor: _MouseCursor._left._rotate(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
+            debugName: 'left',
             visitor: (node, delta) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleLeft(
@@ -352,18 +411,18 @@ class _StandardTransformControlWidgetState
             },
             child: SizedBox(
               width: theme.handleSize.width,
-              // height: rect.height - theme.handleSize.height,
-              height: size.height - handleSize.dy,
+              height: _normalizeSize(size.height - handleSize.dy),
             ),
           ),
         ),
       ),
       // top left
       Transform.translate(
-        offset: -halfSize,
+        offset: Offset(xStart, yStart) - halfSize,
         child: MouseRegion(
-          cursor: _MouseCursor._topLeft._rotate(globalRotation),
+          cursor: _MouseCursor._topLeft._rotate(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
+            debugName: 'top left',
             visitor: (node, delta) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleTopLeft(
@@ -390,10 +449,11 @@ class _StandardTransformControlWidgetState
       ),
       // top right
       Transform.translate(
-        offset: Offset(size.width - halfSize.dx, -halfSize.dy),
+        offset: Offset(xEnd, yStart) + Offset(-halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._topRight._rotate(globalRotation),
+          cursor: _MouseCursor._topRight._rotate(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
+            debugName: 'top right',
             visitor: (node, delta) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleTopRight(
@@ -420,10 +480,12 @@ class _StandardTransformControlWidgetState
       ),
       // bottom left
       Transform.translate(
-        offset: Offset(-halfSize.dx, size.height - halfSize.dy),
+        offset: Offset(xStart, yEnd) + Offset(-halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._bottomLeft._rotate(globalRotation),
+          cursor:
+              _MouseCursor._bottomLeft._rotate(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
+            debugName: 'bottom left',
             visitor: (node, delta) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleBottomLeft(
@@ -450,10 +512,12 @@ class _StandardTransformControlWidgetState
       ),
       // bottom right
       Transform.translate(
-        offset: Offset(size.width - halfSize.dx, size.height - halfSize.dy),
+        offset: Offset(xEnd, yEnd) + Offset(-halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._bottomRight._rotate(globalRotation),
+          cursor:
+              _MouseCursor._bottomRight._rotate(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
+            debugName: 'bottom right',
             visitor: (node, delta) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleBottomRight(
@@ -483,86 +547,94 @@ class _StandardTransformControlWidgetState
 
   Widget _buildSelection(BuildContext context) {
     Size size = widget.item.transform.scaledSize;
+    Offset flipOffset = Offset(
+      size.width < 0 ? size.width : 0,
+      size.height < 0 ? size.height : 0,
+    );
+    size = size.abs();
     return ListenableBuilder(
         listenable: widget.item.selectedNotifier,
         builder: (context, child) {
-          return MouseRegion(
-            hitTestBehavior: HitTestBehavior.translucent,
-            cursor: widget.item.selected
-                ? SystemMouseCursors.move
-                : SystemMouseCursors.click,
-            onEnter: (_) {
-              setState(() {
-                _hover = true;
-              });
-            },
-            onExit: (_) {
-              setState(() {
-                _hover = false;
-              });
-            },
-            child: GestureDetector(
-              onTap: () {
-                if (viewportData.multiSelect) {
-                  widget.item.selected = !widget.item.selected;
-                } else {
-                  viewportData.visit(
-                    (item) {
-                      item.selected = item == widget.item;
-                    },
-                  );
-                }
+          return Transform.translate(
+            offset: flipOffset,
+            child: MouseRegion(
+              hitTestBehavior: HitTestBehavior.translucent,
+              cursor: widget.item.selected
+                  ? SystemMouseCursors.move
+                  : SystemMouseCursors.click,
+              onEnter: (_) {
+                setState(() {
+                  _hover = true;
+                });
               },
-              child: PanGesture(
-                onPanStart: (_) {
-                  if (!widget.item.selected) {
-                    if (viewportData.multiSelect) {
-                      widget.item.selected = !widget.item.selected;
-                    } else {
-                      viewportData.visit(
-                        (item) {
-                          item.selected = item == widget.item;
-                        },
-                      );
-                    }
+              onExit: (_) {
+                setState(() {
+                  _hover = false;
+                });
+              },
+              child: GestureDetector(
+                onTap: () {
+                  if (viewportData.multiSelect) {
+                    widget.item.selected = !widget.item.selected;
+                  } else {
+                    viewportData.visit(
+                      (item) {
+                        item.selected = item == widget.item;
+                      },
+                    );
                   }
-                  _session =
-                      viewportData.beginTransform(rootSelectionOnly: true);
-                  _totalOffset = Offset.zero;
                 },
-                onPanUpdate: (details) {
-                  Offset delta = details.delta;
-                  delta = rotatePoint(delta, globalRotation);
-                  _totalOffset = _totalOffset! + delta;
-                  _session!.visit(
-                    (node) {
-                      Offset localDelta = _totalOffset!;
-                      if (node.parentTransform != null) {
-                        localDelta = rotatePoint(
-                            localDelta, -node.parentTransform!.rotation);
+                child: PanGesture(
+                  onPanStart: (_) {
+                    if (!widget.item.selected) {
+                      if (viewportData.multiSelect) {
+                        widget.item.selected = !widget.item.selected;
+                      } else {
+                        viewportData.visit(
+                          (item) {
+                            item.selected = item == widget.item;
+                          },
+                        );
                       }
-                      node.newLayout = node.layout.drag(localDelta);
-                    },
-                  );
-                  _session!.apply();
-                },
-                onPanEnd: (_) {
-                  _totalOffset = null;
-                  _session = null;
-                },
-                onPanCancel: () {
-                  if (_session != null) {
-                    _session!.reset();
-                  }
-                  _totalOffset = null;
-                  _session = null;
-                },
-                child: SizedBox.fromSize(
-                  size: size,
-                  child: Container(
-                    decoration: _hover || widget.item.selected
-                        ? theme.selectionDecoration
-                        : null,
+                    }
+                    _session =
+                        viewportData.beginTransform(rootSelectionOnly: true);
+                    _totalOffset = Offset.zero;
+                  },
+                  onPanUpdate: (details) {
+                    Offset delta = details.delta;
+                    delta = rotatePoint(delta, globalRotation);
+                    _totalOffset = _totalOffset! + delta;
+                    _session!.visit(
+                      (node) {
+                        Offset localDelta = _totalOffset!;
+                        if (node.parentTransform != null) {
+                          localDelta = rotatePoint(
+                              localDelta, -node.parentTransform!.rotation);
+                        }
+                        node.newLayout = node.layout.drag(localDelta);
+                      },
+                    );
+                    _session!.apply();
+                  },
+                  onPanEnd: (_) {
+                    _totalOffset = null;
+                    _session = null;
+                  },
+                  onPanCancel: () {
+                    if (_session != null) {
+                      _session!.reset();
+                    }
+                    _totalOffset = null;
+                    _session = null;
+                  },
+                  child: SizedBox.fromSize(
+                    size: size,
+                    child: Container(
+                      decoration: _hover || widget.item.selected
+                          ? theme.selectionDecoration
+                          : null,
+                    ),
                   ),
                 ),
               ),
