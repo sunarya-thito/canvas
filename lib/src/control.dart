@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/helper_widget.dart';
 import 'package:canvas/src/util.dart';
@@ -64,82 +62,6 @@ class StandardTransformControlWidget extends StatefulWidget {
   @override
   State<StandardTransformControlWidget> createState() =>
       _StandardTransformControlWidgetState();
-}
-
-int _findClosestAngle(double radians) {
-  var degrees = radians * 180 / pi;
-  degrees = degrees % 360;
-  if (degrees < 0) {
-    degrees += 360;
-  }
-  return ((degrees + 22.5) ~/ 45) % 8;
-}
-
-List<MouseCursor> _cursorRotations = [
-  SystemMouseCursors.resizeUpDown, // 0
-  SystemMouseCursors.resizeUpRight, // 45
-  SystemMouseCursors.resizeLeftRight, // 90
-  SystemMouseCursors.resizeDownRight, // 135
-  SystemMouseCursors.resizeUpDown, // 180
-  SystemMouseCursors.resizeDownLeft, // 225
-  SystemMouseCursors.resizeLeftRight, // 270
-  SystemMouseCursors.resizeUpLeft, // 315
-];
-
-const Map<_MouseCursor, _MouseCursor> _flipXMapper = {
-  _MouseCursor._top: _MouseCursor._top,
-  _MouseCursor._topRight: _MouseCursor._topLeft,
-  _MouseCursor._right: _MouseCursor._left,
-  _MouseCursor._bottomRight: _MouseCursor._bottomLeft,
-  _MouseCursor._bottom: _MouseCursor._bottom,
-  _MouseCursor._bottomLeft: _MouseCursor._bottomRight,
-  _MouseCursor._left: _MouseCursor._right,
-  _MouseCursor._topLeft: _MouseCursor._topRight,
-};
-
-const Map<_MouseCursor, _MouseCursor> _flipYMapper = {
-  _MouseCursor._top: _MouseCursor._bottom,
-  _MouseCursor._topRight: _MouseCursor._bottomRight,
-  _MouseCursor._right: _MouseCursor._right,
-  _MouseCursor._bottomRight: _MouseCursor._topRight,
-  _MouseCursor._bottom: _MouseCursor._top,
-  _MouseCursor._bottomLeft: _MouseCursor._topLeft,
-  _MouseCursor._left: _MouseCursor._left,
-  _MouseCursor._topLeft: _MouseCursor._bottomLeft,
-};
-
-enum _MouseCursor {
-  _top,
-  _topRight,
-  _right,
-  _bottomRight,
-  _bottom,
-  _bottomLeft,
-  _left,
-  _topLeft;
-
-  const _MouseCursor();
-
-  double get angle {
-    return index * 45 * pi / 180;
-  }
-
-  _MouseCursor flip(bool flipX, bool flipY) {
-    _MouseCursor cursor = this;
-    if (flipX) {
-      cursor = _flipXMapper[cursor]!;
-    }
-    if (flipY) {
-      cursor = _flipYMapper[cursor]!;
-    }
-    return cursor;
-  }
-
-  MouseCursor _rotate(double angle, bool flipX, bool flipY) {
-    _MouseCursor cursor = flip(flipX, flipY);
-    int index = _findClosestAngle(angle + cursor.angle);
-    return _cursorRotations[index];
-  }
 }
 
 class _StandardTransformControlWidgetState
@@ -258,8 +180,8 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(xStart, yStart) - halfSize - sizeRotation,
         child: MouseRegion(
-          cursor:
-              _MouseCursor._bottomLeft._rotate(globalRotation, flipX, flipY),
+          cursor: ResizeCursor.bottomLeft
+              .getMouseCursor(globalRotation, flipX, flipY),
           child: SizedBox(
             width: theme.rotationHandleSize.width,
             height: theme.rotationHandleSize.height,
@@ -271,8 +193,8 @@ class _StandardTransformControlWidgetState
         offset: Offset(xEnd, yStart) +
             Offset(halfSize.dx, -halfSize.dy - sizeRotation.dy),
         child: MouseRegion(
-          cursor:
-              _MouseCursor._bottomRight._rotate(globalRotation, flipX, flipY),
+          cursor: ResizeCursor.bottomRight
+              .getMouseCursor(globalRotation, flipX, flipY),
           child: SizedBox(
             width: theme.rotationHandleSize.width,
             height: theme.rotationHandleSize.height,
@@ -283,7 +205,8 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(xEnd, yEnd) + Offset(halfSize.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._topRight._rotate(globalRotation, flipX, flipY),
+          cursor: ResizeCursor.topRight
+              .getMouseCursor(globalRotation, flipX, flipY),
           child: SizedBox(
             width: theme.rotationHandleSize.width,
             height: theme.rotationHandleSize.height,
@@ -295,7 +218,8 @@ class _StandardTransformControlWidgetState
         offset: Offset(xStart, yEnd) +
             Offset(-halfSize.dx - sizeRotation.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._topLeft._rotate(globalRotation, flipX, flipY),
+          cursor:
+              ResizeCursor.topLeft.getMouseCursor(globalRotation, flipX, flipY),
           child: SizedBox(
             width: theme.rotationHandleSize.width,
             height: theme.rotationHandleSize.height,
@@ -306,7 +230,7 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(0, yStart) + Offset(halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._top._rotate(globalRotation, flipX, flipY),
+          cursor: ResizeCursor.top.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'top',
             visitor: (node, delta) {
@@ -333,7 +257,8 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(xEnd, 0) + Offset(-halfSize.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._right._rotate(globalRotation, flipX, flipY),
+          cursor:
+              ResizeCursor.right.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'right',
             visitor: (node, delta) {
@@ -360,7 +285,8 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(0, yEnd) + Offset(halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._bottom._rotate(globalRotation, flipX, flipY),
+          cursor:
+              ResizeCursor.bottom.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'bottom',
             visitor: (node, delta) {
@@ -387,7 +313,8 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(xStart, 0) + Offset(-halfSize.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._left._rotate(globalRotation, flipX, flipY),
+          cursor:
+              ResizeCursor.left.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'left',
             visitor: (node, delta) {
@@ -414,7 +341,8 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(xStart, yStart) - halfSize,
         child: MouseRegion(
-          cursor: _MouseCursor._topLeft._rotate(globalRotation, flipX, flipY),
+          cursor:
+              ResizeCursor.topLeft.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'top left',
             visitor: (node, delta) {
@@ -445,7 +373,8 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(xEnd, yStart) + Offset(-halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._topRight._rotate(globalRotation, flipX, flipY),
+          cursor: ResizeCursor.topRight
+              .getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'top right',
             visitor: (node, delta) {
@@ -476,8 +405,8 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(xStart, yEnd) + Offset(-halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor:
-              _MouseCursor._bottomLeft._rotate(globalRotation, flipX, flipY),
+          cursor: ResizeCursor.bottomLeft
+              .getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'bottom left',
             visitor: (node, delta) {
@@ -508,8 +437,8 @@ class _StandardTransformControlWidgetState
       Transform.translate(
         offset: Offset(xEnd, yEnd) + Offset(-halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor:
-              _MouseCursor._bottomRight._rotate(globalRotation, flipX, flipY),
+          cursor: ResizeCursor.bottomRight
+              .getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'bottom right',
             visitor: (node, delta) {
