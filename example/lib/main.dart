@@ -173,9 +173,9 @@ class _CanvasExampleState extends State<CanvasExample>
     );
   }
 
-  bool _multiSelect = false; // using shift
-  bool _proportionalResize = false; // using alt
-  bool _symmetricResize = false; // using ctrl
+  bool _shiftDown = false; // using shift
+  bool _altDown = false; // using alt
+  bool _ctrlDown = false; // using ctrl
   FocusNode _focusNode = FocusNode();
 
   @override
@@ -187,11 +187,11 @@ class _CanvasExampleState extends State<CanvasExample>
             event.logicalKey == LogicalKeyboardKey.shiftRight) {
           if (event is KeyDownEvent) {
             setState(() {
-              _multiSelect = true;
+              _shiftDown = true;
             });
           } else if (event is KeyUpEvent) {
             setState(() {
-              _multiSelect = false;
+              _shiftDown = false;
             });
           }
           return KeyEventResult.handled;
@@ -200,11 +200,11 @@ class _CanvasExampleState extends State<CanvasExample>
             event.logicalKey == LogicalKeyboardKey.altRight) {
           if (event is KeyDownEvent) {
             setState(() {
-              _proportionalResize = true;
+              _altDown = true;
             });
           } else if (event is KeyUpEvent) {
             setState(() {
-              _proportionalResize = false;
+              _altDown = false;
             });
           }
           return KeyEventResult.handled;
@@ -213,11 +213,11 @@ class _CanvasExampleState extends State<CanvasExample>
             event.logicalKey == LogicalKeyboardKey.controlRight) {
           if (event is KeyDownEvent) {
             setState(() {
-              _symmetricResize = true;
+              _ctrlDown = true;
             });
           } else if (event is KeyUpEvent) {
             setState(() {
-              _symmetricResize = false;
+              _ctrlDown = false;
             });
           }
           return KeyEventResult.handled;
@@ -230,10 +230,11 @@ class _CanvasExampleState extends State<CanvasExample>
         },
         child: CanvasViewport(
           controller: _controller,
-          multiSelect: _multiSelect,
+          multiSelect: _shiftDown,
           resizeMode: ResizeMode.scale,
-          proportionalResize: _proportionalResize,
-          symmetricResize: _symmetricResize,
+          proportionalResize: _altDown,
+          symmetricResize: _ctrlDown,
+          anchoredRotate: _altDown,
         ),
       ),
     );

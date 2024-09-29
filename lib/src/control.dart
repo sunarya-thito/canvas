@@ -53,11 +53,11 @@ class StandardTransformControlWidget extends StatefulWidget {
   final double parentRotation;
 
   const StandardTransformControlWidget({
-    Key? key,
+    super.key,
     required this.item,
     this.parent,
     this.parentRotation = 0,
-  }) : super(key: key);
+  });
 
   @override
   State<StandardTransformControlWidget> createState() =>
@@ -164,7 +164,7 @@ class _StandardTransformControlWidgetState
     required Alignment alignment,
   }) {
     Size scaledSize = widget.item.transform.scaledSize;
-    Offset origin = !viewportData.proportionalResize
+    Offset origin = !viewportData.anchoredRotate
         ? Offset(scaledSize.width / 2, scaledSize.height / 2)
         : (alignment * -1).alongSize(scaledSize);
     return PanGesture(
@@ -186,7 +186,7 @@ class _StandardTransformControlWidgetState
           (node) {
             node.newLayout = node.layout.rotate(
                 delta,
-                !viewportData.proportionalResize
+                !viewportData.anchoredRotate
                     ? Alignment.center
                     : alignment * -1);
           },

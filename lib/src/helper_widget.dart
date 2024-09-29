@@ -3,10 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 class GroupWidget extends MultiChildRenderObjectWidget {
-  GroupWidget({
-    Key? key,
-    List<Widget> children = const <Widget>[],
-  }) : super(key: key, children: children);
+  const GroupWidget({
+    super.key,
+    super.children,
+  });
 
   @override
   RenderObject createRenderObject(BuildContext context) {
@@ -99,13 +99,13 @@ class PanGesture extends StatefulWidget {
   final Widget child;
 
   const PanGesture({
-    Key? key,
+    super.key,
     required this.onPanStart,
     required this.onPanUpdate,
     required this.onPanEnd,
     required this.onPanCancel,
     required this.child,
-  }) : super(key: key);
+  });
 
   @override
   State<PanGesture> createState() => _PanGestureState();
@@ -162,10 +162,10 @@ class Box extends StatelessWidget {
   final Widget child;
 
   const Box({
-    Key? key,
+    super.key,
     required this.size,
     required this.child,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

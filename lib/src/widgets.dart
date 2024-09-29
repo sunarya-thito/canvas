@@ -7,7 +7,7 @@ import '../canvas.dart';
 
 class CanvasController implements Listenable {
   final RootCanvasItem _root = RootCanvasItem(
-    layout: AbsoluteLayout(),
+    layout: const AbsoluteLayout(),
   );
 
   CanvasController({List<CanvasItem> children = const []}) {
@@ -84,6 +84,7 @@ class CanvasViewportData extends InheritedWidget {
   final bool multiSelect;
   final bool symmetricResize;
   final bool proportionalResize;
+  final bool anchoredRotate;
   final EventConsumer<ReparentDetails>? onReparent;
 
   const CanvasViewportData({
@@ -94,6 +95,7 @@ class CanvasViewportData extends InheritedWidget {
     required this.multiSelect,
     required this.symmetricResize,
     required this.proportionalResize,
+    required this.anchoredRotate,
     required this.onReparent,
     required super.child,
   });
@@ -156,10 +158,11 @@ class CanvasViewport extends StatelessWidget {
   final bool multiSelect;
   final bool symmetricResize;
   final bool proportionalResize;
+  final bool anchoredRotate;
   final EventConsumer<ReparentDetails>? onReparent;
 
   const CanvasViewport({
-    Key? key,
+    super.key,
     required this.controller,
     this.alignment = Alignment.center,
     this.transformControl = const StandardTransformControl(),
@@ -167,38 +170,42 @@ class CanvasViewport extends StatelessWidget {
     this.multiSelect = false,
     this.symmetricResize = false,
     this.proportionalResize = false,
+    this.anchoredRotate = false,
     this.onReparent,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
     var textDirection = Directionality.of(context);
     var resolvedAlignment = alignment.resolve(textDirection);
-    return CanvasViewportData(
-      controller: controller,
-      resizeMode: resizeMode,
-      transformControl: transformControl,
-      multiSelect: multiSelect,
-      symmetricResize: symmetricResize,
-      proportionalResize: proportionalResize,
-      onReparent: onReparent,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          var offset = resolvedAlignment.alongSize(constraints.biggest);
-          return Transform.translate(
-            offset: offset,
-            child: GroupWidget(
-              children: [
-                CanvasItemWidget(item: controller._root),
-                _CanvasItemBoundingBox(
-                  item: controller._root,
-                  node: controller._root.toNode(),
-                ),
-                transformControl.build(context, controller._root),
-              ],
-            ),
-          );
-        },
+    return ClipRect(
+      child: CanvasViewportData(
+        controller: controller,
+        resizeMode: resizeMode,
+        transformControl: transformControl,
+        multiSelect: multiSelect,
+        symmetricResize: symmetricResize,
+        proportionalResize: proportionalResize,
+        anchoredRotate: anchoredRotate,
+        onReparent: onReparent,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            var offset = resolvedAlignment.alongSize(constraints.biggest);
+            return Transform.translate(
+              offset: offset,
+              child: GroupWidget(
+                children: [
+                  CanvasItemWidget(item: controller._root),
+                  _CanvasItemBoundingBox(
+                    item: controller._root,
+                    node: controller._root.toNode(),
+                  ),
+                  transformControl.build(context, controller._root),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -259,12 +266,11 @@ class _CanvasItemBoundingBox extends StatefulWidget {
   final double parentRotation;
   final CanvasItemNode node;
 
-  const _CanvasItemBoundingBox(
-      {Key? key,
-      required this.item,
-      this.parentRotation = 0,
-      required this.node})
-      : super(key: key);
+  const _CanvasItemBoundingBox({
+    required this.item,
+    this.parentRotation = 0,
+    required this.node,
+  });
 
   @override
   State<_CanvasItemBoundingBox> createState() => _CanvasItemBoundingBoxState();
@@ -334,11 +340,6 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
                         );
                       }
                     },
-                    onTapDown: (details) {
-                      var position =
-                          widget.node.toGlobal(details.localPosition);
-                      print('down at $position');
-                    },
                     child: PanGesture(
                       onPanStart: (details) {
                         if (!widget.item.selected) {
@@ -375,15 +376,10 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
                       onPanEnd: (details) {
                         _session = null;
                         _totalOffset = null;
-                        CanvasHitTestResult result = CanvasHitTestResult();
-                        var position =
-                            widget.node.toGlobal(details.localPosition);
-                        viewportData.hitTest(result, position);
-                        print('count: ${result.path.length} at $position');
-                        print('--------------');
-                        for (final entry in result.path) {
-                          print(entry.item);
-                        }
+                        // CanvasHitTestResult result = CanvasHitTestResult();
+                        // var position =
+                        //     widget.node.toGlobal(details.localPosition);
+                        // viewportData.hitTest(result, position);
                       },
                       onPanCancel: () {
                         if (_session != null) {
@@ -430,10 +426,10 @@ class CanvasItemWidget extends StatefulWidget {
   final CanvasItem item;
 
   const CanvasItemWidget({
-    Key? key,
+    super.key,
     this.parent,
     required this.item,
-  }) : super(key: key);
+  });
 
   @override
   State<CanvasItemWidget> createState() => _CanvasItemWidgetState();

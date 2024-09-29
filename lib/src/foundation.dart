@@ -49,8 +49,6 @@ class SnappingPoint {
   });
 
   Offset? snap(SnappingPoint other, SnappingConfiguration config) {
-    Offset diff = other.position - position;
-    double diffAngle = diff.direction - angle;
     return null;
   }
 }
@@ -465,7 +463,7 @@ class AbsoluteLayout extends Layout {
 }
 
 abstract class CanvasItem {
-  ValueNotifier<Layout> layoutNotifier = ValueNotifier(AbsoluteLayout());
+  ValueNotifier<Layout> layoutNotifier = ValueNotifier(const AbsoluteLayout());
   ValueNotifier<LayoutTransform> transformNotifier =
       ValueNotifier(LayoutTransform());
   ValueNotifier<List<CanvasItem>> childrenNotifier = ValueNotifier([]);
