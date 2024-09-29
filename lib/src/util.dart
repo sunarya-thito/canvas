@@ -10,6 +10,12 @@ Offset rotatePoint(Offset point, double angle) {
   );
 }
 
+Offset proportionalDelta(Offset offset, double aspectRatio) {
+  double dx = offset.dx;
+  double dy = offset.dy;
+  return Offset(min(dx, dy * aspectRatio), min(dy, dx / aspectRatio));
+}
+
 extension OffsetExtension on Offset {
   Offset multiply(Offset other) {
     return Offset(dx * other.dx, dy * other.dy);

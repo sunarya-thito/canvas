@@ -72,6 +72,13 @@ class AbsoluteLayout extends Layout {
     this.scale = const Offset(1, 1),
   });
 
+  Size get scaledSize => Size(size.width * scale.dx, size.height * scale.dy);
+
+  double get aspectRatio {
+    Size scaledSize = this.scaledSize;
+    return scaledSize.width / scaledSize.height;
+  }
+
   @override
   void performLayout(CanvasItem item) {
     item.transform = LayoutTransform(
@@ -121,6 +128,9 @@ class AbsoluteLayout extends Layout {
   @override
   Layout resizeBottomLeft(Offset delta,
       {bool proportional = false, bool symmetric = false}) {
+    if (proportional) {
+      delta = proportionalDelta(delta, aspectRatio);
+    }
     Layout result = resizeBottom(delta).resizeLeft(delta);
     if (symmetric) {
       result = result.resizeTopRight(-delta);
@@ -131,6 +141,9 @@ class AbsoluteLayout extends Layout {
   @override
   Layout resizeBottomRight(Offset delta,
       {bool proportional = false, bool symmetric = false}) {
+    if (proportional) {
+      delta = proportionalDelta(delta, aspectRatio);
+    }
     Layout result = resizeBottom(delta).resizeRight(delta);
     if (symmetric) {
       result = result.resizeTopLeft(-delta);
@@ -194,6 +207,9 @@ class AbsoluteLayout extends Layout {
   @override
   Layout resizeTopLeft(Offset delta,
       {bool proportional = false, bool symmetric = false}) {
+    if (proportional) {
+      delta = proportionalDelta(delta, aspectRatio);
+    }
     Layout result = resizeTop(delta).resizeLeft(delta);
     if (symmetric) {
       result = result.resizeBottomRight(-delta);
@@ -204,6 +220,9 @@ class AbsoluteLayout extends Layout {
   @override
   Layout resizeTopRight(Offset delta,
       {bool proportional = false, bool symmetric = false}) {
+    if (proportional) {
+      delta = proportionalDelta(delta, aspectRatio);
+    }
     Layout result = resizeTop(delta).resizeRight(delta);
     if (symmetric) {
       result = result.resizeBottomLeft(-delta);
