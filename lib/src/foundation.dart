@@ -105,7 +105,6 @@ class AbsoluteLayout extends Layout {
   @override
   Layout resizeBottom(Offset delta, {bool symmetric = false}) {
     Offset originalDelta = delta;
-    delta = delta.onlyY();
     delta = delta.divideBy(scale);
     Layout result = AbsoluteLayout(
       offset: offset,
@@ -122,24 +121,31 @@ class AbsoluteLayout extends Layout {
   @override
   Layout resizeBottomLeft(Offset delta,
       {bool proportional = false, bool symmetric = false}) {
-    // TODO: implement resizeBottomLeft
-    throw UnimplementedError();
+    Layout result = resizeBottom(delta).resizeLeft(delta);
+    if (symmetric) {
+      result = result.resizeTopRight(-delta);
+    }
+    return result;
   }
 
   @override
   Layout resizeBottomRight(Offset delta,
       {bool proportional = false, bool symmetric = false}) {
-    // TODO: implement resizeBottomRight
-    throw UnimplementedError();
+    Layout result = resizeBottom(delta).resizeRight(delta);
+    if (symmetric) {
+      result = result.resizeTopLeft(-delta);
+    }
+    return result;
   }
 
   @override
   Layout resizeLeft(Offset delta, {bool symmetric = false}) {
     Offset originalDelta = delta;
     delta = delta.onlyX();
+    Offset rotatedDelta = rotatePoint(delta, rotation);
     delta = delta.divideBy(scale);
     Layout result = AbsoluteLayout(
-      offset: offset + rotatePoint(Offset(delta.dx, 0), rotation),
+      offset: offset + rotatedDelta,
       size: Size(size.width - delta.dx, size.height),
       rotation: rotation,
       scale: scale,
@@ -171,9 +177,10 @@ class AbsoluteLayout extends Layout {
   Layout resizeTop(Offset delta, {bool symmetric = false}) {
     Offset originalDelta = delta;
     delta = delta.onlyY();
+    Offset rotatedDelta = rotatePoint(delta, rotation);
     delta = delta.divideBy(scale);
     Layout result = AbsoluteLayout(
-      offset: offset + rotatePoint(Offset(0, delta.dy), rotation),
+      offset: offset + rotatedDelta,
       size: Size(size.width, size.height - delta.dy),
       rotation: rotation,
       scale: scale,
@@ -187,16 +194,9 @@ class AbsoluteLayout extends Layout {
   @override
   Layout resizeTopLeft(Offset delta,
       {bool proportional = false, bool symmetric = false}) {
-    Offset originalDelta = delta;
-    delta = delta.divideBy(scale);
-    Layout result = AbsoluteLayout(
-      offset: offset + rotatePoint(delta, rotation),
-      size: Size(size.width - delta.dx, size.height - delta.dy),
-      rotation: rotation,
-      scale: scale,
-    );
+    Layout result = resizeTop(delta).resizeLeft(delta);
     if (symmetric) {
-      result = result.resizeBottomRight(-originalDelta);
+      result = result.resizeBottomRight(-delta);
     }
     return result;
   }
@@ -204,8 +204,11 @@ class AbsoluteLayout extends Layout {
   @override
   Layout resizeTopRight(Offset delta,
       {bool proportional = false, bool symmetric = false}) {
-    // TODO: implement resizeTopRight
-    throw UnimplementedError();
+    Layout result = resizeTop(delta).resizeRight(delta);
+    if (symmetric) {
+      result = result.resizeBottomLeft(-delta);
+    }
+    return result;
   }
 }
 

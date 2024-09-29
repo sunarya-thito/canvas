@@ -62,7 +62,7 @@ class _CanvasExampleState extends State<CanvasExample>
             layout: AbsoluteLayout(
               offset: Offset.zero,
               size: Size(100, 100),
-              scale: Offset(1, 1),
+              scale: Offset(2, 2),
               rotation: _degToRad(0),
             ),
             children: [

@@ -169,15 +169,10 @@ class _StandardTransformControlWidgetState
       },
       onPanUpdate: (details) {
         Offset delta = details.delta;
-        delta = rotatePoint(delta, globalRotation);
         _totalOffset = _totalOffset! + delta;
         _session!.visit(
           (node) {
             Offset localDelta = _totalOffset!;
-            if (node.parentTransform != null) {
-              localDelta =
-                  rotatePoint(localDelta, -node.parentTransform!.rotation);
-            }
             visitor(node, localDelta);
           },
         );
