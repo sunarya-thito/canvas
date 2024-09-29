@@ -124,8 +124,13 @@ class AbsoluteLayout extends Layout {
 
   @override
   Layout rotate(double delta, [Alignment alignment = Alignment.center]) {
+    Size scaledSize = this.scaledSize;
+    Offset before = rotatePoint(-alignment.alongSize(scaledSize), rotation);
+    Offset after =
+        rotatePoint(-alignment.alongSize(scaledSize), rotation + delta);
+    Offset offsetDelta = after - before;
     return AbsoluteLayout(
-      offset: offset,
+      offset: offset + offsetDelta,
       size: size,
       rotation: rotation + delta,
       scale: scale,

@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 
 Offset rotatePoint(Offset point, double angle) {
   final double cosAngle = cos(angle);
@@ -32,6 +32,18 @@ extension OffsetExtension on Offset {
 
   Offset divideBy(Offset other) {
     return Offset(dx / other.dx, dy / other.dy);
+  }
+
+  Offset flip({bool flipX = false, bool flipY = false}) {
+    double dx = this.dx;
+    double dy = this.dy;
+    if (flipX) {
+      dx = -dx;
+    }
+    if (flipY) {
+      dy = -dy;
+    }
+    return Offset(dx, dy);
   }
 }
 

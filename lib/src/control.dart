@@ -152,8 +152,51 @@ class _StandardTransformControlWidgetState
 
   Widget _wrapWithRotationHandler({
     required Widget child,
+    required Alignment alignment,
   }) {
-    return child;
+    Size scaledSize = widget.item.transform.scaledSize;
+    Offset origin = !viewportData.proportionalResize
+        ? Offset(scaledSize.width / 2, scaledSize.height / 2)
+        : (alignment * -1).alongSize(scaledSize);
+    return PanGesture(
+      onPanStart: (details) {
+        var localPosition =
+            alignment.alongSize(scaledSize) + details.localPosition;
+        var diff = origin - localPosition;
+        var angle = diff.direction;
+        _startRotation = angle;
+        _session = viewportData.beginTransform();
+      },
+      onPanUpdate: (details) {
+        var localPosition =
+            alignment.alongSize(scaledSize) + details.localPosition;
+        var diff = origin - localPosition;
+        var angle = diff.direction;
+        var delta = angle - _startRotation!;
+        _session!.visit(
+          (node) {
+            node.newLayout = node.layout.rotate(
+                delta,
+                !viewportData.proportionalResize
+                    ? Alignment.center
+                    : alignment * -1);
+          },
+        );
+        _session!.apply();
+      },
+      onPanEnd: (details) {
+        _startRotation = null;
+        _session = null;
+      },
+      onPanCancel: () {
+        if (_session != null) {
+          _session!.reset();
+        }
+        _startRotation = null;
+        _session = null;
+      },
+      child: child,
+    );
   }
 
   double _normalizeSize(double size) {
@@ -175,6 +218,7 @@ class _StandardTransformControlWidgetState
     double yEnd = size.height;
     bool flipX = size.width < 0;
     bool flipY = size.height < 0;
+    Offset flip = Offset(flipX ? -1 : 1, flipY ? -1 : 1);
     return [
       // top left rotation
       Transform.translate(
@@ -182,9 +226,12 @@ class _StandardTransformControlWidgetState
         child: MouseRegion(
           cursor: ResizeCursor.bottomLeft
               .getMouseCursor(globalRotation, flipX, flipY),
-          child: SizedBox(
-            width: theme.rotationHandleSize.width,
-            height: theme.rotationHandleSize.height,
+          child: _wrapWithRotationHandler(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: theme.rotationHandleSize.width,
+              height: theme.rotationHandleSize.height,
+            ),
           ),
         ),
       ),
@@ -195,9 +242,12 @@ class _StandardTransformControlWidgetState
         child: MouseRegion(
           cursor: ResizeCursor.bottomRight
               .getMouseCursor(globalRotation, flipX, flipY),
-          child: SizedBox(
-            width: theme.rotationHandleSize.width,
-            height: theme.rotationHandleSize.height,
+          child: _wrapWithRotationHandler(
+            alignment: Alignment.topRight,
+            child: SizedBox(
+              width: theme.rotationHandleSize.width,
+              height: theme.rotationHandleSize.height,
+            ),
           ),
         ),
       ),
@@ -207,9 +257,12 @@ class _StandardTransformControlWidgetState
         child: MouseRegion(
           cursor: ResizeCursor.topRight
               .getMouseCursor(globalRotation, flipX, flipY),
-          child: SizedBox(
-            width: theme.rotationHandleSize.width,
-            height: theme.rotationHandleSize.height,
+          child: _wrapWithRotationHandler(
+            alignment: Alignment.bottomRight,
+            child: SizedBox(
+              width: theme.rotationHandleSize.width,
+              height: theme.rotationHandleSize.height,
+            ),
           ),
         ),
       ),
@@ -220,9 +273,12 @@ class _StandardTransformControlWidgetState
         child: MouseRegion(
           cursor:
               ResizeCursor.topLeft.getMouseCursor(globalRotation, flipX, flipY),
-          child: SizedBox(
-            width: theme.rotationHandleSize.width,
-            height: theme.rotationHandleSize.height,
+          child: _wrapWithRotationHandler(
+            alignment: Alignment.bottomLeft,
+            child: SizedBox(
+              width: theme.rotationHandleSize.width,
+              height: theme.rotationHandleSize.height,
+            ),
           ),
         ),
       ),
