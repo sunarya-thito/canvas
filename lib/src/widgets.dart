@@ -1,216 +1,252 @@
-import 'package:flutter/gestures.dart';
+import 'package:canvas/src/foundation.dart';
+import 'package:canvas/src/helper_widget.dart';
 import 'package:flutter/widgets.dart';
 
 import '../canvas.dart';
 
-typedef CanvasItemNodeVisitor = void Function(CanvasItemNode node);
+class CanvasController implements Listenable {
+  final RootCanvasItem _root = RootCanvasItem(
+    layout: AbsoluteLayout(),
+  );
 
-class CanvasViewportWidget extends StatelessWidget {
-  final CanvasViewport controller;
+  CanvasController({List<CanvasItem> children = const []}) {
+    _root.children = children;
+  }
+
+  List<CanvasItem> get children => _root.children;
+  set children(List<CanvasItem> children) => _root.children = children;
+
+  @override
+  void addListener(listener) {
+    _root.layoutNotifier.addListener(listener);
+    _root.childrenNotifier.addListener(listener);
+  }
+
+  @override
+  void removeListener(listener) {
+    _root.layoutNotifier.removeListener(listener);
+    _root.childrenNotifier.removeListener(listener);
+  }
+}
+
+class TransformSession {
+  final List<TransformNode> nodes;
+
+  TransformSession(this.nodes);
+
+  void visit(void Function(TransformNode node) visitor) {
+    for (var node in nodes) {
+      visitor(node);
+    }
+  }
+
+  void apply() {
+    for (var node in nodes) {
+      if (node.newLayout != null && node.newLayout != node.layout) {
+        node.item.layout = node.newLayout!;
+      }
+    }
+  }
+
+  void reset() {
+    for (var node in nodes) {
+      node.item.layout = node.layout;
+    }
+  }
+}
+
+class TransformNode {
+  final CanvasItem item;
+  final LayoutTransform transform;
+  final LayoutTransform? parentTransform;
+  final Layout layout;
+  Layout? newLayout;
+
+  TransformNode(this.item, this.transform, this.parentTransform, this.layout);
+}
+
+class CanvasViewportData extends InheritedWidget {
+  final CanvasController controller;
   final ResizeMode resizeMode;
-  final TransformControl control;
+  final TransformControl transformControl;
+  final bool multiSelect;
+  final bool symmetricResize;
+  final bool proportionalResize;
 
-  const CanvasViewportWidget({
-    super.key,
+  const CanvasViewportData({
+    Key? key,
     required this.controller,
+    required this.resizeMode,
+    required this.transformControl,
+    required this.multiSelect,
+    required this.symmetricResize,
+    required this.proportionalResize,
+    required Widget child,
+  }) : super(key: key, child: child);
+
+  void visit(void Function(CanvasItem item) visitor) {
+    controller._root.visit(visitor);
+  }
+
+  void visitWithTransform(
+      void Function(CanvasItem item, LayoutTransform? parentTransform) visitor,
+      {bool rootSelectionOnly = false}) {
+    controller._root
+        .visitWithTransform(visitor, rootSelectionOnly: rootSelectionOnly);
+  }
+
+  TransformSession beginTransform(
+      {bool rootSelectionOnly = false, bool selectedOnly = true}) {
+    final nodes = <TransformNode>[];
+    visitWithTransform((item, parentTransform) {
+      if (item.selected || !selectedOnly) {
+        nodes.add(
+            TransformNode(item, item.transform, parentTransform, item.layout));
+      }
+    }, rootSelectionOnly: rootSelectionOnly);
+    return TransformSession(nodes);
+  }
+
+  static CanvasViewportData of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<CanvasViewportData>()!;
+  }
+
+  @override
+  bool updateShouldNotify(covariant CanvasViewportData oldWidget) {
+    return oldWidget.controller != controller ||
+        oldWidget.resizeMode != resizeMode ||
+        oldWidget.transformControl != transformControl ||
+        oldWidget.multiSelect != multiSelect ||
+        oldWidget.symmetricResize != symmetricResize ||
+        oldWidget.proportionalResize != proportionalResize;
+  }
+}
+
+enum ResizeMode { resize, scale }
+
+class CanvasViewport extends StatelessWidget {
+  final CanvasController controller;
+  final AlignmentGeometry alignment;
+  final TransformControl transformControl;
+  final ResizeMode resizeMode;
+  final bool multiSelect;
+  final bool symmetricResize;
+  final bool proportionalResize;
+
+  const CanvasViewport({
+    Key? key,
+    required this.controller,
+    this.alignment = Alignment.center,
+    this.transformControl = const StandardTransformControl(),
     this.resizeMode = ResizeMode.resize,
-    required this.control,
-  });
+    this.multiSelect = false,
+    this.symmetricResize = false,
+    this.proportionalResize = false,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      return Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerSignal: (event) {
-          if (event is PointerScrollEvent) {
-            var delta = event.scrollDelta.dy > 0.0 ? 0.1 : -0.1;
-            var position = event.localPosition;
-            position += Offset(
-              -constraints.biggest.width / 2,
-              -constraints.biggest.height / 2,
-            );
-            print(position);
-            controller.zoomAt(position, delta);
-          }
-        },
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onPanUpdate: (details) {
-            controller.drag(details.delta);
-          },
-          child: ClipRect(
-            child: ListenableBuilder(
-                listenable: controller.transformNotifier,
-                builder: (context, _) {
-                  return GroupWidget(
-                    children: [
-                      CanvasTransformed(
-                        matrix4: Matrix4.identity()
-                          ..translate(constraints.biggest.width / 2,
-                              constraints.biggest.height / 2),
-                        size: constraints.biggest,
-                        background: GroupWidget(
-                          children: [
-                            CanvasNodeWidget(node: controller.rootNode),
-                            DraggerControlWidget(
-                              node: controller.rootNode,
-                            ),
-                            TransformControlWidget(
-                              node: controller.rootNode,
-                              control: control,
-                              resizeMode: resizeMode,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                }),
+    var textDirection = Directionality.of(context);
+    var resolvedAlignment = alignment.resolve(textDirection);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        var offset = resolvedAlignment.alongSize(constraints.biggest);
+        return Transform.translate(
+          offset: offset,
+          child: GroupWidget(
+            children: [
+              CanvasItemWidget(item: controller._root),
+              CanvasViewportData(
+                controller: controller,
+                resizeMode: resizeMode,
+                transformControl: transformControl,
+                multiSelect: multiSelect,
+                symmetricResize: symmetricResize,
+                proportionalResize: proportionalResize,
+                child: transformControl.build(context, controller._root),
+              ),
+            ],
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 
-class CanvasNodeWidget extends StatefulWidget {
-  final CanvasItemNode node;
+class CanvasItemWidget extends StatefulWidget {
+  final CanvasItem item;
 
-  const CanvasNodeWidget({
-    super.key,
-    required this.node,
-  });
+  const CanvasItemWidget({
+    Key? key,
+    required this.item,
+  }) : super(key: key);
 
   @override
-  State<CanvasNodeWidget> createState() => _CanvasNodeWidgetState();
+  State<CanvasItemWidget> createState() => _CanvasItemWidgetState();
 }
 
-class _CanvasNodeWidgetState extends State<CanvasNodeWidget> {
+class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   @override
   void initState() {
     super.initState();
-    widget.node.initState();
+    widget.item.layoutNotifier.addListener(_onLayoutChanged);
+    _onLayoutChanged();
   }
 
-  @override
-  void didUpdateWidget(covariant CanvasNodeWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.node != oldWidget.node) {
-      oldWidget.node.dispose();
-      widget.node.initState();
-    }
+  void _onLayoutChanged() {
+    widget.item.layoutNotifier.value.performLayout(widget.item);
   }
 
   @override
   void dispose() {
-    widget.node.dispose();
+    widget.item.layoutNotifier.removeListener(_onLayoutChanged);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    Widget? background = widget.item.build(context);
     return ListenableBuilder(
-        listenable: Listenable.merge({
-          widget.node.item,
-          widget.node.matrixNotifier,
-          widget.node.sizeNotifier,
-          widget.node.scaleNotifier,
-          widget.node.item.childrenNotifier,
-        }),
-        child: widget.node.item.build(context),
-        builder: (context, background) {
-          var size = widget.node.size;
-          var scale = widget.node.scale;
-          return CanvasTransformed(
-            matrix4: widget.node.matrix,
-            size: size,
-            background: Transform.scale(
+        listenable: widget.item.transformNotifier,
+        builder: (context, child) {
+          var layoutTransform = widget.item.transform;
+          return Transform.translate(
+            offset: layoutTransform.offset,
+            child: Transform.rotate(
+              angle: layoutTransform.rotation,
               alignment: Alignment.topLeft,
-              scaleX: scale.dx,
-              scaleY: scale.dy,
-              child: background!,
+              child: GroupWidget(
+                children: [
+                  if (background != null)
+                    Transform.scale(
+                      scaleX: layoutTransform.scale.dx,
+                      scaleY: layoutTransform.scale.dy,
+                      alignment: Alignment.topLeft,
+                      child: Box(
+                        size: layoutTransform.size,
+                        child: background,
+                      ),
+                    ),
+                  ListenableBuilder(
+                    listenable: widget.item.childrenNotifier,
+                    builder: (context, child) {
+                      return GroupWidget(
+                        children: widget.item.children.map((child) {
+                          return CanvasItemWidget(item: child);
+                        }).toList(),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-            children: widget.node.children
-                .map((e) => CanvasNodeWidget(node: e))
-                .toList(),
           );
         });
   }
 }
 
-class CanvasTransformed extends StatelessWidget {
-  final Matrix4 matrix4;
-  final Size size;
-  final Widget background;
-  final List<Widget> children;
-  final bool transformHitTests;
-
-  const CanvasTransformed({
-    super.key,
-    required this.matrix4,
-    required this.size,
-    required this.background,
-    this.transformHitTests = true,
-    this.children = const [],
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Transform(
-      transform: matrix4,
-      transformHitTests: transformHitTests,
-      child: GroupWidget(
-        children: [
-          ConstrainedCanvasItem(
-            transform: size,
-            child: background,
-          ),
-          ...children,
-        ],
-      ),
-    );
-  }
-}
-
-class GroupWidget extends MultiChildRenderObjectWidget {
-  GroupWidget({
-    super.key,
-    required List<Widget> children,
-    this.clipBehavior = Clip.none,
-  }) : super(children: [...children]);
-
-  final Clip clipBehavior;
-
-  @override
-  RenderObject createRenderObject(BuildContext context) {
-    return RenderCanvasGroup(clipBehavior: clipBehavior);
-  }
-
-  @override
-  void updateRenderObject(
-      BuildContext context, RenderCanvasGroup renderObject) {
-    renderObject.clipBehavior = clipBehavior;
-  }
-}
-
-class ConstrainedCanvasItem extends SingleChildRenderObjectWidget {
-  final Size transform;
-
-  const ConstrainedCanvasItem({
-    super.key,
-    required this.transform,
-    required super.child,
-  });
-
-  @override
-  RenderObject createRenderObject(BuildContext context) {
-    return RenderConstrainedCanvasItem(transform: transform);
-  }
-
-  @override
-  void updateRenderObject(
-      BuildContext context, RenderConstrainedCanvasItem renderObject) {
-    renderObject.transform = transform;
+extension SizeExtension on Size {
+  Size abs() {
+    return Size(width.abs(), height.abs());
   }
 }

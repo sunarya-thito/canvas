@@ -1,488 +1,69 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/helper_widget.dart';
 import 'package:canvas/src/util.dart';
 import 'package:flutter/material.dart';
 
-import 'foundation.dart';
-
 class StandardTransformControlThemeData {
-  final Decoration macroDecoration;
-  final Decoration microDecoration;
-  final Decoration macroScaleDecoration;
-  final Decoration microScaleDecoration;
-  final Decoration rotationHandleDecoration;
-  final double rotationLineLength;
-  final double rotationLineBorderWidth;
-  final Color rotationLineBorderColor;
+  final Decoration decoration;
+  final Decoration scaleDecoration;
   final Decoration selectionDecoration;
 
-  final Size macroSize;
-  final Size microSize;
+  final Size handleSize;
   final Size rotationHandleSize;
 
   const StandardTransformControlThemeData({
-    required this.macroDecoration,
-    required this.microDecoration,
-    required this.macroScaleDecoration,
-    required this.microScaleDecoration,
+    required this.decoration,
+    required this.scaleDecoration,
     required this.selectionDecoration,
-    required this.macroSize,
-    required this.microSize,
-    required this.rotationHandleDecoration,
-    required this.rotationLineLength,
-    required this.rotationLineBorderWidth,
-    required this.rotationLineBorderColor,
+    required this.handleSize,
     required this.rotationHandleSize,
   });
 
   factory StandardTransformControlThemeData.defaultThemeData() {
     return StandardTransformControlThemeData(
-      macroDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF000000), width: 1),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFF198CE8), width: 1),
         color: const Color(0xFFFFFFFF),
       ),
-      microDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF000000), width: 1),
-        color: const Color(0xFFFFFFFF),
-      ),
-      macroScaleDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF000000), width: 1),
-        color: const Color(0xFFFF0000),
-      ),
-      microScaleDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF000000), width: 1),
-        color: const Color(0xFFFF0000),
+      scaleDecoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFF198CE8), width: 1),
+        color: const Color(0xFF198CE8),
       ),
       selectionDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF000000), width: 1),
+        border: Border.all(color: const Color(0xFF198CE8), width: 1),
         color: const Color(0x00000000),
       ),
-      macroSize: const Size(10, 10),
-      microSize: const Size(8, 8),
-      rotationHandleDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF000000), width: 1),
-        color: const Color(0xFFFFFFFF),
-        shape: BoxShape.circle,
-      ),
+      handleSize: const Size(8, 8),
       rotationHandleSize: const Size(10, 10),
-      rotationLineLength: 20,
-      rotationLineBorderWidth: 1,
-      rotationLineBorderColor: const Color(0xFF000000),
     );
   }
-}
-
-typedef UnaryOpertor<T> = T Function(T oldValue, T value);
-
-enum ResizeMode {
-  none,
-  scale,
-  resize,
-}
-
-class DraggerControlWidget extends StatelessWidget {
-  final CanvasItemNode node;
-  final Matrix4? parentTransform;
-
-  const DraggerControlWidget({
-    super.key,
-    required this.node,
-    this.parentTransform,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: Listenable.merge({
-        node.matrixNotifier,
-        node.sizeNotifier,
-        node.item.childrenNotifier,
-        node.item.controlFlagNotifier,
-        node.item.transformControlModeNotifier,
-        node.item.selectedNotifier,
-      }),
-      builder: (context, child) {
-        var matrix = node.matrix;
-        if (parentTransform != null) {
-          matrix = parentTransform! * matrix;
-        }
-        List<Widget> children = [];
-        for (var child in node.children) {
-          children.add(
-            DraggerControlWidget(
-              node: child,
-              parentTransform: matrix,
-            ),
-          );
-        }
-        var size = node.size;
-        var scale = node.scale;
-        size = Size(size.width * scale.dx, size.height * scale.dy);
-        return GroupWidget(
-          children: [
-            if (node.item is! RootCanvasItem)
-              Transform(
-                transform: matrix,
-                alignment: Alignment.topLeft,
-                child: MouseRegion(
-                  hitTestBehavior: HitTestBehavior.translucent,
-                  cursor: SystemMouseCursors.grab,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onPanUpdate: (details) {
-                      var delta = details.delta;
-                      var rotation = _getRotation(node.matrix);
-                      delta = rotatePoint(delta, rotation);
-                      node.item.dispatchTransformChange(
-                        node.item.transform.drag(node, delta),
-                      );
-                    },
-                    child: SizedBox(
-                      width: size.width,
-                      height: size.height,
-                    ),
-                  ),
-                ),
-              ),
-            ...children,
-          ],
-        );
-      },
-    );
-  }
-}
-
-class TransformControlWidget extends StatefulWidget {
-  final TransformControl control;
-  final CanvasItemNode node;
-  final Matrix4? parentTransform;
-  final ResizeMode resizeMode;
-  final bool uniform;
-  final bool keepAspectRatio;
-
-  const TransformControlWidget({
-    super.key,
-    required this.node,
-    required this.control,
-    this.parentTransform,
-    required this.resizeMode,
-    this.uniform = false,
-    this.keepAspectRatio = false,
-  });
-
-  @override
-  State<TransformControlWidget> createState() => _TransformControlWidgetState();
-}
-
-double _getRotation(Matrix4 matrix) {
-  return atan2(matrix.entry(1, 0), matrix.entry(0, 0));
-}
-
-class _TransformControlWidgetState extends State<TransformControlWidget>
-    implements TransformControlHandler {
-  late CanvasTransform _transform;
-
-  @override
-  void startTransformSession() {
-    _transform = node.item.transform;
-  }
-
-  @override
-  void endTransformSession() {
-    node.item.dispatchTransformChange(_transform);
-  }
-
-  @override
-  CanvasItemNode get node => widget.node;
-
-  @override
-  CanvasViewport get viewport => node.viewport;
-
-  @override
-  Matrix4 get matrix {
-    if (widget.parentTransform != null) {
-      return widget.parentTransform! * node.matrix;
-    }
-    return node.matrix;
-  }
-
-  @override
-  bool get selected => node.item.selected;
-
-  @override
-  Size get size => node.size;
-
-  @override
-  TransformControlFlag get controlFlag => node.item.controlFlag;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: Listenable.merge({
-        node.matrixNotifier,
-        node.sizeNotifier,
-        node.scaleNotifier,
-        node.item.childrenNotifier,
-        node.item.controlFlagNotifier,
-        node.item.transformControlModeNotifier,
-        node.item.selectedNotifier,
-      }),
-      builder: (context, child) {
-        var matrix = node.matrix;
-        if (widget.parentTransform != null) {
-          matrix = widget.parentTransform! * matrix;
-        }
-        List<Widget> children = [];
-        for (var child in node.children) {
-          children.add(
-            TransformControlWidget(
-              node: child,
-              control: widget.control,
-              resizeMode: widget.resizeMode,
-              parentTransform: matrix,
-            ),
-          );
-        }
-        return GroupWidget(
-          children: [
-            widget.control.buildControl(
-              context,
-              this,
-            ),
-            ...children,
-          ],
-        );
-      },
-    );
-  }
-
-  @override
-  void resizeBottom(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.resize(node, delta, Alignment.bottomCenter,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void resizeBottomLeft(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.resize(node, delta, Alignment.bottomLeft,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void resizeBottomRight(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.resize(node, delta, Alignment.bottomRight,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void resizeLeft(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.resize(node, delta, Alignment.centerLeft,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  ResizeMode get resizeMode => widget.resizeMode;
-
-  @override
-  void resizeRight(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.resize(node, delta, Alignment.centerRight,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void resizeTop(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.resize(node, delta, Alignment.topCenter,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void resizeTopLeft(Offset delta) {
-    // delta = delta.scale(
-    //     node.item.transform.scale.width, node.item.transform.scale.height);
-    // delta = rotatePoint(delta, node.item.transform.rotation);
-    node.item.dispatchTransformChange(
-      node.item.transform.resize(node, delta, Alignment.topLeft,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void resizeTopRight(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.resize(node, delta, Alignment.topRight,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void rotate(double angle, Alignment alignment) {
-    node.item.dispatchTransformChange(
-        node.item.transform.rotate(node, angle, Alignment.center));
-  }
-
-  @override
-  void scaleBottom(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.scaleTransform(node, delta, Alignment.bottomCenter,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void scaleBottomLeft(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.scaleTransform(node, delta, Alignment.bottomLeft,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void scaleBottomRight(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.scaleTransform(node, delta, Alignment.bottomRight,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void scaleLeft(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.scaleTransform(node, delta, Alignment.centerLeft,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void scaleRight(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.scaleTransform(node, delta, Alignment.centerRight,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void scaleTop(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.scaleTransform(node, delta, Alignment.topCenter,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void scaleTopLeft(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.scaleTransform(node, delta, Alignment.topLeft,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-
-  @override
-  void scaleTopRight(Offset delta) {
-    node.item.dispatchTransformChange(
-      node.item.transform.scaleTransform(node, delta, Alignment.topRight,
-          widget.uniform ? Alignment.center : null),
-    );
-  }
-}
-
-abstract class TransformControlHandler {
-  bool get selected;
-  CanvasItemNode get node;
-  ResizeMode get resizeMode;
-  Matrix4 get matrix;
-  Size get size;
-  CanvasViewport get viewport;
-  TransformControlFlag get controlFlag;
-  void resizeTopLeft(Offset delta);
-  void resizeTopRight(Offset delta);
-  void resizeBottomLeft(Offset delta);
-  void resizeBottomRight(Offset delta);
-  void resizeTop(Offset delta);
-  void resizeLeft(Offset delta);
-  void resizeRight(Offset delta);
-  void resizeBottom(Offset delta);
-  void rotate(double delta, Alignment alignment);
-  void scaleTopLeft(Offset delta);
-  void scaleTopRight(Offset delta);
-  void scaleBottomLeft(Offset delta);
-  void scaleBottomRight(Offset delta);
-  void scaleTop(Offset delta);
-  void scaleLeft(Offset delta);
-  void scaleRight(Offset delta);
-  void scaleBottom(Offset delta);
-  void startTransformSession();
-  void endTransformSession();
-}
-
-double matrixRotationToAngle(Matrix4 matrix) {
-  // We only care about the 2D rotation part (the z-axis)
-  final double angleFromMatrix = atan2(matrix.entry(1, 0), matrix.entry(0, 0));
-  return angleFromMatrix;
-}
-
-abstract class TransformControl {
-  Widget buildControl(BuildContext context, TransformControlHandler handler);
-}
-
-class StandardTransformControlTheme extends InheritedTheme {
-  final StandardTransformControlThemeData data;
-
-  const StandardTransformControlTheme({
-    super.key,
-    required this.data,
-    required Widget child,
-  }) : super(child: child);
-
-  static StandardTransformControlThemeData of(BuildContext context) {
-    final StandardTransformControlTheme? result = context
-        .dependOnInheritedWidgetOfExactType<StandardTransformControlTheme>();
-    return result?.data ?? StandardTransformControlThemeData.defaultThemeData();
-  }
-
-  @override
-  bool updateShouldNotify(StandardTransformControlTheme oldWidget) {
-    return data != oldWidget.data;
-  }
-
-  @override
-  Widget wrap(BuildContext context, Widget child) {
-    final StandardTransformControlTheme? ancestor =
-        context.findAncestorWidgetOfExactType<StandardTransformControlTheme>();
-    return identical(this, ancestor)
-        ? child
-        : StandardTransformControlTheme(data: data, child: child);
-  }
-}
-
-Offset _transformPoint(Matrix4 matrix, Offset point) {
-  return MatrixUtils.transformPoint(matrix, point);
-}
-
-double _angleOfLine(Offset start, Offset end) {
-  return atan2(end.dy - start.dy, end.dx - start.dx);
 }
 
 class StandardTransformControl extends TransformControl {
+  const StandardTransformControl();
   @override
-  Widget buildControl(BuildContext context, TransformControlHandler handler) {
-    return _StandardTransformControlWidget(
-      handler: handler,
-      matrix: handler.matrix,
-    );
+  Widget build(BuildContext context, CanvasItem node) {
+    return StandardTransformControlWidget(item: node);
   }
+}
+
+class StandardTransformControlWidget extends StatefulWidget {
+  final CanvasItem? parent;
+  final CanvasItem item;
+  final double parentRotation;
+
+  const StandardTransformControlWidget({
+    Key? key,
+    required this.item,
+    this.parent,
+    this.parentRotation = 0,
+  }) : super(key: key);
+
+  @override
+  State<StandardTransformControlWidget> createState() =>
+      _StandardTransformControlWidgetState();
 }
 
 int _findClosestAngle(double radians) {
@@ -525,468 +106,407 @@ enum _MouseCursor {
   }
 }
 
-class _StandardTransformControlWidget extends StatefulWidget {
-  final TransformControlHandler handler;
-  final Matrix4 matrix;
+class _StandardTransformControlWidgetState
+    extends State<StandardTransformControlWidget> {
+  bool _hover = false;
 
-  const _StandardTransformControlWidget({
-    required this.handler,
-    required this.matrix,
-  });
+  late StandardTransformControlThemeData theme;
+  late CanvasViewportData viewportData;
+  Offset? _totalOffset;
+  TransformSession? _session;
+  double? _startRotation;
+
+  double get globalRotation {
+    return widget.item.transform.rotation + widget.parentRotation;
+  }
 
   @override
-  State<_StandardTransformControlWidget> createState() =>
-      _StandardTransformControlWidgetState();
-}
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    theme = StandardTransformControlThemeData.defaultThemeData();
+    viewportData = CanvasViewportData.of(context);
+  }
 
-class _StandardTransformControlWidgetState
-    extends State<_StandardTransformControlWidget> {
-  bool _hovered = false;
   @override
   Widget build(BuildContext context) {
-    final theme = StandardTransformControlTheme.of(context);
-    var size = widget.handler.node.size;
-    var scale = widget.handler.node.scale;
-    var viewportZoom = widget.handler.viewport.zoom;
-    size = Size(size.width * scale.dx, size.height * scale.dy) * viewportZoom;
-    var matrix = widget.matrix.clone()
-      ..scale(1 / viewportZoom, 1 / viewportZoom);
-    return GroupWidget(
-      children: [
-        Transform(
-          transform: matrix,
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: size.width,
-            height: size.height,
-            child: MouseRegion(
-              hitTestBehavior: HitTestBehavior.translucent,
-              opaque: false,
-              onEnter: (event) {
-                setState(() {
-                  _hovered = true;
-                });
-              },
-              onExit: (event) {
-                setState(() {
-                  _hovered = false;
-                });
-              },
-              child: Container(
-                decoration: widget.handler.selected || _hovered
-                    ? theme.selectionDecoration
-                    : null,
-              ),
+    return ListenableBuilder(
+      listenable: Listenable.merge({
+        widget.item.selectedNotifier,
+        widget.item.transformNotifier,
+      }),
+      builder: (context, child) {
+        return Transform.translate(
+          offset: widget.item.transform.offset,
+          child: Transform.rotate(
+            angle: widget.item.transform.rotation,
+            alignment: Alignment.topLeft,
+            child: GroupWidget(
+              children: [
+                _buildSelection(context),
+                for (final child in widget.item.children)
+                  StandardTransformControlWidget(
+                    item: child,
+                    parent: widget.item,
+                    parentRotation: globalRotation,
+                  ),
+                if (widget.item.selected) ..._buildControls(context),
+              ],
             ),
           ),
-        ),
-        if (widget.handler.selected && widget.handler.controlFlag.canRotate)
-          ..._buildRotationControls(context, theme, size, matrix),
-        if (widget.handler.selected &&
-            widget.handler.controlFlag.canResize &&
-            widget.handler.resizeMode == ResizeMode.resize)
-          ..._buildResizeControls(context, theme, size, matrix),
-        if (widget.handler.selected &&
-            widget.handler.controlFlag.canScale &&
-            widget.handler.resizeMode == ResizeMode.scale)
-          ..._buildScaleControls(context, theme, size, matrix),
-      ],
+        );
+      },
     );
   }
 
-  List<Widget> _buildRotationControls(BuildContext context,
-      StandardTransformControlThemeData theme, Size size, Matrix4 matrix) {
-    var rotation = _getRotation(matrix);
-    return [
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width / 2, -theme.rotationLineLength),
-        alignment: Alignment.topLeft,
-        child: IgnorePointer(
-          child: Container(
-            width: theme.rotationLineBorderWidth,
-            height: theme.rotationLineLength,
-            decoration: BoxDecoration(
-              color: theme.rotationLineBorderColor,
-            ),
-          ),
-        ),
-      ),
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width / 2 - theme.rotationHandleSize.width / 2,
-              -theme.rotationHandleSize.height - theme.rotationLineLength),
-        alignment: Alignment.topLeft,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              var offset = _inverseOffset(details.localPosition, rotation);
-              var angle = _angleOfLine(Offset(0, 0), offset);
-              widget.handler.rotate(angle, Alignment.center);
-            },
-            child: Container(
-              width: theme.rotationHandleSize.width,
-              height: theme.rotationHandleSize.height,
-              decoration: theme.rotationHandleDecoration,
-            ),
-          ),
-        ),
-      ),
-    ];
+  Widget _wrapWithPanHandler({
+    required Widget child,
+    required void Function(TransformNode node, Offset delta) visitor,
+  }) {
+    return PanGesture(
+      onPanStart: (details) {
+        _totalOffset = Offset.zero;
+        _session = viewportData.beginTransform();
+      },
+      onPanUpdate: (details) {
+        Offset delta = details.delta;
+        delta = rotatePoint(delta, globalRotation);
+        _totalOffset = _totalOffset! + delta;
+        _session!.visit(
+          (node) {
+            Offset localDelta = _totalOffset!;
+            if (node.parentTransform != null) {
+              localDelta =
+                  rotatePoint(localDelta, -node.parentTransform!.rotation);
+            }
+            visitor(node, localDelta);
+          },
+        );
+        _session!.apply();
+      },
+      onPanEnd: (_) {
+        _totalOffset = null;
+        _session = null;
+      },
+      onPanCancel: () {
+        _session!.reset();
+        _totalOffset = null;
+        _session = null;
+      },
+      child: child,
+    );
   }
 
-  List<Widget> _buildResizeControls(BuildContext context,
-      StandardTransformControlThemeData theme, Size size, Matrix4 matrix) {
-    var rotation = _getRotation(matrix);
+  Widget _wrapWithRotationHandler({
+    required Widget child,
+  }) {
+    return child;
+  }
+
+  List<Widget> _buildControls(BuildContext context) {
+    Offset halfSize =
+        Offset(theme.handleSize.width / 2, theme.handleSize.height / 2);
+    Offset handleSize = Offset(theme.handleSize.width, theme.handleSize.height);
+    Offset sizeRotation =
+        Offset(theme.rotationHandleSize.width, theme.rotationHandleSize.height);
+    Size size = widget.item.transform.scaledSize;
     return [
-      // top left
-      Transform(
-        transform: matrix.clone()
-          ..translate(-theme.macroSize.width / 2, -theme.macroSize.height / 2),
-        alignment: Alignment.topLeft,
+      // top left rotation
+      Transform.translate(
+        offset: -halfSize - sizeRotation,
         child: MouseRegion(
-          cursor: _MouseCursor._topLeft._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.resizeTopLeft(details.delta);
-            },
-            child: Container(
-              width: theme.macroSize.width,
-              height: theme.macroSize.height,
-              decoration: theme.macroDecoration,
-            ),
+          cursor: _MouseCursor._bottomLeft._rotate(globalRotation),
+          child: SizedBox(
+            width: theme.rotationHandleSize.width,
+            height: theme.rotationHandleSize.height,
           ),
         ),
       ),
-      // top right
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width - theme.macroSize.width / 2,
-              -theme.macroSize.height / 2),
-        alignment: Alignment.topLeft,
+      // top right rotation
+      Transform.translate(
+        offset:
+            Offset(size.width + halfSize.dx, -halfSize.dy - sizeRotation.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._topRight._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.resizeTopRight(details.delta);
-            },
-            child: Container(
-              width: theme.macroSize.width,
-              height: theme.macroSize.height,
-              decoration: theme.macroDecoration,
-            ),
+          cursor: _MouseCursor._bottomRight._rotate(globalRotation),
+          child: SizedBox(
+            width: theme.rotationHandleSize.width,
+            height: theme.rotationHandleSize.height,
           ),
         ),
       ),
-      // bottom right
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width - theme.macroSize.width / 2,
-              size.height - theme.macroSize.height / 2),
-        alignment: Alignment.topLeft,
+      // bottom right rotation
+      Transform.translate(
+        offset: Offset(size.width + halfSize.dx, size.height + halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._bottomRight._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.resizeBottomRight(details.delta);
-            },
-            child: Container(
-              width: theme.macroSize.width,
-              height: theme.macroSize.height,
-              decoration: theme.macroDecoration,
-            ),
+          cursor: _MouseCursor._topRight._rotate(globalRotation),
+          child: SizedBox(
+            width: theme.rotationHandleSize.width,
+            height: theme.rotationHandleSize.height,
           ),
         ),
       ),
-      // bottom left
-      Transform(
-        transform: matrix.clone()
-          ..translate(-theme.macroSize.width / 2,
-              size.height - theme.macroSize.height / 2),
-        alignment: Alignment.topLeft,
+      // bottom left rotation
+      Transform.translate(
+        offset:
+            Offset(-halfSize.dx - sizeRotation.dx, size.height + halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._bottomLeft._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.resizeBottomLeft(details.delta);
-            },
-            child: Container(
-              width: theme.macroSize.width,
-              height: theme.macroSize.height,
-              decoration: theme.macroDecoration,
-            ),
+          cursor: _MouseCursor._topLeft._rotate(globalRotation),
+          child: SizedBox(
+            width: theme.rotationHandleSize.width,
+            height: theme.rotationHandleSize.height,
           ),
         ),
       ),
       // top
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width / 2 - theme.microSize.width / 2,
-              -theme.microSize.height / 2),
-        alignment: Alignment.topLeft,
+      Transform.translate(
+        offset: Offset(halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._top._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.resizeTop(details.delta);
+          cursor: _MouseCursor._top._rotate(globalRotation),
+          child: _wrapWithPanHandler(
+            visitor: (node, delta) {
+              node.newLayout = node.layout.resizeTop(
+                delta,
+                symmetric: viewportData.symmetricResize,
+              );
             },
-            child: Container(
-              width: theme.microSize.width,
-              height: theme.microSize.height,
-              decoration: theme.microDecoration,
+            child: SizedBox(
+              width: size.width - handleSize.dx,
+              height: theme.handleSize.height,
             ),
           ),
         ),
       ),
       // right
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width - theme.microSize.width / 2,
-              size.height / 2 - theme.microSize.height / 2),
-        alignment: Alignment.topLeft,
+      Transform.translate(
+        offset: Offset(size.width - halfSize.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._right._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.resizeRight(details.delta);
+          cursor: _MouseCursor._right._rotate(globalRotation),
+          child: _wrapWithPanHandler(
+            visitor: (node, delta) {
+              node.newLayout = node.layout.resizeRight(
+                delta,
+                symmetric: viewportData.symmetricResize,
+              );
             },
-            child: Container(
-              width: theme.microSize.width,
-              height: theme.microSize.height,
-              decoration: theme.microDecoration,
+            child: SizedBox(
+              width: theme.handleSize.width,
+              height: size.height - handleSize.dy,
             ),
           ),
         ),
       ),
       // bottom
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width / 2 - theme.microSize.width / 2,
-              size.height - theme.microSize.height / 2),
-        alignment: Alignment.topLeft,
+      Transform.translate(
+        offset: Offset(halfSize.dx, size.height - halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._bottom._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.resizeBottom(details.delta);
+          cursor: _MouseCursor._bottom._rotate(globalRotation),
+          child: _wrapWithPanHandler(
+            visitor: (node, delta) {
+              node.newLayout = node.layout.resizeBottom(
+                delta,
+                symmetric: viewportData.symmetricResize,
+              );
             },
-            child: Container(
-              width: theme.microSize.width,
-              height: theme.microSize.height,
-              decoration: theme.microDecoration,
+            child: SizedBox(
+              width: size.width - handleSize.dx,
+              height: theme.handleSize.height,
             ),
           ),
         ),
       ),
       // left
-      Transform(
-        transform: matrix.clone()
-          ..translate(-theme.microSize.width / 2,
-              size.height / 2 - theme.microSize.height / 2),
-        alignment: Alignment.topLeft,
+      Transform.translate(
+        offset: Offset(-halfSize.dx, halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._left._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.resizeLeft(details.delta);
+          cursor: _MouseCursor._left._rotate(globalRotation),
+          child: _wrapWithPanHandler(
+            visitor: (node, delta) {
+              node.newLayout = node.layout.resizeLeft(
+                delta,
+                symmetric: viewportData.symmetricResize,
+              );
             },
-            child: Container(
-              width: theme.microSize.width,
-              height: theme.microSize.height,
-              decoration: theme.microDecoration,
+            child: SizedBox(
+              width: theme.handleSize.width,
+              // height: rect.height - theme.handleSize.height,
+              height: size.height - handleSize.dy,
             ),
           ),
         ),
       ),
-    ];
-  }
-
-  List<Widget> _buildScaleControls(BuildContext context,
-      StandardTransformControlThemeData theme, Size size, Matrix4 matrix) {
-    var rotation = _getRotation(matrix);
-    return [
       // top left
-      Transform(
-        transform: matrix.clone()
-          ..translate(-theme.macroSize.width / 2, -theme.macroSize.height / 2),
-        alignment: Alignment.topLeft,
+      Transform.translate(
+        offset: -halfSize,
         child: MouseRegion(
-          cursor: _MouseCursor._topLeft._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.scaleTopLeft(details.delta);
+          cursor: _MouseCursor._topLeft._rotate(globalRotation),
+          child: _wrapWithPanHandler(
+            visitor: (node, delta) {
+              node.newLayout = node.layout.resizeTopLeft(
+                delta,
+                proportional: viewportData.proportionalResize,
+                symmetric: viewportData.symmetricResize,
+              );
             },
             child: Container(
-              width: theme.macroSize.width,
-              height: theme.macroSize.height,
-              decoration: theme.macroScaleDecoration,
+              width: theme.handleSize.width,
+              height: theme.handleSize.height,
+              decoration: theme.decoration,
             ),
           ),
         ),
       ),
       // top right
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width - theme.macroSize.width / 2,
-              -theme.macroSize.height / 2),
-        alignment: Alignment.topLeft,
+      Transform.translate(
+        offset: Offset(size.width - halfSize.dx, -halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._topRight._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.scaleTopRight(details.delta);
+          cursor: _MouseCursor._topRight._rotate(globalRotation),
+          child: _wrapWithPanHandler(
+            visitor: (node, delta) {
+              node.newLayout = node.layout.resizeTopRight(
+                delta,
+                proportional: viewportData.proportionalResize,
+                symmetric: viewportData.symmetricResize,
+              );
             },
             child: Container(
-              width: theme.macroSize.width,
-              height: theme.macroSize.height,
-              decoration: theme.macroScaleDecoration,
-            ),
-          ),
-        ),
-      ),
-      // bottom right
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width - theme.macroSize.width / 2,
-              size.height - theme.macroSize.height / 2),
-        alignment: Alignment.topLeft,
-        child: MouseRegion(
-          cursor: _MouseCursor._bottomRight._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.scaleBottomRight(details.delta);
-            },
-            child: Container(
-              width: theme.macroSize.width,
-              height: theme.macroSize.height,
-              decoration: theme.macroScaleDecoration,
+              width: theme.handleSize.width,
+              height: theme.handleSize.height,
+              decoration: theme.decoration,
             ),
           ),
         ),
       ),
       // bottom left
-      Transform(
-        transform: matrix.clone()
-          ..translate(-theme.macroSize.width / 2,
-              size.height - theme.macroSize.height / 2),
-        alignment: Alignment.topLeft,
+      Transform.translate(
+        offset: Offset(-halfSize.dx, size.height - halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._bottomLeft._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.scaleBottomLeft(details.delta);
+          cursor: _MouseCursor._bottomLeft._rotate(globalRotation),
+          child: _wrapWithPanHandler(
+            visitor: (node, delta) {
+              node.newLayout = node.layout.resizeBottomLeft(
+                delta,
+                proportional: viewportData.proportionalResize,
+                symmetric: viewportData.symmetricResize,
+              );
             },
             child: Container(
-              width: theme.macroSize.width,
-              height: theme.macroSize.height,
-              decoration: theme.macroScaleDecoration,
+              width: theme.handleSize.width,
+              height: theme.handleSize.height,
+              decoration: theme.decoration,
             ),
           ),
         ),
       ),
-      // top
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width / 2 - theme.microSize.width / 2,
-              -theme.microSize.height / 2),
-        alignment: Alignment.topLeft,
+      // bottom right
+      Transform.translate(
+        offset: Offset(size.width - halfSize.dx, size.height - halfSize.dy),
         child: MouseRegion(
-          cursor: _MouseCursor._top._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.scaleTop(details.delta);
+          cursor: _MouseCursor._bottomRight._rotate(globalRotation),
+          child: _wrapWithPanHandler(
+            visitor: (node, delta) {
+              node.newLayout = node.layout.resizeBottomRight(
+                delta,
+                proportional: viewportData.proportionalResize,
+                symmetric: viewportData.symmetricResize,
+              );
             },
             child: Container(
-              width: theme.microSize.width,
-              height: theme.microSize.height,
-              decoration: theme.microScaleDecoration,
-            ),
-          ),
-        ),
-      ),
-      // right
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width - theme.microSize.width / 2,
-              size.height / 2 - theme.microSize.height / 2),
-        alignment: Alignment.topLeft,
-        child: MouseRegion(
-          cursor: _MouseCursor._right._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.scaleRight(details.delta);
-            },
-            child: Container(
-              width: theme.microSize.width,
-              height: theme.microSize.height,
-              decoration: theme.microScaleDecoration,
-            ),
-          ),
-        ),
-      ),
-      // bottom
-      Transform(
-        transform: matrix.clone()
-          ..translate(size.width / 2 - theme.microSize.width / 2,
-              size.height - theme.microSize.height / 2),
-        alignment: Alignment.topLeft,
-        child: MouseRegion(
-          cursor: _MouseCursor._bottom._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.scaleBottom(details.delta);
-            },
-            child: Container(
-              width: theme.microSize.width,
-              height: theme.microSize.height,
-              decoration: theme.microScaleDecoration,
-            ),
-          ),
-        ),
-      ),
-      // left
-      Transform(
-        transform: matrix.clone()
-          ..translate(-theme.microSize.width / 2,
-              size.height / 2 - theme.microSize.height / 2),
-        alignment: Alignment.topLeft,
-        child: MouseRegion(
-          cursor: _MouseCursor._left._rotate(rotation),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              widget.handler.scaleLeft(details.delta);
-            },
-            child: Container(
-              width: theme.microSize.width,
-              height: theme.microSize.height,
-              decoration: theme.microScaleDecoration,
+              width: theme.handleSize.width,
+              height: theme.handleSize.height,
+              decoration: theme.decoration,
             ),
           ),
         ),
       ),
     ];
   }
-}
 
-Matrix4 _inverseMatrix(Matrix4 matrix) {
-  Matrix4 copy = Matrix4.copy(matrix);
-  copy.invert();
-  return copy;
-}
-
-Matrix4 _getPointMatrix(Offset offset, double angle, Size size) {
-  return Matrix4.identity()
-    ..translate(offset.dx, offset.dy)
-    ..rotateZ(angle)
-    ..translate(-size.width / 2, -size.height / 2);
-}
-
-Matrix4 _inversePointMatrix(double angle) {
-  return Matrix4.identity()..rotateZ(-angle);
-}
-
-Offset _inverseOffset(Offset offset, double angle) {
-  final matrix = _inversePointMatrix(angle);
-  return _transformPoint(matrix, offset);
+  Widget _buildSelection(BuildContext context) {
+    Size size = widget.item.transform.scaledSize;
+    return ListenableBuilder(
+        listenable: widget.item.selectedNotifier,
+        builder: (context, child) {
+          return MouseRegion(
+            hitTestBehavior: HitTestBehavior.translucent,
+            cursor: widget.item.selected
+                ? SystemMouseCursors.move
+                : SystemMouseCursors.click,
+            onEnter: (_) {
+              setState(() {
+                _hover = true;
+              });
+            },
+            onExit: (_) {
+              setState(() {
+                _hover = false;
+              });
+            },
+            child: GestureDetector(
+              onTap: () {
+                if (viewportData.multiSelect) {
+                  widget.item.selected = !widget.item.selected;
+                } else {
+                  viewportData.visit(
+                    (item) {
+                      item.selected = item == widget.item;
+                    },
+                  );
+                }
+              },
+              child: PanGesture(
+                onPanStart: (_) {
+                  if (!widget.item.selected) {
+                    if (viewportData.multiSelect) {
+                      widget.item.selected = !widget.item.selected;
+                    } else {
+                      viewportData.visit(
+                        (item) {
+                          item.selected = item == widget.item;
+                        },
+                      );
+                    }
+                  }
+                  _session =
+                      viewportData.beginTransform(rootSelectionOnly: true);
+                  _totalOffset = Offset.zero;
+                },
+                onPanUpdate: (details) {
+                  Offset delta = details.delta;
+                  delta = rotatePoint(delta, globalRotation);
+                  _totalOffset = _totalOffset! + delta;
+                  _session!.visit(
+                    (node) {
+                      Offset localDelta = _totalOffset!;
+                      if (node.parentTransform != null) {
+                        localDelta = rotatePoint(
+                            localDelta, -node.parentTransform!.rotation);
+                      }
+                      node.newLayout = node.layout.drag(localDelta);
+                    },
+                  );
+                  _session!.apply();
+                },
+                onPanEnd: (_) {
+                  _totalOffset = null;
+                  _session = null;
+                },
+                onPanCancel: () {
+                  if (_session != null) {
+                    _session!.reset();
+                  }
+                  _totalOffset = null;
+                  _session = null;
+                },
+                child: SizedBox.fromSize(
+                  size: size,
+                  child: Container(
+                    decoration: _hover || widget.item.selected
+                        ? theme.selectionDecoration
+                        : null,
+                  ),
+                ),
+              ),
+            ),
+          );
+        });
+  }
 }

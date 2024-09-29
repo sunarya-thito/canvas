@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:canvas/canvas.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
 void main() {
   runApp(MaterialApp(
@@ -40,235 +40,179 @@ double _radToDeg(double rad) => rad * (180 / pi);
 
 class _CanvasExampleState extends State<CanvasExample>
     with SingleTickerProviderStateMixin {
-  Duration elapsed = Duration(seconds: 0);
-  late Ticker _ticker;
-
-  ResizeMode resizeMode = ResizeMode.resize;
-
-  List<CanvasItem> items = [
-    BoxCanvasItem(
-      transform: CanvasTransform(
-        size: Size(200, 200),
-        rotation: _degToRad(0),
-        offset: Offset(200, 0),
-      ),
-      widget: GestureDetector(
-        onTap: () {},
-        child: Container(
-          color: Colors.yellow,
-        ),
-      ),
-      selected: true,
-    ),
-    BoxCanvasItem(
-      transform: CanvasTransform(
-        size: Size(200, 200),
-        rotation: _degToRad(0),
-        offset: Offset(-200, -200),
-      ),
-      widget: GestureDetector(
-        onTap: () {
-          print('tapped purple');
-        },
-        child: Container(
-          color: Colors.purple,
-        ),
-      ),
-      children: [
-        BoxCanvasItem(
-          transformControlMode: TransformControlMode.show,
-          transform: CanvasTransform(
-            size: Size(100, 100),
-            rotation: _degToRad(45),
-            offset: Offset(150, 150),
-            scale: Offset(1, 2),
-          ),
-          selected: true,
-          widget: GestureDetector(
-            onTap: () {
-              print('tapped green');
-            },
-            child: Container(
-              color: Colors.green,
-              child: Center(
-                child: Text('brat'),
-              ),
-            ),
-          ),
-          children: [
-            BoxCanvasItem(
-              transformControlMode: TransformControlMode.show,
-              transform: CanvasTransform(
-                size: Size(50, 50),
-                rotation: _degToRad(45),
-                offset: Offset(120, 120),
-                scale: Offset(1, 2),
-              ),
-              selected: true,
-              children: [
-                BoxCanvasItem(
-                  transformControlMode: TransformControlMode.show,
-                  transform: CanvasTransform(
-                    size: Size(100, 100),
-                    // rotation: _degToRad(45),
-                    offset: Offset(150, 150),
-                    scale: Offset(1, 2),
-                  ),
-                  widget: GestureDetector(
-                    onTap: () {
-                      print('tapped green');
-                    },
-                    child: Container(
-                      color: Colors.green,
-                      child: Center(
-                        child: Text('brat'),
-                      ),
-                    ),
-                  ),
-                  children: [
-                    BoxCanvasItem(
-                      transformControlMode: TransformControlMode.show,
-                      transform: CanvasTransform(
-                        size: Size(50, 50),
-                        // rotation: _degToRad(45),
-                        offset: Offset(120, 120),
-                        scale: Offset(1, 1),
-                      ),
-                      children: [
-                        BoxCanvasItem(
-                          transformControlMode: TransformControlMode.show,
-                          transform: CanvasTransform(
-                            size: Size(100, 100),
-                            rotation: _degToRad(45),
-                            offset: Offset(150, 150),
-                            scale: Offset(1, 1),
-                          ),
-                          widget: GestureDetector(
-                            onTap: () {
-                              print('tapped green');
-                            },
-                            child: Container(
-                              color: Colors.green,
-                              child: Center(
-                                child: Text('brat'),
-                              ),
-                            ),
-                          ),
-                          children: [
-                            BoxCanvasItem(
-                              transformControlMode: TransformControlMode.show,
-                              transform: CanvasTransform(
-                                size: Size(50, 50),
-                                rotation: _degToRad(45),
-                                offset: Offset(120, 120),
-                                scale: Offset(1, 1),
-                              ),
-                              children: [],
-                              widget: GestureDetector(
-                                onTap: () {
-                                  print('tapped blue');
-                                },
-                                child: Container(
-                                  color: Colors.blue,
-                                  child: Center(
-                                    child: Text('Hello'),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      widget: GestureDetector(
-                        onTap: () {
-                          print('tapped blue');
-                        },
-                        child: Container(
-                          color: Colors.blue,
-                          child: Center(
-                            child: Text('Hello'),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              widget: GestureDetector(
-                onTap: () {
-                  print('tapped blue');
-                },
-                child: Container(
-                  color: Colors.blue,
-                  child: Center(
-                    child: Text('Hello'),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  ];
-  late CanvasViewport controller;
+  late CanvasController _controller;
 
   @override
   void initState() {
     super.initState();
-    controller = CanvasViewport(items: items, zoom: 2.0);
-    _ticker = createTicker((elapsed) {
-      // setState(() {
-      //   items[0].children[0].transform =
-      //       items[0].children[0].transform.copyWith(
-      //             rotation: _degToRad(elapsed.inMilliseconds / 50),
-      //           );
-      //   items[0].children[0].children[0].transform =
-      //       items[0].children[0].children[0].transform.copyWith(
-      //             rotation: _degToRad(elapsed.inMilliseconds / 10),
-      //           );
-      //   items[0].transform = items[0].transform.copyWith(
-      //         rotation: _degToRad(elapsed.inMilliseconds / 100),
-      //         // scale: Size(1 + sin(elapsed.inMilliseconds / 1000),
-      //         //     1 + sin(elapsed.inMilliseconds / 1000) * 0.5),
-      //       );
-      // });
-    });
-    _ticker.start();
+    _controller = CanvasController(
+      children: [
+        BoxCanvasItem(
+            decoration: GestureDetector(
+              onTap: () {
+                print('Red tapped');
+              },
+              child: Container(
+                color: Colors.red,
+                child: Center(
+                  child: Text('Red'),
+                ),
+              ),
+            ),
+            layout: AbsoluteLayout(
+              offset: Offset.zero,
+              size: Size(100, 100),
+              scale: Offset(1, 1),
+              rotation: _degToRad(0),
+            ),
+            children: [
+              BoxCanvasItem(
+                decoration: GestureDetector(
+                  onTap: () {
+                    print('Green tapped');
+                  },
+                  child: Container(
+                    color: Colors.green,
+                  ),
+                ),
+                children: [
+                  BoxCanvasItem(
+                    decoration: GestureDetector(
+                      onTap: () {
+                        print('Orange tapped');
+                      },
+                      child: Container(
+                        color: Colors.orange,
+                      ),
+                    ),
+                    layout: AbsoluteLayout(
+                      offset: Offset(50, 50),
+                      size: Size(50, 50),
+                      rotation: _degToRad(25),
+                    ),
+                  ),
+                ],
+                layout: AbsoluteLayout(
+                  offset: Offset(100, 100),
+                  size: Size(50, 50),
+                  rotation: _degToRad(44),
+                ),
+              ),
+            ]),
+        BoxCanvasItem(
+            decoration: GestureDetector(
+              onTap: () {
+                print('Purple tapped');
+              },
+              child: Container(
+                color: Colors.purple,
+              ),
+            ),
+            layout: AbsoluteLayout(
+              offset: Offset(200, 0),
+              size: Size(100, 100),
+              scale: Offset(1, 1),
+              rotation: _degToRad(25),
+            ),
+            children: [
+              BoxCanvasItem(
+                decoration: GestureDetector(
+                  onTap: () {
+                    print('Yellow tapped');
+                  },
+                  child: Container(
+                    color: Colors.yellow,
+                  ),
+                ),
+                children: [
+                  BoxCanvasItem(
+                    decoration: GestureDetector(
+                      onTap: () {
+                        print('Blue tapped');
+                      },
+                      child: Container(
+                        color: Colors.blue,
+                      ),
+                    ),
+                    layout: AbsoluteLayout(
+                      offset: Offset(50, 50),
+                      size: Size(50, 50),
+                    ),
+                  ),
+                ],
+                layout: AbsoluteLayout(
+                  offset: Offset(100, 100),
+                  size: Size(50, 50),
+                  scale: Offset(2, 2),
+                ),
+              ),
+            ]),
+      ],
+    );
   }
 
-  @override
-  void dispose() {
-    controller.dispose();
-    _ticker.dispose();
-    super.dispose();
-  }
+  bool _multiSelect = false; // using shift
+  bool _proportionalResize = false; // using alt
+  bool _symmetricResize = false; // using ctrl
+  FocusNode _focusNode = FocusNode();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        CheckboxListTile(
-          title: const Text('Resize Mode'),
-          value: resizeMode == ResizeMode.resize,
-          onChanged: (value) {
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: (node, event) {
+        if (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+            event.logicalKey == LogicalKeyboardKey.shiftRight) {
+          if (event is KeyDownEvent) {
             setState(() {
-              resizeMode = value! ? ResizeMode.resize : ResizeMode.scale;
+              _multiSelect = true;
             });
-          },
+          } else if (event is KeyUpEvent) {
+            setState(() {
+              _multiSelect = false;
+            });
+          }
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.altLeft ||
+            event.logicalKey == LogicalKeyboardKey.altRight) {
+          if (event is KeyDownEvent) {
+            setState(() {
+              _proportionalResize = true;
+            });
+          } else if (event is KeyUpEvent) {
+            setState(() {
+              _proportionalResize = false;
+            });
+          }
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.controlLeft ||
+            event.logicalKey == LogicalKeyboardKey.controlRight) {
+          if (event is KeyDownEvent) {
+            setState(() {
+              _symmetricResize = true;
+            });
+          } else if (event is KeyUpEvent) {
+            setState(() {
+              _symmetricResize = false;
+            });
+          }
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Listener(
+        onPointerDown: (event) {
+          _focusNode.requestFocus();
+        },
+        child: CanvasViewport(
+          controller: _controller,
+          multiSelect: _multiSelect,
+          proportionalResize: _proportionalResize,
+          symmetricResize: _symmetricResize,
         ),
-        Expanded(
-          child: Container(
-            color: Colors.red,
-            child: CanvasViewportWidget(
-              controller: controller,
-              resizeMode: resizeMode,
-              control: StandardTransformControl(),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
