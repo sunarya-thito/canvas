@@ -42,21 +42,21 @@ class StandardTransformControlThemeData {
 class StandardTransformControl extends TransformControl {
   const StandardTransformControl();
   @override
-  Widget build(BuildContext context, CanvasItem node) {
-    return StandardTransformControlWidget(item: node);
+  Widget build(BuildContext context, CanvasItemNode node) {
+    return StandardTransformControlWidget(item: node.item, node: node);
   }
 }
 
 class StandardTransformControlWidget extends StatefulWidget {
-  final CanvasItem? parent;
+  final CanvasItemNode node;
   final CanvasItem item;
-  final double parentRotation;
+  final LayoutTransform? parentTransform;
 
   const StandardTransformControlWidget({
     super.key,
     required this.item,
-    this.parent,
-    this.parentRotation = 0,
+    required this.node,
+    this.parentTransform,
   });
 
   @override
@@ -73,9 +73,29 @@ class _StandardTransformControlWidgetState
   Offset? _totalOffset;
   TransformSession? _session;
   double? _startRotation;
+  VoidCallback? _onUpdate;
+  CanvasItemNode? _startNode;
+  Layout? _startLayout;
+  LayoutSnapping? _snapping;
 
   double get globalRotation {
-    return widget.item.transform.rotation + widget.parentRotation;
+    double rotation = widget.item.transform.rotation;
+    if (widget.parentTransform != null) {
+      rotation += widget.parentTransform!.rotation;
+    }
+    return rotation;
+  }
+
+  CanvasItemNode _findSelected() {
+    CanvasItemNode? current = widget.node;
+    while (current != null) {
+      var parent = current.parent;
+      if (parent != null && !parent.item.selected) {
+        break;
+      }
+      current = parent;
+    }
+    return current ?? widget.node;
   }
 
   @override
@@ -83,6 +103,13 @@ class _StandardTransformControlWidgetState
     super.didChangeDependencies();
     theme = StandardTransformControlThemeData.defaultThemeData();
     viewportData = CanvasViewportData.of(context);
+    if (_onUpdate != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_onUpdate != null) {
+          _onUpdate!();
+        }
+      });
+    }
   }
 
   @override
@@ -90,11 +117,11 @@ class _StandardTransformControlWidgetState
     return ListenableBuilder(
       listenable: Listenable.merge({
         widget.item.selectedNotifier,
-        widget.item.transformNotifier,
+        widget.item.layoutListenable,
       }),
       builder: (context, child) {
         return Transform.translate(
-          offset: widget.item.transform.offset,
+          offset: widget.item.transform.offset * viewportData.zoom,
           child: Transform.rotate(
             angle: widget.item.transform.rotation,
             alignment: Alignment.topLeft,
@@ -102,15 +129,18 @@ class _StandardTransformControlWidgetState
               children: [
                 _buildSelection(context),
                 ListenableBuilder(
-                  listenable: widget.item.childrenNotifier,
+                  listenable: widget.item.childListenable,
                   builder: (context, child) {
                     return GroupWidget(
                       children: [
                         for (final child in widget.item.children)
                           StandardTransformControlWidget(
                             item: child,
-                            parent: widget.item,
-                            parentRotation: globalRotation,
+                            node: child.toNode(widget.node),
+                            parentTransform: widget.parentTransform == null
+                                ? widget.item.transform
+                                : widget.parentTransform! *
+                                    widget.item.transform,
                           ),
                       ],
                     );
@@ -127,33 +157,68 @@ class _StandardTransformControlWidgetState
 
   Widget _wrapWithPanHandler({
     required Widget child,
-    required void Function(TransformNode node, Offset delta) visitor,
+    required void Function(TransformNode node, Offset delta,
+            {LayoutSnapping? snapping})
+        visitor,
+    required Offset? Function(LayoutSnapping snapping) snapping,
     String? debugName,
   }) {
     return PanGesture(
       onPanStart: (details) {
         _totalOffset = Offset.zero;
         _session = viewportData.beginTransform();
+        _startNode = _findSelected();
+        _startLayout = _startNode!.item.layout;
+        _snapping = LayoutSnapping(viewportData.snapping, _startNode!.item,
+            _startNode!.parentTransform);
+        viewportData.fillInSnappingPoints(_snapping!);
       },
       onPanUpdate: (details) {
         Offset delta = details.delta;
-        _totalOffset = _totalOffset! + delta;
-        _session!.visit(
-          (node) {
-            Offset localDelta = _totalOffset!;
-            visitor(node, localDelta);
-          },
-        );
-        _session!.apply();
+        _totalOffset = _totalOffset! + delta / viewportData.zoom;
+        void update() {
+          TransformNode node = TransformNode(
+            _startNode!.item,
+            _startNode!.item.transform,
+            null,
+            _startLayout!,
+          );
+          visitor(
+            node,
+            _totalOffset!,
+            snapping: _snapping,
+          );
+          node.apply();
+          _session!.visit(
+            (node) {
+              if (node.item == _startNode!.item) {
+                return;
+              }
+              visitor(node, snapping(_snapping!) ?? _totalOffset!);
+            },
+          );
+          _session!.apply();
+        }
+
+        _onUpdate = update;
+        update();
       },
       onPanEnd: (_) {
         _totalOffset = null;
+        _onUpdate = null;
         _session = null;
+        _startNode = null;
+        _startLayout = null;
       },
       onPanCancel: () {
-        _session!.reset();
+        if (_session != null) {
+          _session!.reset();
+        }
         _totalOffset = null;
         _session = null;
+        _onUpdate = null;
+        _startNode = null;
+        _startLayout = null;
       },
       child: child,
     );
@@ -163,7 +228,7 @@ class _StandardTransformControlWidgetState
     required Widget child,
     required Alignment alignment,
   }) {
-    Size scaledSize = widget.item.transform.scaledSize;
+    Size scaledSize = widget.item.transform.scaledSize * viewportData.zoom;
     Offset origin = !viewportData.anchoredRotate
         ? Offset(scaledSize.width / 2, scaledSize.height / 2)
         : (alignment * -1).alongSize(scaledSize);
@@ -175,33 +240,59 @@ class _StandardTransformControlWidgetState
         var angle = diff.direction;
         _startRotation = angle;
         _session = viewportData.beginTransform();
+        _startNode = _findSelected();
+        _startLayout = _startNode!.item.layout;
+        _snapping = LayoutSnapping(viewportData.snapping, _startNode!.item,
+            _startNode!.parentTransform);
+        viewportData.fillInSnappingPoints(_snapping!);
       },
       onPanUpdate: (details) {
-        var localPosition =
-            alignment.alongSize(scaledSize) + details.localPosition;
-        var diff = origin - localPosition;
-        var angle = diff.direction;
-        var delta = angle - _startRotation!;
-        _session!.visit(
-          (node) {
-            node.newLayout = node.layout.rotate(
-                delta,
-                !viewportData.anchoredRotate
-                    ? Alignment.center
-                    : alignment * -1);
-          },
-        );
-        _session!.apply();
+        void update() {
+          var localPosition =
+              alignment.alongSize(scaledSize) + details.localPosition;
+          var diff = origin - localPosition;
+          var angle = diff.direction;
+          var delta = angle - _startRotation!;
+          _startNode!.item.layout = _startLayout!.rotate(
+            delta,
+            alignment: !viewportData.anchoredRotate
+                ? Alignment.center
+                : alignment * -1,
+            snapping: _snapping,
+          );
+          _session!.visit(
+            (node) {
+              if (node.item == _startNode!.item) {
+                return;
+              }
+              node.newLayout = node.layout.rotate(
+                  _snapping?.newRotationDelta ?? delta,
+                  alignment: !viewportData.anchoredRotate
+                      ? Alignment.center
+                      : alignment * -1);
+            },
+          );
+          _session!.apply();
+        }
+
+        _onUpdate = update;
+        update();
       },
       onPanEnd: (details) {
         _startRotation = null;
         _session = null;
+        _startLayout = null;
+        _startNode = null;
+        _onUpdate = null;
       },
       onPanCancel: () {
         if (_session != null) {
           _session!.reset();
         }
+        _onUpdate = null;
         _startRotation = null;
+        _startLayout = null;
+        _startNode = null;
         _session = null;
       },
       child: child,
@@ -220,7 +311,7 @@ class _StandardTransformControlWidgetState
     Offset handleSize = Offset(theme.handleSize.width, theme.handleSize.height);
     Offset sizeRotation =
         Offset(theme.rotationHandleSize.width, theme.rotationHandleSize.height);
-    Size size = widget.item.transform.scaledSize;
+    Size size = widget.item.transform.scaledSize * viewportData.zoom;
     double xStart = 0;
     double xEnd = size.width;
     double yStart = 0;
@@ -307,19 +398,23 @@ class _StandardTransformControlWidgetState
           cursor: ResizeCursor.top.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'top',
-            visitor: (node, delta) {
+            visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleTop(
                   delta,
                   symmetric: viewportData.symmetricResize,
+                  snapping: snapping,
                 );
                 return;
               }
               node.newLayout = node.layout.resizeTop(
                 delta,
                 symmetric: viewportData.symmetricResize,
+                snapping: snapping,
               );
             },
+            snapping: (snapping) =>
+                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
               width: _normalizeSize(size.width - handleSize.dx),
               height: theme.handleSize.height,
@@ -335,19 +430,23 @@ class _StandardTransformControlWidgetState
               ResizeCursor.right.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'right',
-            visitor: (node, delta) {
+            visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleRight(
                   delta,
                   symmetric: viewportData.symmetricResize,
+                  snapping: snapping,
                 );
                 return;
               }
               node.newLayout = node.layout.resizeRight(
                 delta,
                 symmetric: viewportData.symmetricResize,
+                snapping: snapping,
               );
             },
+            snapping: (snapping) =>
+                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
               width: theme.handleSize.width,
               height: _normalizeSize(size.height - handleSize.dy),
@@ -363,19 +462,23 @@ class _StandardTransformControlWidgetState
               ResizeCursor.bottom.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'bottom',
-            visitor: (node, delta) {
+            visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleBottom(
                   delta,
                   symmetric: viewportData.symmetricResize,
+                  snapping: snapping,
                 );
                 return;
               }
               node.newLayout = node.layout.resizeBottom(
                 delta,
                 symmetric: viewportData.symmetricResize,
+                snapping: snapping,
               );
             },
+            snapping: (snapping) =>
+                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
               width: _normalizeSize(size.width - handleSize.dx),
               height: theme.handleSize.height,
@@ -391,19 +494,23 @@ class _StandardTransformControlWidgetState
               ResizeCursor.left.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'left',
-            visitor: (node, delta) {
+            visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleLeft(
                   delta,
                   symmetric: viewportData.symmetricResize,
+                  snapping: snapping,
                 );
                 return;
               }
               node.newLayout = node.layout.resizeLeft(
                 delta,
                 symmetric: viewportData.symmetricResize,
+                snapping: snapping,
               );
             },
+            snapping: (snapping) =>
+                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
               width: theme.handleSize.width,
               height: _normalizeSize(size.height - handleSize.dy),
@@ -419,12 +526,13 @@ class _StandardTransformControlWidgetState
               ResizeCursor.topLeft.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'top left',
-            visitor: (node, delta) {
+            visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleTopLeft(
                   delta,
                   proportional: viewportData.proportionalResize,
                   symmetric: viewportData.symmetricResize,
+                  snapping: snapping,
                 );
                 return;
               }
@@ -432,8 +540,11 @@ class _StandardTransformControlWidgetState
                 delta,
                 proportional: viewportData.proportionalResize,
                 symmetric: viewportData.symmetricResize,
+                snapping: snapping,
               );
             },
+            snapping: (snapping) =>
+                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: Container(
               width: theme.handleSize.width,
               height: theme.handleSize.height,
@@ -451,12 +562,13 @@ class _StandardTransformControlWidgetState
               .getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'top right',
-            visitor: (node, delta) {
+            visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleTopRight(
                   delta,
                   proportional: viewportData.proportionalResize,
                   symmetric: viewportData.symmetricResize,
+                  snapping: snapping,
                 );
                 return;
               }
@@ -464,8 +576,11 @@ class _StandardTransformControlWidgetState
                 delta,
                 proportional: viewportData.proportionalResize,
                 symmetric: viewportData.symmetricResize,
+                snapping: snapping,
               );
             },
+            snapping: (snapping) =>
+                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: Container(
               width: theme.handleSize.width,
               height: theme.handleSize.height,
@@ -483,12 +598,13 @@ class _StandardTransformControlWidgetState
               .getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'bottom left',
-            visitor: (node, delta) {
+            visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleBottomLeft(
                   delta,
                   proportional: viewportData.proportionalResize,
                   symmetric: viewportData.symmetricResize,
+                  snapping: snapping,
                 );
                 return;
               }
@@ -496,8 +612,11 @@ class _StandardTransformControlWidgetState
                 delta,
                 proportional: viewportData.proportionalResize,
                 symmetric: viewportData.symmetricResize,
+                snapping: snapping,
               );
             },
+            snapping: (snapping) =>
+                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: Container(
               width: theme.handleSize.width,
               height: theme.handleSize.height,
@@ -515,12 +634,13 @@ class _StandardTransformControlWidgetState
               .getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'bottom right',
-            visitor: (node, delta) {
+            visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
                 node.newLayout = node.layout.rescaleBottomRight(
                   delta,
                   proportional: viewportData.proportionalResize,
                   symmetric: viewportData.symmetricResize,
+                  snapping: snapping,
                 );
                 return;
               }
@@ -528,8 +648,11 @@ class _StandardTransformControlWidgetState
                 delta,
                 proportional: viewportData.proportionalResize,
                 symmetric: viewportData.symmetricResize,
+                snapping: snapping,
               );
             },
+            snapping: (snapping) =>
+                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: Container(
               width: theme.handleSize.width,
               height: theme.handleSize.height,
@@ -543,7 +666,7 @@ class _StandardTransformControlWidgetState
   }
 
   Widget _buildSelection(BuildContext context) {
-    Size size = widget.item.transform.scaledSize;
+    Size size = widget.item.transform.scaledSize * viewportData.zoom;
     Offset flipOffset = Offset(
       size.width < 0 ? size.width : 0,
       size.height < 0 ? size.height : 0,
@@ -551,30 +674,14 @@ class _StandardTransformControlWidgetState
     size = size.abs();
     return Transform.translate(
       offset: flipOffset,
-      child: MouseRegion(
-        hitTestBehavior: HitTestBehavior.translucent,
-        cursor: widget.item.selected
-            ? SystemMouseCursors.move
-            : SystemMouseCursors.click,
-        opaque: false,
-        onEnter: (_) {
-          setState(() {
-            _hover = true;
-          });
-        },
-        onExit: (_) {
-          setState(() {
-            _hover = false;
-          });
-        },
-        child: IgnorePointer(
-          child: SizedBox.fromSize(
-            size: size,
-            child: Container(
-              decoration: _hover || widget.item.selected
-                  ? theme.selectionDecoration
-                  : null,
-            ),
+      child: IgnorePointer(
+        child: SizedBox.fromSize(
+          size: size,
+          child: Container(
+            decoration:
+                viewportData.hoveredItem == widget.item || widget.item.selected
+                    ? theme.selectionDecoration
+                    : null,
           ),
         ),
       ),

@@ -11,6 +11,22 @@ Size calculateTextSize(TextSpan textSpan,
   return textPainter.size;
 }
 
+double degToRad(double degrees) {
+  return degrees * pi / 180;
+}
+
+double radToDeg(double radians) {
+  return radians * 180 / pi;
+}
+
+double limitDegrees(double degrees) {
+  degrees = degrees % 360;
+  if (degrees < 0) {
+    degrees += 360;
+  }
+  return degrees;
+}
+
 Offset rotatePoint(Offset point, double angle) {
   final double cosAngle = cos(angle);
   final double sinAngle = sin(angle);

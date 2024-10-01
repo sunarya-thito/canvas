@@ -1,6 +1,51 @@
 import 'package:canvas/src/util.dart';
-import 'package:canvas/src/widgets.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+
+import '../canvas.dart';
+
+enum SelectionBehavior {
+  overlap,
+  contain,
+}
+
+abstract class CanvasSelectionHandler {
+  void onSelectionStart(CanvasSelectSession session);
+  void onSelectionChange(CanvasSelectSession session);
+  void onSelectionEnd(CanvasSelectSession session);
+  void onSelectionCancel();
+}
+
+abstract class CanvasViewportHandle {
+  CanvasTransform get transform;
+  set transform(CanvasTransform transform);
+  Size get size;
+  AlignmentGeometry get alignment;
+  void startSelectSession(Offset position);
+  void updateSelectSession(Offset position);
+  void endSelectSession();
+  void cancelSelectSession();
+}
+
+class CanvasSelectSession {
+  final Offset startPosition;
+  final Offset endPosition;
+
+  CanvasSelectSession({
+    required this.startPosition,
+    required this.endPosition,
+  });
+
+  CanvasSelectSession copyWith({
+    Offset? startPosition,
+    Offset? endPosition,
+  }) {
+    return CanvasSelectSession(
+      startPosition: startPosition ?? this.startPosition,
+      endPosition: endPosition ?? this.endPosition,
+    );
+  }
+}
 
 class SnappingConfiguration {
   static const List<double> defaultSnappingAngles = [
@@ -12,6 +57,7 @@ class SnappingConfiguration {
     225,
     270,
     315,
+    360,
   ];
   final bool enableObjectSnapping;
   final bool enableRotationSnapping;
@@ -21,21 +67,23 @@ class SnappingConfiguration {
   const SnappingConfiguration({
     this.enableObjectSnapping = true,
     this.enableRotationSnapping = true,
-    this.threshold = 10,
+    this.threshold = 5,
     this.angles = defaultSnappingAngles,
   });
 
   double snapAngle(double angle) {
-    double minDiff = double.infinity;
-    double result = angle;
+    if (!enableRotationSnapping) {
+      return angle;
+    }
+    angle = radToDeg(angle);
+    angle = limitDegrees(angle);
     for (final snappingAngle in angles) {
       double diff = (angle - snappingAngle).abs();
-      if (diff < minDiff) {
-        minDiff = diff;
-        result = snappingAngle;
+      if (diff < threshold) {
+        return degToRad(snappingAngle);
       }
     }
-    return result;
+    return degToRad(angle);
   }
 }
 
@@ -47,9 +95,46 @@ class SnappingPoint {
     required this.position,
     required this.angle,
   });
+}
 
-  Offset? snap(SnappingPoint other, SnappingConfiguration config) {
-    return null;
+class CanvasTransform {
+  final Offset offset;
+  final double zoom;
+
+  const CanvasTransform({
+    this.offset = Offset.zero,
+    this.zoom = 1,
+  });
+
+  Offset toLocal(Offset global) {
+    return global / zoom - offset;
+  }
+
+  Offset toGlobal(Offset local) {
+    return (local + offset) * zoom;
+  }
+
+  CanvasTransform drag(Offset delta) {
+    return CanvasTransform(
+      offset: offset + delta,
+      zoom: zoom,
+    );
+  }
+
+  CanvasTransform zoomAt(Offset position, double delta) {
+    var newZoom = zoom + delta;
+
+    var globalPosition = (position + offset) * zoom;
+
+    var oldPosition = globalPosition * zoom;
+    var newPosition = globalPosition * newZoom;
+
+    var deltaPosition = newPosition - oldPosition;
+
+    return CanvasTransform(
+      offset: offset - deltaPosition,
+      zoom: newZoom,
+    );
   }
 }
 
@@ -65,6 +150,70 @@ class ReparentDetails {
     this.oldParent,
     this.newParent,
   });
+}
+
+class CanvasItemNode {
+  final CanvasItemNode? parent;
+  final CanvasItem item;
+
+  CanvasItemNode(this.parent, this.item);
+
+  LayoutTransform? get parentTransform {
+    if (parent == null) {
+      return null;
+    }
+    CanvasItemNode? current = parent;
+    LayoutTransform transform = LayoutTransform();
+    while (current != null) {
+      transform = current.item.transform * transform;
+      current = current.parent;
+    }
+    return transform;
+  }
+
+  void visitTo(CanvasItem target, void Function(CanvasItem item) visitor) {
+    CanvasItem current = item;
+    while (current.isDescendantOf(target)) {
+      visitor(current);
+      bool found = false;
+      for (final child in current.children) {
+        if (child.isDescendantOf(target)) {
+          current = child;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        break;
+      }
+    }
+  }
+
+  Offset toGlobal(Offset local) {
+    CanvasItemNode? current = this;
+    while (current != null) {
+      local = current.item.transform.transformToParent(local);
+      current = current.parent;
+    }
+    return local;
+  }
+
+  Offset toLocal(Offset global) {
+    CanvasItemNode? current = this;
+    while (current != null) {
+      global = current.item.transform.transformFromParent(global);
+      current = current.parent;
+    }
+    return global;
+  }
+
+  bool contains(Offset localPosition) {
+    var scaledSize = item.transform.scaledSize;
+    return localPosition.dx >= 0 &&
+        localPosition.dy >= 0 &&
+        localPosition.dx <= scaledSize.width &&
+        localPosition.dy <= scaledSize.height;
+  }
 }
 
 class LayoutTransform {
@@ -94,6 +243,16 @@ class LayoutTransform {
     return offset;
   }
 
+  Polygon transformFromParentPolygon(Polygon polygon) {
+    List<Offset> points = polygon.points.map(transformFromParent).toList();
+    return Polygon(points);
+  }
+
+  Polygon transformToParentPolygon(Polygon polygon) {
+    List<Offset> points = polygon.points.map(transformToParent).toList();
+    return Polygon(points);
+  }
+
   LayoutTransform copyWith({
     Offset? offset,
     double? rotation,
@@ -112,8 +271,8 @@ class LayoutTransform {
     return LayoutTransform(
       offset: offset + other.offset,
       rotation: rotation + other.rotation,
-      scale: scale,
-      size: size,
+      scale: other.scale,
+      size: other.size,
     );
   }
 
@@ -123,37 +282,95 @@ class LayoutTransform {
   }
 }
 
+class LayoutSnapping {
+  final SnappingConfiguration config;
+  final List<SnappingPoint> snappingPoints = [];
+  final CanvasItem item;
+  final LayoutTransform? parentTransform;
+  late List<SnappingPoint> _selfSnappingPoints;
+
+  Offset? newOffsetDelta;
+  double? newRotationDelta;
+  Offset? newScaleDelta;
+  Offset? newSizeDelta;
+
+  LayoutSnapping(this.config, this.item, this.parentTransform) {
+    _selfSnappingPoints = _computeSnappingPoints(item);
+  }
+
+  List<SnappingPoint> get selfSnappingPoints => _selfSnappingPoints;
+
+  List<SnappingPoint> _computeSnappingPoints(CanvasItem item) {
+    List<SnappingPoint> snappingPoints = [];
+    item.visitSnappingPoints((snappingPoint) {
+      snappingPoints.add(snappingPoint);
+    }, parentTransform);
+    return snappingPoints;
+  }
+}
+
 abstract class Layout {
   const Layout();
   void performLayout(CanvasItem item, [CanvasItem? parent]);
   void performSelfLayout(CanvasItem item);
-  Layout drag(Offset delta);
-  Layout rotate(double delta, [Alignment alignment = Alignment.center]);
+  Layout drag(Offset delta, {LayoutSnapping? snapping});
+  Layout rotate(double delta,
+      {Alignment alignment = Alignment.center, LayoutSnapping? snapping});
   Layout resizeTopLeft(Offset delta,
-      {bool proportional = false, bool symmetric = false});
+      {bool proportional = false,
+      bool symmetric = false,
+      LayoutSnapping? snapping});
   Layout resizeTopRight(Offset delta,
-      {bool proportional = false, bool symmetric = false});
+      {bool proportional = false,
+      bool symmetric = false,
+      LayoutSnapping? snapping});
   Layout resizeBottomLeft(Offset delta,
-      {bool proportional = false, bool symmetric = false});
+      {bool proportional = false,
+      bool symmetric = false,
+      LayoutSnapping? snapping});
   Layout resizeBottomRight(Offset delta,
-      {bool proportional = false, bool symmetric = false});
-  Layout resizeTop(Offset delta, {bool symmetric = false});
-  Layout resizeLeft(Offset delta, {bool symmetric = false});
-  Layout resizeRight(Offset delta, {bool symmetric = false});
-  Layout resizeBottom(Offset delta, {bool symmetric = false});
+      {bool proportional = false,
+      bool symmetric = false,
+      LayoutSnapping? snapping});
+  Layout resizeTop(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping});
+  Layout resizeLeft(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping});
+  Layout resizeRight(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping});
+  Layout resizeBottom(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping});
   Layout rescaleTopLeft(Offset delta,
-      {bool symmetric = false, bool proportional = false});
+      {bool symmetric = false,
+      bool proportional = false,
+      LayoutSnapping? snapping});
   Layout rescaleTopRight(Offset delta,
-      {bool symmetric = false, bool proportional = false});
+      {bool symmetric = false,
+      bool proportional = false,
+      LayoutSnapping? snapping});
   Layout rescaleBottomLeft(Offset delta,
-      {bool symmetric = false, bool proportional = false});
+      {bool symmetric = false,
+      bool proportional = false,
+      LayoutSnapping? snapping});
   Layout rescaleBottomRight(Offset delta,
-      {bool symmetric = false, bool proportional = false});
-  Layout rescaleTop(Offset delta, {bool symmetric = false});
-  Layout rescaleLeft(Offset delta, {bool symmetric = false});
-  Layout rescaleRight(Offset delta, {bool symmetric = false});
-  Layout rescaleBottom(Offset delta, {bool symmetric = false});
+      {bool symmetric = false,
+      bool proportional = false,
+      LayoutSnapping? snapping});
+  Layout rescaleTop(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping});
+  Layout rescaleLeft(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping});
+  Layout rescaleRight(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping});
+  Layout rescaleBottom(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping});
   bool get shouldHandleChildLayout;
+
+  /// Transfer layout from parent to child
+  Layout transferToParent(Layout parentLayout);
+
+  /// Transfer layout from child to parent
+  Layout transferToChild(Layout childLayout);
 }
 
 class AbsoluteLayout extends Layout {
@@ -169,6 +386,56 @@ class AbsoluteLayout extends Layout {
     this.scale = const Offset(1, 1),
   });
 
+  @override
+  String toString() {
+    return 'AbsoluteLayout(offset: $offset, size: $size, rotation: ${radToDeg(rotation)}, scale: $scale)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is AbsoluteLayout &&
+        other.offset == offset &&
+        other.size == size &&
+        other.rotation == rotation &&
+        other.scale == scale;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(offset, size, rotation, scale);
+  }
+
+  @override
+  Layout transferToChild(Layout childLayout) {
+    if (childLayout is AbsoluteLayout) {
+      return AbsoluteLayout(
+        // offset: offset - childLayout.offset,
+        offset: rotatePoint(offset - childLayout.offset, -childLayout.rotation),
+        size: size,
+        rotation: rotation - childLayout.rotation,
+        scale: scale,
+      );
+    }
+    return this;
+  }
+
+  @override
+  Layout transferToParent(Layout parentLayout) {
+    if (parentLayout is AbsoluteLayout) {
+      return AbsoluteLayout(
+        // offset: offset + parentLayout.offset,
+        offset:
+            rotatePoint(offset, parentLayout.rotation) + parentLayout.offset,
+        size: size,
+        rotation: rotation + parentLayout.rotation,
+        scale: scale,
+      );
+    }
+    return this;
+  }
+
   Size get scaledSize => Size(size.width * scale.dx, size.height * scale.dy);
 
   double get aspectRatio {
@@ -179,7 +446,7 @@ class AbsoluteLayout extends Layout {
   @override
   void performLayout(CanvasItem item, [CanvasItem? parent]) {
     if (parent != null && parent.layout.shouldHandleChildLayout) {
-      parent.layoutNotifier.value.performLayout(parent);
+      parent.layoutListenable.value.performLayout(parent);
       return;
     }
     performSelfLayout(item);
@@ -196,7 +463,7 @@ class AbsoluteLayout extends Layout {
   }
 
   @override
-  Layout drag(Offset delta) {
+  Layout drag(Offset delta, {LayoutSnapping? snapping}) {
     return AbsoluteLayout(
       offset: offset + delta,
       size: size,
@@ -206,22 +473,29 @@ class AbsoluteLayout extends Layout {
   }
 
   @override
-  Layout rotate(double delta, [Alignment alignment = Alignment.center]) {
+  Layout rotate(double delta,
+      {Alignment alignment = Alignment.center, LayoutSnapping? snapping}) {
+    double newRotation = rotation + delta;
+    if (snapping != null) {
+      var oldNewRotation = newRotation;
+      newRotation = snapping.config.snapAngle(newRotation);
+      snapping.newRotationDelta = delta - (oldNewRotation - newRotation);
+    }
     Size scaledSize = this.scaledSize;
     Offset before = rotatePoint(-alignment.alongSize(scaledSize), rotation);
-    Offset after =
-        rotatePoint(-alignment.alongSize(scaledSize), rotation + delta);
+    Offset after = rotatePoint(-alignment.alongSize(scaledSize), newRotation);
     Offset offsetDelta = after - before;
     return AbsoluteLayout(
       offset: offset + offsetDelta,
       size: size,
-      rotation: rotation + delta,
+      rotation: newRotation,
       scale: scale,
     );
   }
 
   @override
-  Layout resizeBottom(Offset delta, {bool symmetric = false}) {
+  Layout resizeBottom(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.divideBy(scale);
     Layout result = AbsoluteLayout(
@@ -238,32 +512,39 @@ class AbsoluteLayout extends Layout {
 
   @override
   Layout resizeBottomLeft(Offset delta,
-      {bool proportional = false, bool symmetric = false}) {
+      {bool proportional = false,
+      bool symmetric = false,
+      LayoutSnapping? snapping}) {
     if (proportional) {
       delta = proportionalDelta(delta, aspectRatio);
     }
-    Layout result = resizeBottom(delta).resizeLeft(delta);
+    Layout result = resizeBottom(delta, snapping: snapping)
+        .resizeLeft(delta, snapping: snapping);
     if (symmetric) {
-      result = result.resizeTopRight(-delta);
+      result = result.resizeTopRight(-(snapping?.newSizeDelta ?? delta));
     }
     return result;
   }
 
   @override
   Layout resizeBottomRight(Offset delta,
-      {bool proportional = false, bool symmetric = false}) {
+      {bool proportional = false,
+      bool symmetric = false,
+      LayoutSnapping? snapping}) {
     if (proportional) {
       delta = proportionalDelta(delta, aspectRatio);
     }
-    Layout result = resizeBottom(delta).resizeRight(delta);
+    Layout result = resizeBottom(delta, snapping: snapping)
+        .resizeRight(delta, snapping: snapping);
     if (symmetric) {
-      result = result.resizeTopLeft(-delta);
+      result = result.resizeTopLeft(-(snapping?.newSizeDelta ?? delta));
     }
     return result;
   }
 
   @override
-  Layout resizeLeft(Offset delta, {bool symmetric = false}) {
+  Layout resizeLeft(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyX();
     Offset rotatedDelta = rotatePoint(delta, rotation);
@@ -281,7 +562,8 @@ class AbsoluteLayout extends Layout {
   }
 
   @override
-  Layout resizeRight(Offset delta, {bool symmetric = false}) {
+  Layout resizeRight(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyX();
     delta = delta.divideBy(scale);
@@ -298,7 +580,8 @@ class AbsoluteLayout extends Layout {
   }
 
   @override
-  Layout resizeTop(Offset delta, {bool symmetric = false}) {
+  Layout resizeTop(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyY();
     Offset rotatedDelta = rotatePoint(delta, rotation);
@@ -317,32 +600,39 @@ class AbsoluteLayout extends Layout {
 
   @override
   Layout resizeTopLeft(Offset delta,
-      {bool proportional = false, bool symmetric = false}) {
+      {bool proportional = false,
+      bool symmetric = false,
+      LayoutSnapping? snapping}) {
     if (proportional) {
       delta = proportionalDelta(delta, aspectRatio);
     }
-    Layout result = resizeTop(delta).resizeLeft(delta);
+    Layout result = resizeTop(delta, snapping: snapping)
+        .resizeLeft(delta, snapping: snapping);
     if (symmetric) {
-      result = result.resizeBottomRight(-delta);
+      result = result.resizeBottomRight(-(snapping?.newSizeDelta ?? delta));
     }
     return result;
   }
 
   @override
   Layout resizeTopRight(Offset delta,
-      {bool proportional = false, bool symmetric = false}) {
+      {bool proportional = false,
+      bool symmetric = false,
+      LayoutSnapping? snapping}) {
     if (proportional) {
       delta = proportionalDelta(delta, aspectRatio);
     }
-    Layout result = resizeTop(delta).resizeRight(delta);
+    Layout result = resizeTop(delta, snapping: snapping)
+        .resizeRight(delta, snapping: snapping);
     if (symmetric) {
-      result = result.resizeBottomLeft(-delta);
+      result = result.resizeBottomLeft(-(snapping?.newSizeDelta ?? delta));
     }
     return result;
   }
 
   @override
-  Layout rescaleBottom(Offset delta, {bool symmetric = false}) {
+  Layout rescaleBottom(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     Layout result = AbsoluteLayout(
       offset: offset,
@@ -358,7 +648,9 @@ class AbsoluteLayout extends Layout {
 
   @override
   Layout rescaleBottomLeft(Offset delta,
-      {bool symmetric = false, bool proportional = false}) {
+      {bool symmetric = false,
+      bool proportional = false,
+      LayoutSnapping? snapping}) {
     if (proportional) {
       delta = proportionalDelta(delta, aspectRatio);
     }
@@ -371,7 +663,9 @@ class AbsoluteLayout extends Layout {
 
   @override
   Layout rescaleBottomRight(Offset delta,
-      {bool symmetric = false, bool proportional = false}) {
+      {bool symmetric = false,
+      bool proportional = false,
+      LayoutSnapping? snapping}) {
     if (proportional) {
       delta = proportionalDelta(delta, aspectRatio);
     }
@@ -383,7 +677,8 @@ class AbsoluteLayout extends Layout {
   }
 
   @override
-  Layout rescaleLeft(Offset delta, {bool symmetric = false}) {
+  Layout rescaleLeft(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyX();
     Offset rotatedDelta = rotatePoint(delta, rotation);
@@ -400,7 +695,8 @@ class AbsoluteLayout extends Layout {
   }
 
   @override
-  Layout rescaleRight(Offset delta, {bool symmetric = false}) {
+  Layout rescaleRight(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyX();
     Layout result = AbsoluteLayout(
@@ -416,7 +712,8 @@ class AbsoluteLayout extends Layout {
   }
 
   @override
-  Layout rescaleTop(Offset delta, {bool symmetric = false}) {
+  Layout rescaleTop(Offset delta,
+      {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyY();
     Offset rotatedDelta = rotatePoint(delta, rotation);
@@ -434,7 +731,9 @@ class AbsoluteLayout extends Layout {
 
   @override
   Layout rescaleTopLeft(Offset delta,
-      {bool symmetric = false, bool proportional = false}) {
+      {bool symmetric = false,
+      bool proportional = false,
+      LayoutSnapping? snapping}) {
     if (proportional) {
       delta = proportionalDelta(delta, aspectRatio);
     }
@@ -447,7 +746,9 @@ class AbsoluteLayout extends Layout {
 
   @override
   Layout rescaleTopRight(Offset delta,
-      {bool symmetric = false, bool proportional = false}) {
+      {bool symmetric = false,
+      bool proportional = false,
+      LayoutSnapping? snapping}) {
     if (proportional) {
       delta = proportionalDelta(delta, aspectRatio);
     }
@@ -463,23 +764,66 @@ class AbsoluteLayout extends Layout {
 }
 
 abstract class CanvasItem {
-  ValueNotifier<Layout> layoutNotifier = ValueNotifier(const AbsoluteLayout());
-  ValueNotifier<LayoutTransform> transformNotifier =
+  final ValueNotifier<Layout> _layoutNotifier =
+      ValueNotifier(const AbsoluteLayout());
+  final ValueNotifier<LayoutTransform> _transformNotifier =
       ValueNotifier(LayoutTransform());
-  ValueNotifier<List<CanvasItem>> childrenNotifier = ValueNotifier([]);
-  ValueNotifier<bool> selectedNotifier = ValueNotifier(false);
+  final ValueNotifier<List<CanvasItem>> _childrenNotifier = ValueNotifier([]);
+  final ValueNotifier<bool> selectedNotifier = ValueNotifier(false);
+  ValueListenable<Layout> get layoutListenable => _layoutNotifier;
+  ValueListenable<List<CanvasItem>> get childListenable => _childrenNotifier;
+  ValueListenable<LayoutTransform> get transformListenable =>
+      _transformNotifier;
 
   Widget? build(BuildContext context) => null;
 
-  Layout get layout => layoutNotifier.value;
-  List<CanvasItem> get children => childrenNotifier.value;
-  LayoutTransform get transform => transformNotifier.value;
+  Layout get layout => layoutListenable.value;
+  List<CanvasItem> get children => childListenable.value;
+  LayoutTransform get transform => transformListenable.value;
   bool get selected => selectedNotifier.value;
 
-  set layout(Layout layout) => layoutNotifier.value = layout;
-  set children(List<CanvasItem> children) => childrenNotifier.value = children;
   set transform(LayoutTransform transform) =>
-      transformNotifier.value = transform;
+      _transformNotifier.value = transform;
+
+  void addChildren(List<CanvasItem> children) {
+    this.children = [...this.children, ...children];
+  }
+
+  void removeChildren(List<CanvasItem> children) {
+    this.children =
+        this.children.where((element) => !children.contains(element)).toList();
+  }
+
+  void addChild(CanvasItem child) {
+    children = [...children, child];
+  }
+
+  void removeChild(CanvasItem child) {
+    children = children.where((element) => element != child).toList();
+  }
+
+  void removeChildAt(int index) {
+    children = List.from(children)..removeAt(index);
+  }
+
+  void insertChild(int index, CanvasItem child) {
+    children = List.from(children)..insert(index, child);
+  }
+
+  set layout(Layout layout) {
+    _layoutNotifier.value = layout;
+    _handleLayoutChange();
+  }
+
+  void _handleLayoutChange() {
+    layout.performLayout(this);
+  }
+
+  set children(List<CanvasItem> children) {
+    _childrenNotifier.value = children;
+    _handleLayoutChange();
+  }
+
   set selected(bool selected) => selectedNotifier.value = selected;
 
   void visit(void Function(CanvasItem item) visitor) {
@@ -487,6 +831,57 @@ abstract class CanvasItem {
     for (final child in children) {
       child.visit(visitor);
     }
+  }
+
+  void hitTestSelection(CanvasHitTestResult result, Polygon selection,
+      [SelectionBehavior behavior = SelectionBehavior.overlap]) {
+    selection = transform.transformFromParentPolygon(selection);
+    if (hitTestSelfSelection(selection, behavior)) {
+      result.path.add(CanvasHitTestEntry(this, Offset.zero));
+    }
+    hitTestChildrenSelection(result, selection, behavior);
+  }
+
+  bool hitTestSelfSelection(Polygon selection,
+      [SelectionBehavior behavior = SelectionBehavior.overlap]) {
+    return false;
+  }
+
+  void hitTestChildrenSelection(CanvasHitTestResult result, Polygon selection,
+      [SelectionBehavior behavior = SelectionBehavior.overlap]) {
+    for (final child in children) {
+      child.hitTestSelection(result, selection, behavior);
+    }
+  }
+
+  void hitTest(CanvasHitTestResult result, Offset position) {
+    position = transform.transformFromParent(position);
+    if (hitTestSelf(position)) {
+      result.path.add(CanvasHitTestEntry(this, position));
+    }
+    hitTestChildren(result, position);
+  }
+
+  bool hitTestSelf(Offset position) {
+    return false;
+  }
+
+  void hitTestChildren(CanvasHitTestResult result, Offset position) {
+    for (final child in children) {
+      child.hitTest(result, position);
+    }
+  }
+
+  bool isDescendantOf(CanvasItem item) {
+    if (item == this) {
+      return true;
+    }
+    for (final child in children) {
+      if (child.isDescendantOf(item)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void visitWithTransform(
@@ -503,22 +898,6 @@ abstract class CanvasItem {
     for (final child in children) {
       child.visitWithTransform(visitor,
           parentTransform: transform, rootSelectionOnly: rootSelectionOnly);
-    }
-  }
-
-  void hitTest(CanvasHitTestResult result, Offset position) {
-    var transform = this.transform;
-    position = position - transform.offset;
-    position = rotatePoint(position, -transform.rotation);
-    hitTestSelf(result, position);
-    hitTestChildren(result, position);
-  }
-
-  void hitTestSelf(CanvasHitTestResult result, Offset position);
-
-  void hitTestChildren(CanvasHitTestResult result, Offset position) {
-    for (final child in children) {
-      child.hitTest(result, position);
     }
   }
 
@@ -557,8 +936,10 @@ abstract class CanvasItem {
 }
 
 class RootCanvasItem extends CanvasItem {
+  final Decoration? decoration;
   RootCanvasItem({
     List<CanvasItem> children = const [],
+    this.decoration,
     required Layout layout,
   }) {
     this.children = children;
@@ -566,7 +947,14 @@ class RootCanvasItem extends CanvasItem {
   }
 
   @override
-  void hitTestSelf(CanvasHitTestResult result, Offset position) {}
+  Widget? build(BuildContext context) {
+    if (decoration != null) {
+      return DecoratedBox(
+        decoration: decoration!,
+      );
+    }
+    return super.build(context);
+  }
 }
 
 class BoxCanvasItem extends CanvasItem {
@@ -585,19 +973,31 @@ class BoxCanvasItem extends CanvasItem {
   }
 
   @override
-  void hitTestSelf(CanvasHitTestResult result, Offset position) {
-    var scaledSize = transform.scaledSize;
-    if (position.dx >= 0 &&
-        position.dx <= scaledSize.width &&
-        position.dy >= 0 &&
-        position.dy <= scaledSize.height) {
-      result.path.add(CanvasHitTestEntry(this, position));
-    }
+  Widget? build(BuildContext context) {
+    return decoration;
   }
 
   @override
-  Widget? build(BuildContext context) {
-    return decoration;
+  bool hitTestSelf(Offset position) {
+    var scaledSize = transform.scaledSize;
+    return position.dx >= 0 &&
+        position.dy >= 0 &&
+        position.dx <= scaledSize.width &&
+        position.dy <= scaledSize.height;
+  }
+
+  @override
+  bool hitTestSelfSelection(Polygon selection,
+      [SelectionBehavior behavior = SelectionBehavior.overlap]) {
+    var scaledSize = transform.scaledSize;
+    Polygon box = Polygon.fromRect(
+        Rect.fromLTWH(0, 0, scaledSize.width, scaledSize.height));
+    switch (behavior) {
+      case SelectionBehavior.overlap:
+        return box.overlaps(selection);
+      case SelectionBehavior.contain:
+        return selection.containsPolygon(box);
+    }
   }
 
   @override
@@ -608,5 +1008,5 @@ class BoxCanvasItem extends CanvasItem {
 
 abstract class TransformControl {
   const TransformControl();
-  Widget build(BuildContext context, CanvasItem node);
+  Widget build(BuildContext context, CanvasItemNode node);
 }

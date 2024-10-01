@@ -1,9 +1,38 @@
 import 'package:canvas/src/foundation.dart';
 import 'package:canvas/src/helper_widget.dart';
 import 'package:canvas/src/util.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 import '../canvas.dart';
+
+class CanvasViewportThemeData {
+  final Color backgroundColor;
+  final Decoration canvasDecoration;
+  final Decoration selectionDecoration;
+
+  const CanvasViewportThemeData({
+    this.backgroundColor = const Color(0xFFB0B0B0),
+    this.canvasDecoration = const BoxDecoration(
+      color: Color(0xFFFFFFFF),
+      boxShadow: [
+        BoxShadow(
+          color: Color(0x33000000),
+          blurRadius: 4,
+          offset: Offset(0, 2),
+        ),
+      ],
+    ),
+    this.selectionDecoration = const BoxDecoration(
+      color: Color(0x806E91E1),
+      border: Border(
+        top: BorderSide(color: Color(0xFF6E91E1), width: 1),
+        left: BorderSide(color: Color(0xFF6E91E1), width: 1),
+        right: BorderSide(color: Color(0xFF6E91E1), width: 1),
+        bottom: BorderSide(color: Color(0xFF6E91E1), width: 1),
+      ),
+    ),
+  });
+}
 
 class CanvasController implements Listenable {
   final RootCanvasItem _root = RootCanvasItem(
@@ -19,14 +48,14 @@ class CanvasController implements Listenable {
 
   @override
   void addListener(listener) {
-    _root.layoutNotifier.addListener(listener);
-    _root.childrenNotifier.addListener(listener);
+    _root.layoutListenable.addListener(listener);
+    _root.childListenable.addListener(listener);
   }
 
   @override
   void removeListener(listener) {
-    _root.layoutNotifier.removeListener(listener);
-    _root.childrenNotifier.removeListener(listener);
+    _root.layoutListenable.removeListener(listener);
+    _root.childListenable.removeListener(listener);
   }
 }
 
@@ -64,6 +93,12 @@ class TransformNode {
   Layout? newLayout;
 
   TransformNode(this.item, this.transform, this.parentTransform, this.layout);
+
+  void apply() {
+    if (newLayout != null && newLayout != item.layout) {
+      item.layout = newLayout!;
+    }
+  }
 }
 
 class CanvasHitTestEntry {
@@ -71,6 +106,11 @@ class CanvasHitTestEntry {
   final Offset localPosition;
 
   CanvasHitTestEntry(this.item, this.localPosition);
+
+  @override
+  String toString() {
+    return 'CanvasHitTestEntry(item: $item, localPosition: $localPosition)';
+  }
 }
 
 class CanvasHitTestResult {
@@ -85,7 +125,11 @@ class CanvasViewportData extends InheritedWidget {
   final bool symmetricResize;
   final bool proportionalResize;
   final bool anchoredRotate;
-  final EventConsumer<ReparentDetails>? onReparent;
+  final EventPredicate<ReparentDetails>? onReparent;
+  final Offset offset;
+  final double zoom;
+  final SnappingConfiguration snapping;
+  final CanvasItem? hoveredItem;
 
   const CanvasViewportData({
     super.key,
@@ -97,11 +141,27 @@ class CanvasViewportData extends InheritedWidget {
     required this.proportionalResize,
     required this.anchoredRotate,
     required this.onReparent,
+    required this.offset,
+    required this.zoom,
+    required this.snapping,
+    required this.hoveredItem,
     required super.child,
   });
 
+  void fillInSnappingPoints(LayoutSnapping layoutSnapping) {
+    visitSnappingPoints(
+      (snappingPoint) {
+        layoutSnapping.snappingPoints.add(snappingPoint);
+      },
+    );
+  }
+
   void visit(void Function(CanvasItem item) visitor) {
     controller._root.visit(visitor);
+  }
+
+  void hitTest(CanvasHitTestResult result, Offset position) {
+    controller._root.hitTest(result, position);
   }
 
   void visitWithTransform(
@@ -113,10 +173,6 @@ class CanvasViewportData extends InheritedWidget {
 
   void visitSnappingPoints(void Function(SnappingPoint snappingPoint) visitor) {
     controller._root.visitSnappingPoints(visitor);
-  }
-
-  void hitTest(CanvasHitTestResult result, Offset position) {
-    controller._root.hitTest(result, position);
   }
 
   TransformSession beginTransform(
@@ -142,15 +198,22 @@ class CanvasViewportData extends InheritedWidget {
         oldWidget.transformControl != transformControl ||
         oldWidget.multiSelect != multiSelect ||
         oldWidget.symmetricResize != symmetricResize ||
-        oldWidget.proportionalResize != proportionalResize;
+        oldWidget.proportionalResize != proportionalResize ||
+        oldWidget.anchoredRotate != anchoredRotate ||
+        oldWidget.onReparent != onReparent ||
+        oldWidget.offset != offset ||
+        oldWidget.zoom != zoom ||
+        oldWidget.snapping != snapping ||
+        oldWidget.hoveredItem != hoveredItem;
   }
 }
 
 enum ResizeMode { resize, scale }
 
-typedef EventConsumer<T> = bool Function(T details);
+typedef EventPredicate<T> = bool Function(T details);
+typedef EventConsumer<T> = void Function(T details);
 
-class CanvasViewport extends StatelessWidget {
+class CanvasViewport extends StatefulWidget {
   final CanvasController controller;
   final AlignmentGeometry alignment;
   final TransformControl transformControl;
@@ -159,7 +222,13 @@ class CanvasViewport extends StatelessWidget {
   final bool symmetricResize;
   final bool proportionalResize;
   final bool anchoredRotate;
-  final EventConsumer<ReparentDetails>? onReparent;
+  final EventPredicate<ReparentDetails>? onReparent;
+  final EventConsumer<CanvasTransform>? onTransform;
+  final CanvasTransform initialTransform;
+  final CanvasGestures gestures;
+  final SnappingConfiguration snapping;
+  final CanvasSelectionHandler? selectionHandler;
+  final SelectionBehavior selectionBehavior;
 
   const CanvasViewport({
     super.key,
@@ -172,104 +241,214 @@ class CanvasViewport extends StatelessWidget {
     this.proportionalResize = false,
     this.anchoredRotate = false,
     this.onReparent,
+    this.onTransform,
+    this.initialTransform = const CanvasTransform(),
+    this.gestures = const DesktopCanvasGestures(),
+    this.snapping = const SnappingConfiguration(),
+    this.selectionHandler,
+    this.selectionBehavior = SelectionBehavior.contain,
   });
 
   @override
-  Widget build(BuildContext context) {
-    var textDirection = Directionality.of(context);
-    var resolvedAlignment = alignment.resolve(textDirection);
-    return ClipRect(
-      child: CanvasViewportData(
-        controller: controller,
-        resizeMode: resizeMode,
-        transformControl: transformControl,
-        multiSelect: multiSelect,
-        symmetricResize: symmetricResize,
-        proportionalResize: proportionalResize,
-        anchoredRotate: anchoredRotate,
-        onReparent: onReparent,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            var offset = resolvedAlignment.alongSize(constraints.biggest);
-            return Transform.translate(
-              offset: offset,
-              child: GroupWidget(
-                children: [
-                  CanvasItemWidget(item: controller._root),
-                  _CanvasItemBoundingBox(
-                    item: controller._root,
-                    node: controller._root.toNode(),
-                  ),
-                  transformControl.build(context, controller._root),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
+  State<CanvasViewport> createState() => _CanvasViewportState();
 }
 
-class CanvasItemNode {
-  final CanvasItemNode? parent;
-  final CanvasItem item;
-  final List<CanvasItemNode> children = [];
+class _CanvasViewportState extends State<CanvasViewport>
+    implements CanvasViewportHandle {
+  CanvasItem? _hoveredItem;
+  late CanvasTransform _transform;
+  late Size _size;
 
-  CanvasItemNode(this.parent, this.item);
+  final ValueNotifier<CanvasSelectSession?> _selectNotifier =
+      ValueNotifier(null);
 
+  @override
   void initState() {
-    item.childrenNotifier.addListener(_handleChildrenChanged);
-    _handleChildrenChanged();
+    super.initState();
+    _transform = widget.initialTransform;
   }
 
-  void _handleChildrenChanged() {
-    children.clear();
-    for (var child in item.children) {
-      children.add(child.toNode(this));
+  @override
+  CanvasTransform get transform => _transform;
+
+  @override
+  set transform(CanvasTransform value) {
+    setState(() {
+      _transform = value;
+    });
+  }
+
+  @override
+  Size get size => _size;
+
+  @override
+  AlignmentGeometry get alignment => widget.alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = CanvasViewportThemeData();
+    var textDirection = Directionality.of(context);
+    var resolvedAlignment = widget.alignment.resolve(textDirection);
+    return ColoredBox(
+      color: theme.backgroundColor,
+      child: LayoutBuilder(builder: (context, constraints) {
+        _size = constraints.biggest;
+        var offset = resolvedAlignment.alongSize(constraints.biggest);
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            widget.controller._root.visit(
+              (item) {
+                item.selected = false;
+              },
+            );
+          },
+          child: widget.gestures.wrapViewport(
+            context,
+            ClipRect(
+              child: CanvasViewportData(
+                offset: _transform.offset,
+                zoom: _transform.zoom,
+                controller: widget.controller,
+                resizeMode: widget.resizeMode,
+                transformControl: widget.transformControl,
+                multiSelect: widget.multiSelect,
+                symmetricResize: widget.symmetricResize,
+                proportionalResize: widget.proportionalResize,
+                anchoredRotate: widget.anchoredRotate,
+                onReparent: widget.onReparent,
+                snapping: widget.snapping,
+                hoveredItem: _hoveredItem,
+                child: Transform.translate(
+                  offset: offset + _transform.offset,
+                  child: GroupWidget(
+                    children: [
+                      Transform.scale(
+                        alignment: Alignment.topLeft,
+                        scale: _transform.zoom,
+                        child: CanvasItemWidget(item: widget.controller._root),
+                      ),
+                      Transform.scale(
+                        alignment: Alignment.topLeft,
+                        scale: _transform.zoom,
+                        child: _CanvasItemBoundingBox(
+                          item: widget.controller._root,
+                          node: widget.controller._root.toNode(),
+                          onHover: (item, hovered) {
+                            if (hovered) {
+                              if (_hoveredItem != item) {
+                                setState(() {
+                                  _hoveredItem = item;
+                                });
+                              }
+                            } else {
+                              if (_hoveredItem == item) {
+                                setState(() {
+                                  _hoveredItem = null;
+                                });
+                              }
+                            }
+                          },
+                        ),
+                      ),
+                      ListenableBuilder(
+                        listenable: _selectNotifier,
+                        builder: (context, child) {
+                          var session = _selectNotifier.value;
+                          if (session == null) {
+                            return const SizedBox();
+                          }
+                          Rect rect = Rect.fromPoints(
+                              session.startPosition, session.endPosition);
+                          return Transform.translate(
+                            offset: rect.topLeft,
+                            child: Container(
+                              width: rect.width,
+                              height: rect.height,
+                              decoration: theme.selectionDecoration,
+                            ),
+                          );
+                        },
+                      ),
+                      widget.transformControl
+                          .build(context, widget.controller._root.toNode()),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            this,
+          ),
+        );
+      }),
+    );
+  }
+
+  @override
+  void cancelSelectSession() {
+    if (widget.selectionHandler != null) {
+      widget.selectionHandler!.onSelectionCancel();
+      return;
+    }
+    _selectNotifier.value = null;
+  }
+
+  @override
+  void endSelectSession() {
+    var current = _selectNotifier.value;
+    if (current != null) {
+      if (widget.selectionHandler != null) {
+        widget.selectionHandler!.onSelectionEnd(current);
+        return;
+      }
+      _selectNotifier.value = null;
+      Polygon selection = Polygon.fromRect(
+          Rect.fromPoints(current.startPosition, current.endPosition));
+      CanvasHitTestResult result = CanvasHitTestResult();
+      widget.controller._root
+          .hitTestSelection(result, selection, widget.selectionBehavior);
+      for (var entry in result.path) {
+        entry.item.selected = true;
+      }
     }
   }
 
-  void dispose() {
-    item.childrenNotifier.removeListener(_handleChildrenChanged);
-  }
-
-  Offset toGlobal(Offset local) {
-    CanvasItemNode? current = this;
-    while (current != null) {
-      local = current.item.transform.transformToParent(local);
-      current = current.parent;
+  @override
+  void startSelectSession(Offset position) {
+    var newSession =
+        CanvasSelectSession(startPosition: position, endPosition: position);
+    if (widget.selectionHandler != null) {
+      widget.selectionHandler!.onSelectionStart(newSession);
+      return;
     }
-    return local;
+    _selectNotifier.value = newSession;
   }
 
-  Offset toLocal(Offset global) {
-    CanvasItemNode? current = this;
-    while (current != null) {
-      global = current.item.transform.transformFromParent(global);
-      current = current.parent;
+  @override
+  void updateSelectSession(Offset position) {
+    var current = _selectNotifier.value;
+    if (current != null) {
+      var newSession = current.copyWith(endPosition: position);
+      if (widget.selectionHandler != null) {
+        widget.selectionHandler!.onSelectionChange(newSession);
+        return;
+      }
+      _selectNotifier.value = newSession;
     }
-    return global;
-  }
-
-  bool contains(Offset localPosition) {
-    var scaledSize = item.transform.scaledSize;
-    return localPosition.dx >= 0 &&
-        localPosition.dy >= 0 &&
-        localPosition.dx <= scaledSize.width &&
-        localPosition.dy <= scaledSize.height;
   }
 }
 
 class _CanvasItemBoundingBox extends StatefulWidget {
   final CanvasItem item;
-  final double parentRotation;
   final CanvasItemNode node;
+  final LayoutTransform? parentTransform;
+  final void Function(CanvasItem item, bool hovered)? onHover;
 
   const _CanvasItemBoundingBox({
     required this.item,
-    this.parentRotation = 0,
+    this.parentTransform,
     required this.node,
+    this.onHover,
   });
 
   @override
@@ -279,37 +458,46 @@ class _CanvasItemBoundingBox extends StatefulWidget {
 class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
   TransformSession? _session;
   Offset? _totalOffset;
+  LayoutSnapping? _layoutSnapping;
+  CanvasItemNode? _startItem;
+  Layout? _startLayout;
+  Offset? _startOffset;
+  CanvasItem? _targetReparent;
 
   double get globalRotation {
-    return widget.item.transform.rotation + widget.parentRotation;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    widget.node.initState();
-  }
-
-  @override
-  void didUpdateWidget(covariant _CanvasItemBoundingBox oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.item != widget.item) {
-      oldWidget.node.dispose();
-      widget.node.initState();
+    var rotation = widget.item.transform.rotation;
+    if (widget.parentTransform != null) {
+      rotation += widget.parentTransform!.rotation;
     }
+    return rotation;
   }
 
-  @override
-  void dispose() {
-    widget.node.dispose();
-    super.dispose();
+  CanvasItemNode findSelected() {
+    CanvasItemNode? current = widget.node;
+    while (current != null) {
+      var parent = current.parent;
+      if (parent != null && !parent.item.selected) {
+        break;
+      }
+      current = parent;
+    }
+    return current ?? widget.node;
+  }
+
+  double _computeRotation(CanvasItemNode? node) {
+    double rotation = 0;
+    while (node != null) {
+      rotation += node.item.transform.rotation;
+      node = node.parent;
+    }
+    return rotation;
   }
 
   @override
   Widget build(BuildContext context) {
     CanvasViewportData viewportData = CanvasViewportData.of(context);
     return ListenableBuilder(
-      listenable: widget.item.transformNotifier,
+      listenable: widget.item.transformListenable,
       builder: (context, child) {
         var transform = widget.item.transform;
         var size = transform.scaledSize;
@@ -340,73 +528,192 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
                         );
                       }
                     },
-                    child: PanGesture(
-                      onPanStart: (details) {
-                        if (!widget.item.selected) {
-                          if (viewportData.multiSelect) {
-                            widget.item.selected = !widget.item.selected;
-                          } else {
-                            viewportData.visit(
-                              (item) {
-                                item.selected = item == widget.item;
-                              },
-                            );
-                          }
-                        }
-                        _session = viewportData.beginTransform(
-                            rootSelectionOnly: true);
-                        _totalOffset = Offset.zero;
-                      },
-                      onPanUpdate: (details) {
-                        Offset delta = details.delta;
-                        delta = rotatePoint(delta, globalRotation);
-                        _totalOffset = _totalOffset! + delta;
-                        _session!.visit(
-                          (node) {
-                            Offset localDelta = _totalOffset!;
-                            if (node.parentTransform != null) {
-                              localDelta = rotatePoint(
-                                  localDelta, -node.parentTransform!.rotation);
+                    child: ListenableBuilder(
+                      listenable: widget.item.selectedNotifier,
+                      builder: (context, child) {
+                        return MouseRegion(
+                          cursor: widget.item.selected
+                              ? SystemMouseCursors.move
+                              : SystemMouseCursors.click,
+                          onEnter: (event) {
+                            if (widget.onHover != null) {
+                              widget.onHover!(widget.item, true);
                             }
-                            node.newLayout = node.layout.drag(localDelta);
                           },
+                          onExit: (event) {
+                            if (widget.onHover != null) {
+                              widget.onHover!(widget.item, false);
+                            }
+                          },
+                          child: child,
                         );
-                        _session!.apply();
                       },
-                      onPanEnd: (details) {
-                        _session = null;
-                        _totalOffset = null;
-                        // CanvasHitTestResult result = CanvasHitTestResult();
-                        // var position =
-                        //     widget.node.toGlobal(details.localPosition);
-                        // viewportData.hitTest(result, position);
-                      },
-                      onPanCancel: () {
-                        if (_session != null) {
-                          _session!.reset();
+                      child: PanGesture(
+                        onPanStart: (details) {
+                          if (!widget.item.selected) {
+                            if (viewportData.multiSelect) {
+                              widget.item.selected = !widget.item.selected;
+                            } else {
+                              viewportData.visit(
+                                (item) {
+                                  item.selected = item == widget.item;
+                                },
+                              );
+                            }
+                          }
+                          _session = viewportData.beginTransform(
+                              rootSelectionOnly: true);
+                          _startItem = findSelected();
+                          _startLayout = _startItem!.item.layout;
+                          _totalOffset = Offset.zero;
+                          _layoutSnapping = LayoutSnapping(
+                              viewportData.snapping,
+                              _startItem!.item,
+                              _startItem!.parentTransform);
+                          viewportData.fillInSnappingPoints(_layoutSnapping!);
+                          _startOffset = details.localPosition;
+                        },
+                        onPanUpdate: (details) {
+                          var item = _startItem!;
+                          Offset delta = details.delta;
+                          delta = rotatePoint(delta, globalRotation);
+                          _totalOffset = _totalOffset! + delta;
+                          Offset localDelta = _totalOffset!;
+                          double rotation = _computeRotation(item.parent);
+                          localDelta = rotatePoint(localDelta, -rotation);
+                          item.item.layout = _startLayout!.drag(
+                            localDelta,
+                            snapping: _layoutSnapping,
+                          );
+                          _session!.visit(
+                            (node) {
+                              if (node.item == item.item) {
+                                return;
+                              }
+                              Offset localDelta =
+                                  _layoutSnapping?.newOffsetDelta ??
+                                      _totalOffset!;
+                              if (node.parentTransform != null) {
+                                localDelta = rotatePoint(localDelta,
+                                    -node.parentTransform!.rotation);
+                              }
+                              node.newLayout = node.layout
+                                  .drag(localDelta, snapping: _layoutSnapping);
+                            },
+                          );
+                          _session!.apply();
+                          CanvasHitTestResult result = CanvasHitTestResult();
+                          var position = _startOffset!;
+                          position = widget.node.toGlobal(position);
+                          viewportData.hitTest(result, position);
+                          for (var i = result.path.length - 1; i >= 0; i--) {
+                            var entry = result.path[i];
+                            if (entry.item == item.item) {
+                              continue;
+                            }
+                            if (item.item.isDescendantOf(entry.item)) {
+                              continue;
+                            }
+                            _targetReparent = entry.item;
+                            return;
+                          }
+                          // reparent to root
+                          if (!viewportData.controller._root.children
+                              .contains(item.item)) {
+                            _targetReparent = viewportData.controller._root;
+                            return;
+                          }
+                          _targetReparent = null;
+                        },
+                        onPanEnd: (details) {
                           _session = null;
-                        }
-                        _totalOffset = null;
-                      },
-                      child: MetaData(
-                        metaData: this,
-                        child: SizedBox.fromSize(
-                          size: size,
+                          _totalOffset = null;
+                          _layoutSnapping = null;
+                          _startLayout = null;
+                          _startOffset = null;
+                          var oldParent = widget.node.parent;
+                          if (_targetReparent != null &&
+                              oldParent?.item != _targetReparent) {
+                            bool result = viewportData.onReparent?.call(
+                                  ReparentDetails(
+                                    item: widget.item,
+                                    oldParent: oldParent?.item,
+                                    newParent: _targetReparent,
+                                  ),
+                                ) ??
+                                true;
+                            if (result) {
+                              // find same ancestor between old parent and new parent
+                              if (oldParent != null) {
+                                CanvasItemNode? current = oldParent;
+                                Layout currentLayout = widget.item.layout;
+                                while (current != null) {
+                                  if (current.item
+                                      .isDescendantOf(_targetReparent!)) {
+                                    break;
+                                  }
+                                  var parent = current.parent;
+                                  if (parent == null) {
+                                    break;
+                                  }
+                                  currentLayout = currentLayout
+                                      .transferToParent(current.item.layout);
+                                  current = current.parent;
+                                }
+                                // current is the common ancestor
+                                if (current != null) {
+                                  current.visitTo(
+                                    _targetReparent!,
+                                    (item) {
+                                      if (item == current!.item) {
+                                        return;
+                                      }
+                                      currentLayout = currentLayout
+                                          .transferToChild(item.layout);
+                                    },
+                                  );
+                                }
+                                widget.item.layout = currentLayout;
+                                oldParent.item.removeChild(widget.item);
+                              }
+                              _targetReparent!.addChild(widget.item);
+                            }
+                          }
+                        },
+                        onPanCancel: () {
+                          if (_session != null) {
+                            _session!.reset();
+                            _session = null;
+                          }
+                          _totalOffset = null;
+                          _layoutSnapping = null;
+                          _startLayout = null;
+                          _startOffset = null;
+                        },
+                        child: MetaData(
+                          metaData: this,
+                          child: SizedBox.fromSize(
+                            size: size,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
                 ListenableBuilder(
-                  listenable: widget.item.childrenNotifier,
+                  listenable: widget.item.childListenable,
                   builder: (context, child) {
                     return GroupWidget(
                       children: [
-                        for (var child in widget.node.children)
+                        for (var child in widget.item.children)
                           _CanvasItemBoundingBox(
-                            item: child.item,
-                            parentRotation: globalRotation,
-                            node: child,
+                            item: child,
+                            parentTransform: widget.parentTransform == null
+                                ? widget.item.transform
+                                : widget.parentTransform! *
+                                    widget.item.transform,
+                            node: child.toNode(widget.node),
+                            onHover: widget.onHover,
                           ),
                       ],
                     );
@@ -437,27 +744,10 @@ class CanvasItemWidget extends StatefulWidget {
 
 class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   @override
-  void initState() {
-    super.initState();
-    widget.item.layoutNotifier.addListener(_onLayoutChanged);
-    _onLayoutChanged();
-  }
-
-  void _onLayoutChanged() {
-    widget.item.layoutNotifier.value.performLayout(widget.item);
-  }
-
-  @override
-  void dispose() {
-    widget.item.layoutNotifier.removeListener(_onLayoutChanged);
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     Widget? background = widget.item.build(context);
     return ListenableBuilder(
-        listenable: widget.item.transformNotifier,
+        listenable: widget.item.transformListenable,
         builder: (context, child) {
           var layoutTransform = widget.item.transform;
           return Transform.translate(
@@ -478,7 +768,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
                       ),
                     ),
                   ListenableBuilder(
-                    listenable: widget.item.childrenNotifier,
+                    listenable: widget.item.childListenable,
                     builder: (context, child) {
                       return GroupWidget(
                         children: widget.item.children.map((child) {

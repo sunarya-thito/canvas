@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -92,19 +93,19 @@ class RenderGroup extends RenderBox
 }
 
 class PanGesture extends StatefulWidget {
-  final void Function(DragStartDetails details) onPanStart;
-  final void Function(DragUpdateDetails details) onPanUpdate;
-  final void Function(DragEndDetails details) onPanEnd;
-  final void Function() onPanCancel;
-  final Widget child;
+  final void Function(DragStartDetails details)? onPanStart;
+  final void Function(DragUpdateDetails details)? onPanUpdate;
+  final void Function(DragEndDetails details)? onPanEnd;
+  final void Function()? onPanCancel;
+  final Widget? child;
 
   const PanGesture({
     super.key,
-    required this.onPanStart,
-    required this.onPanUpdate,
-    required this.onPanEnd,
-    required this.onPanCancel,
-    required this.child,
+    this.onPanStart,
+    this.onPanUpdate,
+    this.onPanEnd,
+    this.onPanCancel,
+    this.child,
   });
 
   @override
@@ -123,7 +124,7 @@ class _PanGestureState extends State<PanGesture> {
             event.logicalKey == LogicalKeyboardKey.escape) {
           _focusNode.unfocus();
           _cancel = true;
-          widget.onPanCancel();
+          widget.onPanCancel?.call();
           return KeyEventResult.handled;
         }
         return KeyEventResult.ignored;
@@ -133,23 +134,109 @@ class _PanGestureState extends State<PanGesture> {
         onPanStart: (details) {
           _focusNode.requestFocus();
           _cancel = false;
-          widget.onPanStart(details);
+          widget.onPanStart?.call(details);
         },
         onPanUpdate: (details) {
           if (_cancel) {
             return;
           }
-          widget.onPanUpdate(details);
+          widget.onPanUpdate?.call(details);
         },
         onPanEnd: (details) {
           if (_cancel) {
             return;
           }
-          widget.onPanEnd(details);
+          widget.onPanEnd?.call(details);
         },
         onPanCancel: () {
           _cancel = true;
-          widget.onPanCancel();
+          widget.onPanCancel?.call();
+        },
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class MousePanGesture extends StatefulWidget {
+  static const int primaryButton = kPrimaryButton;
+  static const int secondaryButton = kSecondaryButton;
+  static const int tertiaryButton = kTertiaryButton; // Middle button
+  final int button;
+  final void Function(DragStartDetails details)? onPanStart;
+  final void Function(DragUpdateDetails details)? onPanUpdate;
+  final void Function(DragEndDetails details)? onPanEnd;
+  final void Function()? onPanCancel;
+  final Widget? child;
+  final HitTestBehavior behavior;
+
+  const MousePanGesture({
+    super.key,
+    this.button = 0,
+    this.onPanStart,
+    this.onPanUpdate,
+    this.onPanEnd,
+    this.onPanCancel,
+    this.behavior = HitTestBehavior.translucent,
+    this.child,
+  });
+
+  @override
+  State<MousePanGesture> createState() => _MousePanGestureState();
+}
+
+class _MousePanGestureState extends State<MousePanGesture> {
+  final FocusNode _focusNode = FocusNode();
+  bool _cancel = false;
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          _focusNode.unfocus();
+          _cancel = true;
+          widget.onPanCancel?.call();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: RawGestureDetector(
+        behavior: widget.behavior,
+        gestures: {
+          PanGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+            () => PanGestureRecognizer(
+              debugOwner: this,
+              allowedButtonsFilter: (buttons) => buttons & widget.button != 0,
+            ),
+            (instance) {
+              instance
+                ..dragStartBehavior = DragStartBehavior.down
+                ..onStart = (details) {
+                  _focusNode.requestFocus();
+                  _cancel = false;
+                  widget.onPanStart?.call(details);
+                }
+                ..onUpdate = (details) {
+                  if (_cancel) {
+                    return;
+                  }
+                  widget.onPanUpdate?.call(details);
+                }
+                ..onEnd = (details) {
+                  if (_cancel) {
+                    return;
+                  }
+                  widget.onPanEnd?.call(details);
+                }
+                ..onCancel = () {
+                  _cancel = true;
+                  widget.onPanCancel?.call();
+                };
+            },
+          )
         },
         child: widget.child,
       ),
@@ -181,5 +268,41 @@ class Box extends StatelessWidget {
         child: child,
       ),
     );
+  }
+}
+
+class AlwaysHitBox extends LeafRenderObjectWidget {
+  const AlwaysHitBox({
+    super.key,
+  });
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return RenderAlwaysHitBox();
+  }
+}
+
+class RenderAlwaysHitBox extends RenderBox {
+  RenderAlwaysHitBox();
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    result.add(BoxHitTestEntry(this, position));
+    return true;
+  }
+
+  @override
+  bool hitTestSelf(Offset position) {
+    return true;
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    return true;
+  }
+
+  @override
+  void performLayout() {
+    size = constraints.biggest;
   }
 }

@@ -9,6 +9,7 @@ void main() {
     home: Scaffold(
       body: _ForceUpdate(
         child: CanvasExample(),
+        // child: PolyTest(),
       ),
     ),
   ));
@@ -229,6 +230,9 @@ class _CanvasExampleState extends State<CanvasExample>
           _focusNode.requestFocus();
         },
         child: CanvasViewport(
+          initialTransform: CanvasTransform(
+            zoom: 1.0,
+          ),
           controller: _controller,
           multiSelect: _shiftDown,
           resizeMode: ResizeMode.scale,
