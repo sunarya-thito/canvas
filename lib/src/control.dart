@@ -262,7 +262,7 @@ class _StandardTransformControlWidgetState
           );
           _session!.visit(
             (node) {
-              if (node.item == _startNode!.item) {
+              if (_startNode!.item.isDescendantOf(node.item)) {
                 return;
               }
               node.newLayout = node.layout.rotate(

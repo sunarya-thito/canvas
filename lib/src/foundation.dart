@@ -4,27 +4,47 @@ import 'package:flutter/widgets.dart';
 
 import '../canvas.dart';
 
+abstract class CanvasParent {
+  void addChildren(List<CanvasItem> children);
+  void removeChildren(List<CanvasItem> children);
+  void addChild(CanvasItem child);
+  void removeChild(CanvasItem child);
+  void removeChildAt(int index);
+  void insertChild(int index, CanvasItem child);
+  List<CanvasItem> get children;
+  ValueListenable<List<CanvasItem>> get childListenable;
+}
+
 enum SelectionBehavior {
   overlap,
   contain,
 }
 
 abstract class CanvasSelectionHandler {
-  void onSelectionStart(CanvasSelectSession session);
-  void onSelectionChange(CanvasSelectSession session);
+  CanvasSelectionSession onSelectionStart(CanvasSelectSession session);
+  void onInstantSelection(Offset position);
+  bool get shouldCancelObjectDragging;
+}
+
+abstract class CanvasSelectionSession {
+  void onSelectionChange(CanvasSelectSession session, Offset delta);
   void onSelectionEnd(CanvasSelectSession session);
   void onSelectionCancel();
 }
 
 abstract class CanvasViewportHandle {
   CanvasTransform get transform;
-  set transform(CanvasTransform transform);
   Size get size;
-  AlignmentGeometry get alignment;
+  set transform(CanvasTransform transform);
+  void drag(Offset delta);
+  void zoomAt(Offset position, double delta);
+  Offset get canvasOffset;
   void startSelectSession(Offset position);
-  void updateSelectSession(Offset position);
+  void updateSelectSession(Offset delta);
   void endSelectSession();
   void cancelSelectSession();
+  void instantSelection(Offset position);
+  bool get enableInstantSelection;
 }
 
 class CanvasSelectSession {
@@ -112,29 +132,6 @@ class CanvasTransform {
 
   Offset toGlobal(Offset local) {
     return (local + offset) * zoom;
-  }
-
-  CanvasTransform drag(Offset delta) {
-    return CanvasTransform(
-      offset: offset + delta,
-      zoom: zoom,
-    );
-  }
-
-  CanvasTransform zoomAt(Offset position, double delta) {
-    var newZoom = zoom + delta;
-
-    var globalPosition = (position + offset) * zoom;
-
-    var oldPosition = globalPosition * zoom;
-    var newPosition = globalPosition * newZoom;
-
-    var deltaPosition = newPosition - oldPosition;
-
-    return CanvasTransform(
-      offset: offset - deltaPosition,
-      zoom: newZoom,
-    );
   }
 }
 
@@ -763,7 +760,7 @@ class AbsoluteLayout extends Layout {
   bool get shouldHandleChildLayout => false;
 }
 
-abstract class CanvasItem {
+abstract class CanvasItem implements CanvasParent {
   final ValueNotifier<Layout> _layoutNotifier =
       ValueNotifier(const AbsoluteLayout());
   final ValueNotifier<LayoutTransform> _transformNotifier =
@@ -771,6 +768,8 @@ abstract class CanvasItem {
   final ValueNotifier<List<CanvasItem>> _childrenNotifier = ValueNotifier([]);
   final ValueNotifier<bool> selectedNotifier = ValueNotifier(false);
   ValueListenable<Layout> get layoutListenable => _layoutNotifier;
+
+  @override
   ValueListenable<List<CanvasItem>> get childListenable => _childrenNotifier;
   ValueListenable<LayoutTransform> get transformListenable =>
       _transformNotifier;
@@ -778,6 +777,10 @@ abstract class CanvasItem {
   Widget? build(BuildContext context) => null;
 
   Layout get layout => layoutListenable.value;
+
+  String? get debugLabel => null;
+
+  @override
   List<CanvasItem> get children => childListenable.value;
   LayoutTransform get transform => transformListenable.value;
   bool get selected => selectedNotifier.value;
@@ -785,27 +788,33 @@ abstract class CanvasItem {
   set transform(LayoutTransform transform) =>
       _transformNotifier.value = transform;
 
+  @override
   void addChildren(List<CanvasItem> children) {
     this.children = [...this.children, ...children];
   }
 
+  @override
   void removeChildren(List<CanvasItem> children) {
     this.children =
         this.children.where((element) => !children.contains(element)).toList();
   }
 
+  @override
   void addChild(CanvasItem child) {
     children = [...children, child];
   }
 
+  @override
   void removeChild(CanvasItem child) {
     children = children.where((element) => element != child).toList();
   }
 
+  @override
   void removeChildAt(int index) {
     children = List.from(children)..removeAt(index);
   }
 
+  @override
   void insertChild(int index, CanvasItem child) {
     children = List.from(children)..insert(index, child);
   }
@@ -830,6 +839,24 @@ abstract class CanvasItem {
     visitor(this);
     for (final child in children) {
       child.visit(visitor);
+    }
+  }
+
+  void visitTo(CanvasItem target, void Function(CanvasItem item) visitor) {
+    CanvasItem current = this;
+    while (current.isDescendantOf(target)) {
+      visitor(current);
+      bool found = false;
+      for (final child in current.children) {
+        if (child.isDescendantOf(target)) {
+          current = child;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        break;
+      }
     }
   }
 
@@ -936,29 +963,18 @@ abstract class CanvasItem {
 }
 
 class RootCanvasItem extends CanvasItem {
-  final Decoration? decoration;
   RootCanvasItem({
     List<CanvasItem> children = const [],
-    this.decoration,
     required Layout layout,
   }) {
     this.children = children;
     this.layout = layout;
   }
-
-  @override
-  Widget? build(BuildContext context) {
-    if (decoration != null) {
-      return DecoratedBox(
-        decoration: decoration!,
-      );
-    }
-    return super.build(context);
-  }
 }
 
 class BoxCanvasItem extends CanvasItem {
   final Widget? decoration;
+  @override
   final String? debugLabel;
   BoxCanvasItem({
     this.decoration,
