@@ -135,8 +135,7 @@ class _DesktopCanvasGesturesWidgetState
             ? (details) {
                 var localPosition = details.localPosition;
                 localPosition = _transform(localPosition);
-                widget.handle.instantSelection(
-                    localPosition / widget.handle.transform.zoom);
+                widget.handle.instantSelection(localPosition);
               }
             : null,
         child: PanGesture(

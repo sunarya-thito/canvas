@@ -93,6 +93,7 @@ class RenderGroup extends RenderBox
 }
 
 class PanGesture extends StatefulWidget {
+  final bool enable;
   final void Function(DragStartDetails details)? onPanStart;
   final void Function(DragUpdateDetails details)? onPanUpdate;
   final void Function(DragEndDetails details)? onPanEnd;
@@ -105,6 +106,7 @@ class PanGesture extends StatefulWidget {
     this.onPanUpdate,
     this.onPanEnd,
     this.onPanCancel,
+    this.enable = true,
     this.child,
   });
 
@@ -131,27 +133,35 @@ class _PanGestureState extends State<PanGesture> {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onPanStart: (details) {
-          _focusNode.requestFocus();
-          _cancel = false;
-          widget.onPanStart?.call(details);
-        },
-        onPanUpdate: (details) {
-          if (_cancel) {
-            return;
-          }
-          widget.onPanUpdate?.call(details);
-        },
-        onPanEnd: (details) {
-          if (_cancel) {
-            return;
-          }
-          widget.onPanEnd?.call(details);
-        },
-        onPanCancel: () {
-          _cancel = true;
-          widget.onPanCancel?.call();
-        },
+        onPanStart: widget.enable
+            ? (details) {
+                _focusNode.requestFocus();
+                _cancel = false;
+                widget.onPanStart?.call(details);
+              }
+            : null,
+        onPanUpdate: widget.enable
+            ? (details) {
+                if (_cancel) {
+                  return;
+                }
+                widget.onPanUpdate?.call(details);
+              }
+            : null,
+        onPanEnd: widget.enable
+            ? (details) {
+                if (_cancel) {
+                  return;
+                }
+                widget.onPanEnd?.call(details);
+              }
+            : null,
+        onPanCancel: widget.enable
+            ? () {
+                _cancel = true;
+                widget.onPanCancel?.call();
+              }
+            : null,
         child: widget.child,
       ),
     );

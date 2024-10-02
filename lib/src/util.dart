@@ -37,6 +37,9 @@ Offset rotatePoint(Offset point, double angle) {
 }
 
 Offset proportionalDelta(Offset offset, double aspectRatio) {
+  if (aspectRatio == 0) {
+    return offset;
+  }
   double dx = offset.dx;
   double dy = offset.dy;
   return Offset(min(dx, dy * aspectRatio), min(dy, dx / aspectRatio));
@@ -53,6 +56,10 @@ extension OffsetExtension on Offset {
 
   Offset onlyY() {
     return Offset(0, dy);
+  }
+
+  Offset flipAxis() {
+    return Offset(dy, dx);
   }
 
   Offset divideBy(Offset other) {

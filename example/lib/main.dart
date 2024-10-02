@@ -160,19 +160,16 @@ class _CanvasExampleState extends State<CanvasExample>
         // ),
       ],
     );
-    _controller.childListenable.addListener(() {
-      setState(() {
-        _refreshTreeNodes();
-      });
-    });
   }
 
   bool _shiftDown = false; // using shift
   bool _altDown = false; // using alt
   bool _ctrlDown = false; // using ctrl
-  FocusNode _focusNode = FocusNode();
+  final FocusNode _focusNode = FocusNode();
   ResizeMode _resizeMode = ResizeMode.resize;
   ToolMode _toolMode = ToolMode.select;
+  SelectionBehavior _selectionBehavior = SelectionBehavior.contain;
+  bool snapToGrid = true;
 
   CanvasSelectionHandler? get _selectionHandler {
     switch (_toolMode) {
@@ -183,15 +180,10 @@ class _CanvasExampleState extends State<CanvasExample>
           controller: _controller,
           createAtRoot: _ctrlDown,
           createItem: (offset, instant) {
-            return CustomCanvasItem(
-              onChanged: () {
-                setState(() {
-                  _refreshTreeNodes();
-                });
+            return FrameCanvasItem(
+              onRefresh: () {
+                setState(() {});
               },
-              decoration: Container(
-                color: Colors.red,
-              ),
               layout: AbsoluteLayout(
                 offset: offset,
                 size: instant ? Size(100, 100) : Size.zero,
@@ -204,22 +196,10 @@ class _CanvasExampleState extends State<CanvasExample>
           controller: _controller,
           createAtRoot: _ctrlDown,
           createItem: (offset, instant) {
-            return CustomCanvasItem(
-              onChanged: () {
-                setState(() {
-                  _refreshTreeNodes();
-                });
+            return TextCanvasItem(
+              onRefresh: () {
+                setState(() {});
               },
-              decoration: GestureDetector(
-                onTap: () {
-                  print('Text tapped');
-                },
-                child: Text(
-                  'Text',
-                  style: TextStyle(color: Colors.black, fontSize: 24),
-                  overflow: TextOverflow.visible,
-                ),
-              ),
               layout: AbsoluteLayout(
                 offset: offset,
                 size: instant ? Size(100, 100) : Size.zero,
@@ -230,21 +210,10 @@ class _CanvasExampleState extends State<CanvasExample>
     }
   }
 
-  final ValueNotifier<List<TreeNode<CanvasItem>>> _nodes = ValueNotifier([]);
-
-  void _refreshTreeNodes() {
-    _nodes.value = _convert(_controller.root);
-  }
-
   List<TreeNode<CanvasItem>> _convert(CanvasItem item) {
-    return item.children.map(
+    return item.children.whereType<CustomCanvasItem>().map(
       (e) {
-        return TreeItem(
-          data: e,
-          selected: e.selected,
-          expanded: (e as CustomCanvasItem).expanded,
-          children: _convert(e),
-        );
+        return e._treeItem;
       },
     ).toList();
   }
@@ -260,17 +229,43 @@ class _CanvasExampleState extends State<CanvasExample>
             children: [
               Expanded(
                 child: ListenableBuilder(
-                    listenable: _nodes,
+                    listenable: _controller.childListenable,
                     builder: (context, child) {
                       return TreeView<CanvasItem>(
-                        nodes: _nodes.value,
+                        nodes: _convert(_controller.root),
                         branchLine: BranchLine.path,
                         allowMultiSelect: true,
                         expandIcon: true,
                         onSelectionChanged:
-                            (selectedNodes, multiSelect, selected) {},
+                            (selectedNodes, multiSelect, selected) {
+                          if (multiSelect) {
+                            _controller.root.visit(
+                              (item) {
+                                if (item is! CustomCanvasItem) return;
+                                if (selectedNodes.contains(item._treeItem)) {
+                                  item.selected = selected;
+                                }
+                              },
+                            );
+                          } else {
+                            _controller.root.visit(
+                              (item) {
+                                if (item is! CustomCanvasItem) return;
+                                item.selected =
+                                    selectedNodes.contains(item._treeItem);
+                              },
+                            );
+                          }
+                        },
                         builder: (context, node) {
                           return TreeItemView(
+                            onPressed: () {},
+                            onExpand: (value) {
+                              setState(() {
+                                (node.data as CustomCanvasItem)
+                                    .setExpanded(value);
+                              });
+                            },
                             child: Text(node.data.debugLabel ?? 'Item'),
                           );
                         },
@@ -354,6 +349,10 @@ class _CanvasExampleState extends State<CanvasExample>
                     proportionalResize: _altDown,
                     symmetricResize: _ctrlDown,
                     anchoredRotate: _altDown,
+                    selectionBehavior: _selectionBehavior,
+                    snapping: SnappingConfiguration(
+                      gridSnapping: snapToGrid ? Offset(10, 10) : null,
+                    ),
                     canvasSize: Size(400, 600),
                   ),
                 ),
@@ -365,68 +364,138 @@ class _CanvasExampleState extends State<CanvasExample>
                 child: SurfaceCard(
                   child: Row(
                     children: [
-                      Select<ResizeMode>(
-                        value: _resizeMode,
-                        onChanged: (value) {
-                          setState(() {
-                            _resizeMode = value ?? ResizeMode.resize;
-                          });
-                        },
-                        popupWidthConstraint: PopoverConstraint.anchorMaxSize,
-                        orderSelectedFirst: false,
-                        children: [
-                          SelectItemButton(
-                            value: ResizeMode.resize,
-                            child: Text('Resize'),
-                          ),
-                          SelectItemButton(
-                            value: ResizeMode.scale,
-                            child: Text('Scale'),
-                          ),
-                        ],
-                        itemBuilder: (context, item) {
-                          switch (item) {
-                            case ResizeMode.resize:
-                              return Text('Resize');
-                            case ResizeMode.scale:
-                              return Text('Scale');
-                          }
-                        },
+                      Tooltip(
+                        tooltip: TooltipContainer(child: Text('Resize')),
+                        child: Toggle(
+                          value: _resizeMode == ResizeMode.resize,
+                          onChanged: (value) {
+                            if (value) {
+                              setState(() {
+                                _resizeMode = ResizeMode.resize;
+                              });
+                            }
+                          },
+                          child: Icon(Icons.crop),
+                        ),
+                      ),
+                      Tooltip(
+                        tooltip: TooltipContainer(child: Text('Scale')),
+                        child: Toggle(
+                          value: _resizeMode == ResizeMode.scale,
+                          onChanged: (value) {
+                            if (value) {
+                              setState(() {
+                                _resizeMode = ResizeMode.scale;
+                              });
+                            }
+                          },
+                          child: Icon(Icons.aspect_ratio),
+                        ),
                       ),
                       Gap(24),
-                      Toggle(
-                        value: _toolMode == ToolMode.select,
-                        onChanged: (value) {
-                          if (value) {
-                            setState(() {
-                              _toolMode = ToolMode.select;
-                            });
-                          }
-                        },
-                        child: Icon(Icons.select_all),
+                      Tooltip(
+                        tooltip: TooltipContainer(child: Text('Select')),
+                        child: Toggle(
+                          value: _toolMode == ToolMode.select,
+                          onChanged: (value) {
+                            if (value) {
+                              setState(() {
+                                _toolMode = ToolMode.select;
+                              });
+                            }
+                          },
+                          child: Icon(Icons.select_all),
+                        ),
                       ),
-                      Toggle(
-                        value: _toolMode == ToolMode.createBox,
-                        onChanged: (value) {
-                          if (value) {
-                            setState(() {
-                              _toolMode = ToolMode.createBox;
-                            });
-                          }
-                        },
-                        child: Icon(Icons.crop_square),
+                      Tooltip(
+                        tooltip: TooltipContainer(child: Text('Create Box')),
+                        child: Toggle(
+                          value: _toolMode == ToolMode.createBox,
+                          onChanged: (value) {
+                            if (value) {
+                              setState(() {
+                                _toolMode = ToolMode.createBox;
+                              });
+                            }
+                          },
+                          child: Icon(Icons.crop_square),
+                        ),
                       ),
-                      Toggle(
-                        value: _toolMode == ToolMode.createText,
-                        onChanged: (value) {
-                          if (value) {
-                            setState(() {
-                              _toolMode = ToolMode.createText;
-                            });
-                          }
+                      Tooltip(
+                        tooltip: TooltipContainer(child: Text('Create Text')),
+                        child: Toggle(
+                          value: _toolMode == ToolMode.createText,
+                          onChanged: (value) {
+                            if (value) {
+                              setState(() {
+                                _toolMode = ToolMode.createText;
+                              });
+                            }
+                          },
+                          child: Icon(Icons.text_fields),
+                        ),
+                      ),
+                      Gap(24),
+                      HoverCard(
+                        hoverBuilder: (context) {
+                          return Card(
+                            child: Basic(
+                              title: Text('Select Contain'),
+                              content: Text(
+                                  'Select items that are fully contained\nwithin the selection box.'),
+                            ),
+                          );
                         },
-                        child: Icon(Icons.text_fields),
-                      )
+                        child: Toggle(
+                          value:
+                              _selectionBehavior == SelectionBehavior.contain,
+                          onChanged: (value) {
+                            if (value) {
+                              setState(() {
+                                _selectionBehavior = SelectionBehavior.contain;
+                              });
+                            }
+                          },
+                          child: Icon(Icons.join_full),
+                        ),
+                      ),
+                      HoverCard(
+                        hoverBuilder: (context) {
+                          return Card(
+                            child: Basic(
+                              title: Text('Select Intersect'),
+                              content: Text(
+                                  'Select only items that intersect\nwith the selection box.'),
+                            ),
+                          );
+                        },
+                        child: Toggle(
+                          value:
+                              _selectionBehavior == SelectionBehavior.intersect,
+                          onChanged: (value) {
+                            if (value) {
+                              setState(() {
+                                _selectionBehavior =
+                                    SelectionBehavior.intersect;
+                              });
+                            }
+                          },
+                          child: Icon(Icons.join_inner),
+                        ),
+                      ),
+                      Gap(24),
+                      Tooltip(
+                        tooltip: TooltipContainer(child: Text('Snap to Grid')),
+                        child: Toggle(
+                          value: snapToGrid,
+                          onChanged: (value) {
+                            setState(() {
+                              snapToGrid = value;
+                            });
+                          },
+                          child: Icon(Icons.grid_on),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -445,19 +514,127 @@ enum ToolMode {
   createText,
 }
 
-class CustomCanvasItem extends BoxCanvasItem {
-  final VoidCallback onChanged;
+class CustomCanvasItem extends CanvasItemAdapter {
+  late TreeItem<CanvasItem> _treeItem;
+  final VoidCallback onRefresh;
   CustomCanvasItem({
-    required this.onChanged,
-    super.children = const [],
+    super.children,
     super.debugLabel,
-    super.decoration,
-    super.layout = const AbsoluteLayout(),
+    super.layout,
     super.selected = false,
+    required this.onRefresh,
   }) {
-    childListenable.addListener(onChanged);
-    selectedNotifier.addListener(onChanged);
+    childListenable.addListener(() {
+      _refreshTreeNodes();
+      onRefresh();
+    });
+    selectedNotifier.addListener(
+      () {
+        _treeItem = _treeItem.updateState(
+          selected: selectedNotifier.value,
+        );
+        onRefresh();
+      },
+    );
+    _treeItem = TreeItem(
+      data: this,
+    );
   }
 
-  bool expanded = false;
+  void setExpanded(bool expanded) {
+    _treeItem = _treeItem.updateState(
+      expanded: expanded,
+    );
+    onRefresh();
+  }
+
+  void _listener() {
+    _refreshTreeNodes();
+  }
+
+  void _refreshTreeNodes() {
+    for (final child in children) {
+      child.childListenable.addListener(_listener);
+      child.selectedNotifier.addListener(_listener);
+    }
+    _treeItem = _treeItem.updateChildren(
+      children.map(
+        (e) {
+          return (e as CustomCanvasItem)._treeItem;
+        },
+      ).toList(),
+    );
+  }
+}
+
+class FrameCanvasItem extends CustomCanvasItem {
+  final ValueNotifier<Color> colorNotifier = ValueNotifier(Colors.red);
+  final ValueNotifier<BorderRadius> borderRadiusNotifier =
+      ValueNotifier(BorderRadius.zero);
+  FrameCanvasItem({
+    super.children,
+    super.debugLabel,
+    super.layout,
+    super.selected,
+    required super.onRefresh,
+  });
+
+  @override
+  Widget? build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([colorNotifier, borderRadiusNotifier]),
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            color: colorNotifier.value,
+            borderRadius: borderRadiusNotifier.value,
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+}
+
+class TextCanvasItem extends CustomCanvasItem {
+  final TextEditingController controller = TextEditingController();
+  final ValueNotifier<TextStyle> styleNotifier = ValueNotifier(const TextStyle(
+    fontSize: 16,
+    color: Colors.black,
+  ));
+  final ValueNotifier<TextAlign> alignNotifier = ValueNotifier(TextAlign.left);
+  final ValueNotifier<TextAlignVertical> verticalAlignNotifier =
+      ValueNotifier(TextAlignVertical.top);
+
+  TextCanvasItem({
+    super.children,
+    super.debugLabel,
+    super.layout,
+    super.selected,
+    required super.onRefresh,
+  });
+
+  @override
+  Widget? build(BuildContext context) {
+    return ListenableBuilder(
+        listenable: Listenable.merge({
+          styleNotifier,
+          alignNotifier,
+          verticalAlignNotifier,
+        }),
+        builder: (context, child) {
+          return TextField(
+            focusNode: decorationFocusNode,
+            padding: EdgeInsets.zero,
+            border: false,
+            maxLines: null,
+            expands: true,
+            controller: controller,
+            style: styleNotifier.value,
+            textAlign: alignNotifier.value,
+            textAlignVertical: verticalAlignNotifier.value,
+            isCollapsed: true,
+          );
+        });
+  }
 }

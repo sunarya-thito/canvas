@@ -5,17 +5,6 @@ import 'package:canvas/src/util.dart';
 
 const kDeg90 = 90.0 * pi / 180;
 
-/// [angle] starts from the top and goes clockwise
-double calculateDistanceBetweenLines(Offset a, Offset b, double angle) {
-  // Rotate the points so that the line is vertical
-  // Make a as the origin
-  Offset bTranslated = b - a;
-  Offset bRotated = rotatePoint(bTranslated, -angle);
-
-  // Calculate the distance between the lines, but only in the x direction
-  return bRotated.dx.abs();
-}
-
 class Polygon {
   static const Polygon empty = Polygon([]);
   final List<Offset> points;

@@ -10,7 +10,5 @@ Canvas is a Flutter package that provides an editor toolkit like Canva.
 ## Note
 Canvas is still in development, some features is still missing:
 - [ ] Snapping objects
-- [ ] Reparenting objects
 - [ ] Layouting (like AutoLayout in Figma)
 - [ ] Undo/Redo
-- [ ] Viewport panning zooming

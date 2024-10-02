@@ -17,65 +17,75 @@ class CreateObjectHandler extends CanvasSelectionHandler {
   bool get shouldCancelObjectDragging => true;
 
   @override
-  void onInstantSelection(Offset position) {
-    _start(position, true);
+  void onInstantSelection(CanvasViewportHandle handle, Offset position) {
+    _start(handle, position, true);
   }
 
-  CanvasSelectionSession _start(Offset position, bool instant) {
-    CanvasItem? targetParent;
+  CanvasSelectionSession _start(
+      CanvasViewportHandle handle, Offset position, bool instant) {
+    CanvasItemNode? targetParent;
     if (createAtRoot) {
-      targetParent = controller.root;
+      targetParent = controller.root.toNode();
     } else {
       CanvasHitTestResult result = CanvasHitTestResult();
       controller.hitTest(result, position);
       if (result.path.isEmpty) {
-        targetParent = controller.root;
+        targetParent = controller.root.toNode();
       } else {
-        targetParent = result.path.last.item;
+        targetParent = result.path.last.node;
       }
     }
     CanvasItem createdItem = createItem(position, instant);
     createdItem.selected = true;
     Layout layout = createdItem.layout;
     controller.visitTo(
-      targetParent,
+      targetParent.item,
       (item) {
         layout = layout.transferToChild(item.layout);
       },
     );
     createdItem.layout = layout;
-    targetParent.addChild(createdItem);
+    targetParent.item.addChild(createdItem);
     return CreateObjectSession(
+      handle: handle,
       targetParent: targetParent,
       createdItem: createdItem,
     );
   }
 
   @override
-  CanvasSelectionSession onSelectionStart(CanvasSelectSession session) {
-    return _start(session.startPosition, false);
+  CanvasSelectionSession onSelectionStart(
+      CanvasViewportHandle handle, CanvasSelectSession session) {
+    return _start(handle, session.startPosition, false);
   }
 }
 
 class CreateObjectSession extends CanvasSelectionSession {
-  final CanvasItem targetParent;
+  final CanvasViewportHandle handle;
+  final CanvasItemNode targetParent;
   final CanvasItem createdItem;
+  final Layout initialLayout;
 
   CreateObjectSession({
+    required this.handle,
     required this.targetParent,
     required this.createdItem,
-  });
+  }) : initialLayout = createdItem.layout;
 
   @override
   void onSelectionCancel() {
-    targetParent.removeChild(createdItem);
+    targetParent.item.removeChild(createdItem);
   }
 
   @override
-  void onSelectionChange(CanvasSelectSession session, Offset delta) {
-    Layout layout = createdItem.layout;
-    layout = layout.resizeBottomRight(delta);
-    createdItem.layout = layout;
+  void onSelectionChange(CanvasSelectSession session, Offset totalDelta) {
+    LayoutSnapping snapping =
+        handle.createLayoutSnapping(createdItem.toNode(targetParent));
+    Layout newLayout = initialLayout.resizeBottomRight(totalDelta,
+        snapping: snapping,
+        symmetric: handle.symmetricResize,
+        proportional: handle.proportionalResize);
+    createdItem.layout = newLayout;
   }
 
   @override

@@ -16,18 +16,19 @@ abstract class CanvasParent {
 }
 
 enum SelectionBehavior {
-  overlap,
+  intersect,
   contain,
 }
 
 abstract class CanvasSelectionHandler {
-  CanvasSelectionSession onSelectionStart(CanvasSelectSession session);
-  void onInstantSelection(Offset position);
+  CanvasSelectionSession onSelectionStart(
+      CanvasViewportHandle handle, CanvasSelectSession session);
+  void onInstantSelection(CanvasViewportHandle handle, Offset position);
   bool get shouldCancelObjectDragging;
 }
 
 abstract class CanvasSelectionSession {
-  void onSelectionChange(CanvasSelectSession session, Offset delta);
+  void onSelectionChange(CanvasSelectSession session, Offset totalDelta);
   void onSelectionEnd(CanvasSelectSession session);
   void onSelectionCancel();
 }
@@ -45,6 +46,12 @@ abstract class CanvasViewportHandle {
   void cancelSelectSession();
   void instantSelection(Offset position);
   bool get enableInstantSelection;
+  bool get symmetricResize;
+  bool get proportionalResize;
+  SnappingConfiguration get snappingConfiguration;
+  CanvasController get controller;
+  LayoutSnapping createLayoutSnapping(CanvasItemNode node,
+      [bool fillInSnappingPoints = true]);
 }
 
 class CanvasSelectSession {
@@ -83,13 +90,37 @@ class SnappingConfiguration {
   final bool enableRotationSnapping;
   final double threshold;
   final List<double> angles;
+  final Offset? gridSnapping;
 
   const SnappingConfiguration({
     this.enableObjectSnapping = true,
     this.enableRotationSnapping = true,
     this.threshold = 5,
     this.angles = defaultSnappingAngles,
+    this.gridSnapping,
   });
+
+  Offset snapToGrid(Offset offset) {
+    if (gridSnapping == null) {
+      return offset;
+    }
+    return Offset(
+      (offset.dx / gridSnapping!.dx).round() * gridSnapping!.dx,
+      (offset.dy / gridSnapping!.dy).round() * gridSnapping!.dy,
+    );
+  }
+
+  Size snapToGridSize(Size size) {
+    if (gridSnapping == null ||
+        gridSnapping!.dx == 0 ||
+        gridSnapping!.dy == 0) {
+      return size;
+    }
+    return Size(
+      (size.width / gridSnapping!.dx).round() * gridSnapping!.dx,
+      (size.height / gridSnapping!.dy).round() * gridSnapping!.dy,
+    );
+  }
 
   double snapAngle(double angle) {
     if (!enableRotationSnapping) {
@@ -110,11 +141,43 @@ class SnappingConfiguration {
 class SnappingPoint {
   final Offset position;
   final double angle;
+  final Axis axis;
 
   SnappingPoint({
     required this.position,
     required this.angle,
+    required this.axis,
   });
+
+  Offset? distanceTo(SnappingPoint other) {
+    if (other.angle != angle || other.axis != axis) {
+      return null;
+    }
+    Offset otherPosition = other.position;
+    // rotate other position to negative of this angle
+    // to achieve straight line distance
+    Offset rotated = rotatePoint(otherPosition - position, -angle);
+    Offset distance = Offset(
+      axis == Axis.horizontal ? rotated.dx : 0,
+      axis == Axis.vertical ? rotated.dy : 0,
+    );
+    Offset rotatedBack = rotatePoint(distance, angle);
+    return rotatedBack;
+  }
+
+  /// Snap to this snapping point
+  /// returns the offset delta to snap to this point
+  Offset? snapTo(SnappingPoint other, double threshold) {
+    Offset? distance = distanceTo(other);
+    if (distance == null) {
+      return null;
+    }
+    double dist = distance.distance;
+    if (dist < threshold) {
+      return distance;
+    }
+    return null;
+  }
 }
 
 class CanvasTransform {
@@ -282,7 +345,7 @@ class LayoutTransform {
 class LayoutSnapping {
   final SnappingConfiguration config;
   final List<SnappingPoint> snappingPoints = [];
-  final CanvasItem item;
+  final CanvasItem? item;
   final LayoutTransform? parentTransform;
   late List<SnappingPoint> _selfSnappingPoints;
 
@@ -291,9 +354,37 @@ class LayoutSnapping {
   Offset? newScaleDelta;
   Offset? newSizeDelta;
 
-  LayoutSnapping(this.config, this.item, this.parentTransform) {
-    _selfSnappingPoints = _computeSnappingPoints(item);
+  set newOffsetDeltaX(double value) {
+    newOffsetDelta = Offset(value, newOffsetDelta?.dy ?? 0);
   }
+
+  set newOffsetDeltaY(double value) {
+    newOffsetDelta = Offset(newOffsetDelta?.dx ?? 0, value);
+  }
+
+  set newScaleDeltaX(double value) {
+    newScaleDelta = Offset(value, newScaleDelta?.dy ?? 0);
+  }
+
+  set newScaleDeltaY(double value) {
+    newScaleDelta = Offset(newScaleDelta?.dx ?? 0, value);
+  }
+
+  set newSizeDeltaX(double value) {
+    newSizeDelta = Offset(value, newSizeDelta?.dy ?? 0);
+  }
+
+  set newSizeDeltaY(double value) {
+    newSizeDelta = Offset(newSizeDelta?.dx ?? 0, value);
+  }
+
+  LayoutSnapping(this.config, CanvasItem this.item, this.parentTransform) {
+    _selfSnappingPoints = _computeSnappingPoints(item!);
+  }
+
+  LayoutSnapping.noSnappingPoints(this.config)
+      : item = null,
+        parentTransform = null;
 
   List<SnappingPoint> get selfSnappingPoints => _selfSnappingPoints;
 
@@ -408,7 +499,6 @@ class AbsoluteLayout extends Layout {
   Layout transferToChild(Layout childLayout) {
     if (childLayout is AbsoluteLayout) {
       return AbsoluteLayout(
-        // offset: offset - childLayout.offset,
         offset: rotatePoint(offset - childLayout.offset, -childLayout.rotation),
         size: size,
         rotation: rotation - childLayout.rotation,
@@ -422,7 +512,6 @@ class AbsoluteLayout extends Layout {
   Layout transferToParent(Layout parentLayout) {
     if (parentLayout is AbsoluteLayout) {
       return AbsoluteLayout(
-        // offset: offset + parentLayout.offset,
         offset:
             rotatePoint(offset, parentLayout.rotation) + parentLayout.offset,
         size: size,
@@ -437,6 +526,12 @@ class AbsoluteLayout extends Layout {
 
   double get aspectRatio {
     Size scaledSize = this.scaledSize;
+    if (scaledSize.height == 0) {
+      if (scaledSize.width == 0) {
+        return 1;
+      }
+      return 0;
+    }
     return scaledSize.width / scaledSize.height;
   }
 
@@ -461,8 +556,14 @@ class AbsoluteLayout extends Layout {
 
   @override
   Layout drag(Offset delta, {LayoutSnapping? snapping}) {
+    var newOffset = offset + delta;
+    if (snapping != null) {
+      var oldNewOffset = newOffset;
+      newOffset = snapping.config.snapToGrid(newOffset);
+      snapping.newOffsetDelta = newOffset - oldNewOffset;
+    }
     return AbsoluteLayout(
-      offset: offset + delta,
+      offset: newOffset,
       size: size,
       rotation: rotation,
       scale: scale,
@@ -494,15 +595,28 @@ class AbsoluteLayout extends Layout {
   Layout resizeBottom(Offset delta,
       {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
-    delta = delta.divideBy(scale);
+    Size newSize;
+    if (snapping != null) {
+      newSize = Size(size.width, size.height + delta.dy);
+      var snapped = snapping.config.snapToGridSize(newSize);
+      var snappedSizeDelta = Offset(
+        snapped.width - size.width,
+        snapped.height - size.height,
+      );
+      snapping.newSizeDeltaY = snappedSizeDelta.dy;
+      newSize = Size(size.width, size.height + snappedSizeDelta.dy / scale.dy);
+    } else {
+      delta = delta.divideBy(scale);
+      newSize = Size(size.width, size.height + delta.dy);
+    }
     Layout result = AbsoluteLayout(
       offset: offset,
-      size: Size(size.width, size.height + delta.dy),
+      size: newSize,
       rotation: rotation,
       scale: scale,
     );
     if (symmetric) {
-      result = result.resizeTop(-originalDelta);
+      result = result.resizeTop(-(snapping?.newSizeDelta ?? originalDelta));
     }
     return result;
   }
@@ -513,12 +627,14 @@ class AbsoluteLayout extends Layout {
       bool symmetric = false,
       LayoutSnapping? snapping}) {
     if (proportional) {
-      delta = proportionalDelta(delta, aspectRatio);
+      var proportional =
+          proportionalDelta(Offset(delta.dx, -delta.dy), aspectRatio);
+      delta = Offset(proportional.dx, -proportional.dy);
     }
     Layout result = resizeBottom(delta, snapping: snapping)
         .resizeLeft(delta, snapping: snapping);
     if (symmetric) {
-      result = result.resizeTopRight(-(snapping?.newSizeDelta ?? delta));
+      result = result.resizeTopRight(-delta, snapping: snapping);
     }
     return result;
   }
@@ -529,12 +645,12 @@ class AbsoluteLayout extends Layout {
       bool symmetric = false,
       LayoutSnapping? snapping}) {
     if (proportional) {
-      delta = proportionalDelta(delta, aspectRatio);
+      delta = -proportionalDelta(-delta, aspectRatio);
     }
     Layout result = resizeBottom(delta, snapping: snapping)
         .resizeRight(delta, snapping: snapping);
     if (symmetric) {
-      result = result.resizeTopLeft(-(snapping?.newSizeDelta ?? delta));
+      result = result.resizeTopLeft(-delta, snapping: snapping);
     }
     return result;
   }
@@ -544,16 +660,33 @@ class AbsoluteLayout extends Layout {
       {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyX();
-    Offset rotatedDelta = rotatePoint(delta, rotation);
-    delta = delta.divideBy(scale);
+
+    Offset newOffset;
+    Size newSize;
+    if (snapping != null) {
+      newSize = Size(size.width - delta.dx, size.height);
+      var snapped = snapping.config.snapToGridSize(newSize);
+      var snappedSizeDelta = Offset(
+        size.width - snapped.width,
+        delta.dy,
+      );
+      snapping.newSizeDeltaX = snappedSizeDelta.dx;
+      newSize = Size(size.width - snappedSizeDelta.dx / scale.dx, size.height);
+      newOffset = offset + rotatePoint(snappedSizeDelta, rotation);
+    } else {
+      Offset rotatedDelta = rotatePoint(delta, rotation);
+      delta = delta.divideBy(scale);
+      newOffset = offset + rotatedDelta;
+      newSize = Size(size.width - delta.dx, size.height);
+    }
     Layout result = AbsoluteLayout(
-      offset: offset + rotatedDelta,
-      size: Size(size.width - delta.dx, size.height),
+      offset: newOffset,
+      size: newSize,
       rotation: rotation,
       scale: scale,
     );
     if (symmetric) {
-      result = result.resizeRight(-originalDelta);
+      result = result.resizeRight(-(snapping?.newSizeDelta ?? originalDelta));
     }
     return result;
   }
@@ -563,15 +696,28 @@ class AbsoluteLayout extends Layout {
       {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyX();
-    delta = delta.divideBy(scale);
+    Size newSize;
+    if (snapping != null) {
+      newSize = Size(size.width + delta.dx, size.height);
+      var snapped = snapping.config.snapToGridSize(newSize);
+      var snappedSizeDelta = Offset(
+        snapped.width - size.width,
+        snapped.height - size.height,
+      );
+      snapping.newSizeDeltaX = snappedSizeDelta.dx;
+      newSize = Size(size.width + snappedSizeDelta.dx / scale.dx, size.height);
+    } else {
+      delta = delta.divideBy(scale);
+      newSize = Size(size.width + delta.dx, size.height);
+    }
     Layout result = AbsoluteLayout(
       offset: offset,
-      size: Size(size.width + delta.dx, size.height),
+      size: newSize,
       rotation: rotation,
       scale: scale,
     );
     if (symmetric) {
-      result = result.resizeLeft(-originalDelta);
+      result = result.resizeLeft(-(snapping?.newSizeDelta ?? originalDelta));
     }
     return result;
   }
@@ -581,16 +727,32 @@ class AbsoluteLayout extends Layout {
       {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyY();
-    Offset rotatedDelta = rotatePoint(delta, rotation);
-    delta = delta.divideBy(scale);
+    Size newSize;
+    Offset newOffset;
+    if (snapping != null) {
+      newSize = Size(size.width, size.height - delta.dy);
+      var snapped = snapping.config.snapToGridSize(newSize);
+      var snappedSizeDelta = Offset(
+        0,
+        size.height - snapped.height,
+      );
+      snapping.newSizeDeltaY = snappedSizeDelta.dy;
+      newSize = Size(size.width, size.height - snappedSizeDelta.dy / scale.dy);
+      newOffset = offset + rotatePoint(snappedSizeDelta, rotation);
+    } else {
+      Offset rotatedDelta = rotatePoint(delta, rotation);
+      delta = delta.divideBy(scale);
+      newSize = Size(size.width, size.height - delta.dy);
+      newOffset = offset + rotatedDelta;
+    }
     Layout result = AbsoluteLayout(
-      offset: offset + rotatedDelta,
-      size: Size(size.width, size.height - delta.dy),
+      offset: newOffset,
+      size: newSize,
       rotation: rotation,
       scale: scale,
     );
     if (symmetric) {
-      result = result.resizeBottom(-originalDelta);
+      result = result.resizeBottom(-(snapping?.newSizeDelta ?? originalDelta));
     }
     return result;
   }
@@ -617,7 +779,9 @@ class AbsoluteLayout extends Layout {
       bool symmetric = false,
       LayoutSnapping? snapping}) {
     if (proportional) {
-      delta = proportionalDelta(delta, aspectRatio);
+      var proportional =
+          proportionalDelta(Offset(-delta.dx, delta.dy), aspectRatio);
+      delta = Offset(-proportional.dx, proportional.dy);
     }
     Layout result = resizeTop(delta, snapping: snapping)
         .resizeRight(delta, snapping: snapping);
@@ -631,14 +795,23 @@ class AbsoluteLayout extends Layout {
   Layout rescaleBottom(Offset delta,
       {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
+    var newScale = Offset(scale.dx, scale.dy + delta.dy / size.height);
+    if (snapping != null) {
+      var oldScaledSize = scaledSize;
+      var newScaledSize =
+          Size(size.width * newScale.dx, size.height * newScale.dy);
+      var snappedSize = snapping.config.snapToGridSize(newScaledSize);
+      newScale = Offset(scale.dx, snappedSize.height / size.height);
+      snapping.newScaleDeltaY = snappedSize.height - oldScaledSize.height;
+    }
     Layout result = AbsoluteLayout(
       offset: offset,
       size: size,
       rotation: rotation,
-      scale: Offset(scale.dx, scale.dy + delta.dy / size.height),
+      scale: newScale,
     );
     if (symmetric) {
-      result = result.rescaleTop(-originalDelta);
+      result = result.rescaleTop(-(snapping?.newScaleDelta ?? originalDelta));
     }
     return result;
   }
@@ -649,11 +822,14 @@ class AbsoluteLayout extends Layout {
       bool proportional = false,
       LayoutSnapping? snapping}) {
     if (proportional) {
-      delta = proportionalDelta(delta, aspectRatio);
+      var proportional =
+          proportionalDelta(Offset(delta.dx, -delta.dy), aspectRatio);
+      delta = Offset(proportional.dx, -proportional.dy);
     }
-    Layout result = rescaleBottom(delta).rescaleLeft(delta);
+    Layout result = rescaleBottom(delta, snapping: snapping)
+        .rescaleLeft(delta, snapping: snapping);
     if (symmetric) {
-      result = result.rescaleTopRight(-delta);
+      result = result.rescaleTopRight(-(snapping?.newScaleDelta ?? delta));
     }
     return result;
   }
@@ -664,11 +840,12 @@ class AbsoluteLayout extends Layout {
       bool proportional = false,
       LayoutSnapping? snapping}) {
     if (proportional) {
-      delta = proportionalDelta(delta, aspectRatio);
+      delta = -proportionalDelta(-delta, aspectRatio);
     }
-    Layout result = rescaleBottom(delta).rescaleRight(delta);
+    Layout result = rescaleBottom(delta, snapping: snapping)
+        .rescaleRight(delta, snapping: snapping);
     if (symmetric) {
-      result = result.rescaleTopLeft(-delta);
+      result = result.rescaleTopLeft(-(snapping?.newScaleDelta ?? delta));
     }
     return result;
   }
@@ -679,14 +856,34 @@ class AbsoluteLayout extends Layout {
     Offset originalDelta = delta;
     delta = delta.onlyX();
     Offset rotatedDelta = rotatePoint(delta, rotation);
+    var newOffset = offset + rotatedDelta;
+    var newScale = Offset(scale.dx - delta.dx / size.width, scale.dy);
+    if (snapping != null) {
+      var oldScaledSize = scaledSize;
+      var newScaledSize =
+          Size(size.width * newScale.dx, size.height * newScale.dy);
+      var snappedSize = snapping.config.snapToGridSize(newScaledSize);
+      var snappedSizeDelta = Offset(
+        snappedSize.width - oldScaledSize.width,
+        snappedSize.height - oldScaledSize.height,
+      );
+      snappedSizeDelta = snapping.config.snapToGrid(snappedSizeDelta);
+      var newScaleDelta = Offset(
+        snappedSizeDelta.dx / size.width,
+        snappedSizeDelta.dy / size.height,
+      );
+      snapping.newScaleDeltaX = -snappedSizeDelta.dx;
+      newScale = scale + newScaleDelta;
+      newOffset = offset - rotatePoint(snappedSizeDelta, rotation);
+    }
     Layout result = AbsoluteLayout(
-      offset: offset + rotatedDelta,
+      offset: newOffset,
       size: size,
       rotation: rotation,
-      scale: Offset(scale.dx - delta.dx / size.width, scale.dy),
+      scale: newScale,
     );
     if (symmetric) {
-      result = result.rescaleRight(-originalDelta);
+      result = result.rescaleRight(-(snapping?.newScaleDelta ?? originalDelta));
     }
     return result;
   }
@@ -696,14 +893,23 @@ class AbsoluteLayout extends Layout {
       {bool symmetric = false, LayoutSnapping? snapping}) {
     Offset originalDelta = delta;
     delta = delta.onlyX();
+    var newScale = Offset(scale.dx + delta.dx / size.width, scale.dy);
+    if (snapping != null) {
+      var oldScaledSize = scaledSize;
+      var newScaledSize =
+          Size(size.width * newScale.dx, size.height * newScale.dy);
+      var snappedSize = snapping.config.snapToGridSize(newScaledSize);
+      newScale = Offset(snappedSize.width / size.width, scale.dy);
+      snapping.newScaleDeltaX = snappedSize.width - oldScaledSize.width;
+    }
     Layout result = AbsoluteLayout(
       offset: offset,
       size: size,
       rotation: rotation,
-      scale: Offset(scale.dx + delta.dx / size.width, scale.dy),
+      scale: newScale,
     );
     if (symmetric) {
-      result = result.rescaleLeft(-originalDelta);
+      result = result.rescaleLeft(-(snapping?.newScaleDelta ?? originalDelta));
     }
     return result;
   }
@@ -714,14 +920,35 @@ class AbsoluteLayout extends Layout {
     Offset originalDelta = delta;
     delta = delta.onlyY();
     Offset rotatedDelta = rotatePoint(delta, rotation);
+    var newScale = Offset(scale.dx, scale.dy - delta.dy / size.height);
+    var newOffset = offset + rotatedDelta;
+    if (snapping != null) {
+      var oldScaledSize = scaledSize;
+      var newScaledSize =
+          Size(size.width * newScale.dx, size.height * newScale.dy);
+      var snappedSize = snapping.config.snapToGridSize(newScaledSize);
+      var snappedSizeDelta = Offset(
+        snappedSize.width - oldScaledSize.width,
+        snappedSize.height - oldScaledSize.height,
+      );
+      snappedSizeDelta = snapping.config.snapToGrid(snappedSizeDelta);
+      var newScaleDelta = Offset(
+        snappedSizeDelta.dx / size.width,
+        snappedSizeDelta.dy / size.height,
+      );
+      snapping.newScaleDeltaY = -snappedSizeDelta.dy;
+      newScale = scale + newScaleDelta;
+      newOffset = offset - rotatePoint(snappedSizeDelta, rotation);
+    }
     Layout result = AbsoluteLayout(
-      offset: offset + rotatedDelta,
+      offset: newOffset,
       size: size,
       rotation: rotation,
-      scale: Offset(scale.dx, scale.dy - delta.dy / size.height),
+      scale: newScale,
     );
     if (symmetric) {
-      result = result.rescaleBottom(-originalDelta);
+      result =
+          result.rescaleBottom(-(snapping?.newScaleDelta ?? originalDelta));
     }
     return result;
   }
@@ -734,9 +961,10 @@ class AbsoluteLayout extends Layout {
     if (proportional) {
       delta = proportionalDelta(delta, aspectRatio);
     }
-    Layout result = rescaleTop(delta).rescaleLeft(delta);
+    Layout result = rescaleTop(delta, snapping: snapping)
+        .rescaleLeft(delta, snapping: snapping);
     if (symmetric) {
-      result = result.rescaleBottomRight(-delta);
+      result = result.rescaleBottomRight(-(snapping?.newScaleDelta ?? delta));
     }
     return result;
   }
@@ -747,11 +975,14 @@ class AbsoluteLayout extends Layout {
       bool proportional = false,
       LayoutSnapping? snapping}) {
     if (proportional) {
-      delta = proportionalDelta(delta, aspectRatio);
+      var proportional =
+          proportionalDelta(Offset(-delta.dx, delta.dy), aspectRatio);
+      delta = Offset(-proportional.dx, proportional.dy);
     }
-    Layout result = rescaleTop(delta).rescaleRight(delta);
+    Layout result = rescaleTop(delta, snapping: snapping)
+        .rescaleRight(delta, snapping: snapping);
     if (symmetric) {
-      result = result.rescaleBottomLeft(-delta);
+      result = result.rescaleBottomLeft(-(snapping?.newScaleDelta ?? delta));
     }
     return result;
   }
@@ -788,6 +1019,8 @@ abstract class CanvasItem implements CanvasParent {
   set transform(LayoutTransform transform) =>
       _transformNotifier.value = transform;
 
+  final FocusNode decorationFocusNode = FocusNode();
+
   @override
   void addChildren(List<CanvasItem> children) {
     this.children = [...this.children, ...children];
@@ -818,6 +1051,8 @@ abstract class CanvasItem implements CanvasParent {
   void insertChild(int index, CanvasItem child) {
     children = List.from(children)..insert(index, child);
   }
+
+  bool get canTransform => true;
 
   set layout(Layout layout) {
     _layoutNotifier.value = layout;
@@ -861,41 +1096,39 @@ abstract class CanvasItem implements CanvasParent {
   }
 
   void hitTestSelection(CanvasHitTestResult result, Polygon selection,
-      [SelectionBehavior behavior = SelectionBehavior.overlap]) {
+      {SelectionBehavior behavior = SelectionBehavior.intersect,
+      CanvasItemNode? parent}) {
     selection = transform.transformFromParentPolygon(selection);
+    var node = toNode(parent);
     if (hitTestSelfSelection(selection, behavior)) {
-      result.path.add(CanvasHitTestEntry(this, Offset.zero));
+      result.path.add(CanvasHitTestEntry(node, Offset.zero));
     }
-    hitTestChildrenSelection(result, selection, behavior);
+    hitTestChildrenSelection(result, selection, node, behavior: behavior);
   }
 
-  bool hitTestSelfSelection(Polygon selection,
-      [SelectionBehavior behavior = SelectionBehavior.overlap]) {
-    return false;
-  }
-
-  void hitTestChildrenSelection(CanvasHitTestResult result, Polygon selection,
-      [SelectionBehavior behavior = SelectionBehavior.overlap]) {
+  void hitTestChildrenSelection(
+      CanvasHitTestResult result, Polygon selection, CanvasItemNode node,
+      {SelectionBehavior behavior = SelectionBehavior.intersect}) {
     for (final child in children) {
-      child.hitTestSelection(result, selection, behavior);
+      child.hitTestSelection(result, selection,
+          behavior: behavior, parent: node);
     }
   }
 
-  void hitTest(CanvasHitTestResult result, Offset position) {
+  void hitTest(CanvasHitTestResult result, Offset position,
+      [CanvasItemNode? parent]) {
     position = transform.transformFromParent(position);
+    var node = toNode(parent);
     if (hitTestSelf(position)) {
-      result.path.add(CanvasHitTestEntry(this, position));
+      result.path.add(CanvasHitTestEntry(node, position));
     }
-    hitTestChildren(result, position);
+    hitTestChildren(result, position, node);
   }
 
-  bool hitTestSelf(Offset position) {
-    return false;
-  }
-
-  void hitTestChildren(CanvasHitTestResult result, Offset position) {
+  void hitTestChildren(
+      CanvasHitTestResult result, Offset position, CanvasItemNode node) {
     for (final child in children) {
-      child.hitTest(result, position);
+      child.hitTest(result, position, node);
     }
   }
 
@@ -948,16 +1181,88 @@ abstract class CanvasItem implements CanvasParent {
     Offset center = currentTransform.offset +
         rotatePoint(Offset(scaledSize.width / 2, scaledSize.height / 2),
             currentTransform.rotation);
-    visitor(SnappingPoint(position: topLeft, angle: currentTransform.rotation));
+    visitor(SnappingPoint(
+        position: topLeft,
+        angle: currentTransform.rotation,
+        axis: Axis.horizontal));
+    visitor(SnappingPoint(
+        position: topRight,
+        angle: currentTransform.rotation,
+        axis: Axis.horizontal));
+    visitor(SnappingPoint(
+        position: bottomLeft,
+        angle: currentTransform.rotation,
+        axis: Axis.horizontal));
+    visitor(SnappingPoint(
+        position: bottomRight,
+        angle: currentTransform.rotation,
+        axis: Axis.horizontal));
+    visitor(SnappingPoint(
+        position: center,
+        angle: currentTransform.rotation,
+        axis: Axis.horizontal));
+    // rotated y-axis snapping points
+    visitor(SnappingPoint(
+        position: topLeft,
+        angle: currentTransform.rotation,
+        axis: Axis.vertical));
+    visitor(SnappingPoint(
+        position: topRight,
+        angle: currentTransform.rotation,
+        axis: Axis.vertical));
+    visitor(SnappingPoint(
+        position: bottomLeft,
+        angle: currentTransform.rotation,
+        axis: Axis.vertical));
+    visitor(SnappingPoint(
+        position: bottomRight,
+        angle: currentTransform.rotation,
+        axis: Axis.vertical));
+    visitor(SnappingPoint(
+        position: center,
+        angle: currentTransform.rotation,
+        axis: Axis.vertical));
+    // unrotated x-axis snapping points
+    visitor(SnappingPoint(position: topLeft, angle: 0, axis: Axis.horizontal));
+    visitor(SnappingPoint(position: topRight, angle: 0, axis: Axis.horizontal));
     visitor(
-        SnappingPoint(position: topRight, angle: currentTransform.rotation));
+        SnappingPoint(position: bottomLeft, angle: 0, axis: Axis.horizontal));
     visitor(
-        SnappingPoint(position: bottomLeft, angle: currentTransform.rotation));
-    visitor(
-        SnappingPoint(position: bottomRight, angle: currentTransform.rotation));
-    visitor(SnappingPoint(position: center, angle: currentTransform.rotation));
+        SnappingPoint(position: bottomRight, angle: 0, axis: Axis.horizontal));
+    visitor(SnappingPoint(position: center, angle: 0, axis: Axis.horizontal));
+    // unrotated y-axis snapping points
+    visitor(SnappingPoint(
+        position: topLeft, angle: degToRad(90), axis: Axis.vertical));
+    visitor(SnappingPoint(
+        position: topRight, angle: degToRad(90), axis: Axis.vertical));
+    visitor(SnappingPoint(
+        position: bottomLeft, angle: degToRad(90), axis: Axis.vertical));
+    visitor(SnappingPoint(
+        position: bottomRight, angle: degToRad(90), axis: Axis.vertical));
+    visitor(SnappingPoint(position: center, angle: 0, axis: Axis.vertical));
     for (final child in children) {
       child.visitSnappingPoints(visitor, currentTransform);
+    }
+  }
+
+  bool hitTestSelf(Offset position) {
+    var scaledSize = transform.scaledSize;
+    return position.dx >= 0 &&
+        position.dy >= 0 &&
+        position.dx <= scaledSize.width &&
+        position.dy <= scaledSize.height;
+  }
+
+  bool hitTestSelfSelection(Polygon selection,
+      [SelectionBehavior behavior = SelectionBehavior.intersect]) {
+    var scaledSize = transform.scaledSize;
+    Polygon box = Polygon.fromRect(
+        Rect.fromLTWH(0, 0, scaledSize.width, scaledSize.height));
+    switch (behavior) {
+      case SelectionBehavior.intersect:
+        return box.overlaps(selection);
+      case SelectionBehavior.contain:
+        return selection.containsPolygon(box);
     }
   }
 }
@@ -970,18 +1275,30 @@ class RootCanvasItem extends CanvasItem {
     this.children = children;
     this.layout = layout;
   }
+
+  @override
+  bool get canTransform => false;
+
+  @override
+  bool hitTestSelf(Offset position) {
+    return false;
+  }
+
+  @override
+  bool hitTestSelfSelection(Polygon selection,
+      [SelectionBehavior behavior = SelectionBehavior.intersect]) {
+    return false;
+  }
 }
 
-class BoxCanvasItem extends CanvasItem {
-  final Widget? decoration;
+class CanvasItemAdapter extends CanvasItem {
   @override
   final String? debugLabel;
-  BoxCanvasItem({
-    this.decoration,
-    List<CanvasItem> children = const [],
-    required Layout layout,
-    bool selected = false,
+  CanvasItemAdapter({
     this.debugLabel,
+    List<CanvasItem> children = const [],
+    Layout layout = const AbsoluteLayout(),
+    bool selected = false,
   }) {
     this.children = children;
     this.layout = layout;
@@ -989,36 +1306,24 @@ class BoxCanvasItem extends CanvasItem {
   }
 
   @override
+  String toString() {
+    return '$runtimeType($debugLabel)';
+  }
+}
+
+class BoxCanvasItem extends CanvasItemAdapter {
+  final Widget? decoration;
+  BoxCanvasItem({
+    this.decoration,
+    super.children = const [],
+    required super.layout,
+    super.debugLabel,
+    super.selected = false,
+  });
+
+  @override
   Widget? build(BuildContext context) {
     return decoration;
-  }
-
-  @override
-  bool hitTestSelf(Offset position) {
-    var scaledSize = transform.scaledSize;
-    return position.dx >= 0 &&
-        position.dy >= 0 &&
-        position.dx <= scaledSize.width &&
-        position.dy <= scaledSize.height;
-  }
-
-  @override
-  bool hitTestSelfSelection(Polygon selection,
-      [SelectionBehavior behavior = SelectionBehavior.overlap]) {
-    var scaledSize = transform.scaledSize;
-    Polygon box = Polygon.fromRect(
-        Rect.fromLTWH(0, 0, scaledSize.width, scaledSize.height));
-    switch (behavior) {
-      case SelectionBehavior.overlap:
-        return box.overlaps(selection);
-      case SelectionBehavior.contain:
-        return selection.containsPolygon(box);
-    }
-  }
-
-  @override
-  String toString() {
-    return 'BoxCanvasItem($debugLabel)';
   }
 }
 

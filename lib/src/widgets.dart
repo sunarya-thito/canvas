@@ -44,9 +44,23 @@ class CanvasController implements Listenable, CanvasParent {
     _root.children = children;
   }
 
+  void visit(void Function(CanvasItem item) visitor) {
+    _root.visit(visitor);
+  }
+
+  void visitWithTransform(
+      void Function(CanvasItem item, LayoutTransform? parentTransform) visitor,
+      {bool rootSelectionOnly = false}) {
+    _root.visitWithTransform(visitor, rootSelectionOnly: rootSelectionOnly);
+  }
+
+  void visitSnappingPoints(void Function(SnappingPoint snappingPoint) visitor) {
+    _root.visitSnappingPoints(visitor);
+  }
+
   void hitTestSelection(CanvasHitTestResult result, Polygon selection,
-      [SelectionBehavior behavior = SelectionBehavior.overlap]) {
-    _root.hitTestSelection(result, selection, behavior);
+      [SelectionBehavior behavior = SelectionBehavior.intersect]) {
+    _root.hitTestSelection(result, selection, behavior: behavior);
   }
 
   void hitTest(CanvasHitTestResult result, Offset position) {
@@ -153,10 +167,12 @@ class TransformNode {
 }
 
 class CanvasHitTestEntry {
-  final CanvasItem item;
+  final CanvasItemNode node;
   final Offset localPosition;
 
-  CanvasHitTestEntry(this.item, this.localPosition);
+  CanvasHitTestEntry(this.node, this.localPosition);
+
+  CanvasItem get item => node.item;
 
   @override
   String toString() {
@@ -287,6 +303,7 @@ class CanvasViewport extends StatefulWidget {
   final ValueChanged<CanvasSelectSession>? onSelectionChange;
   final ValueChanged<CanvasSelectSession>? onSelectionEnd;
   final VoidCallback? onSelectionCancel;
+  final CanvasViewportThemeData theme;
 
   const CanvasViewport({
     super.key,
@@ -312,6 +329,7 @@ class CanvasViewport extends StatefulWidget {
     this.onSelectionChange,
     this.onSelectionEnd,
     this.onSelectionCancel,
+    this.theme = const CanvasViewportThemeData(),
   });
 
   @override
@@ -327,6 +345,8 @@ class _CanvasViewportState extends State<CanvasViewport>
   late Offset _canvasOffset;
   late Size _size;
 
+  Offset? _totalSelectionDelta;
+
   final ValueNotifier<CanvasSelectSession?> _selectNotifier =
       ValueNotifier(null);
   CanvasSelectionSession? _selectSession;
@@ -338,6 +358,24 @@ class _CanvasViewportState extends State<CanvasViewport>
   }
 
   @override
+  void didUpdateWidget(covariant CanvasViewport oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (symmetricResize != oldWidget.symmetricResize ||
+        proportionalResize != oldWidget.proportionalResize) {
+      var current = _selectNotifier.value;
+      if (_selectSession != null && current != null) {
+        _selectSession!.onSelectionChange(current, _totalSelectionDelta!);
+      }
+    }
+  }
+
+  @override
+  bool get symmetricResize => widget.symmetricResize;
+
+  @override
+  bool get proportionalResize => widget.proportionalResize;
+
+  @override
   Size get size => _size;
 
   @override
@@ -346,7 +384,7 @@ class _CanvasViewportState extends State<CanvasViewport>
   @override
   void instantSelection(Offset position) {
     if (widget.selectionHandler != null) {
-      widget.selectionHandler!.onInstantSelection(position);
+      widget.selectionHandler!.onInstantSelection(this, position);
     }
   }
 
@@ -413,7 +451,7 @@ class _CanvasViewportState extends State<CanvasViewport>
 
   @override
   Widget build(BuildContext context) {
-    final theme = CanvasViewportThemeData();
+    final theme = widget.theme;
     var textDirection = Directionality.of(context);
     var resolvedAlignment = widget.alignment.resolve(textDirection);
     var canvasOffset = resolvedAlignment.alongSize(widget.canvasSize);
@@ -469,14 +507,6 @@ class _CanvasViewportState extends State<CanvasViewport>
                                       height: widget.canvasSize.height,
                                       decoration: theme.canvasDecoration,
                                     ),
-                              item: widget.controller._root,
-                            ),
-                          ),
-                          Transform.scale(
-                            alignment: Alignment.topLeft,
-                            scale: _transform.zoom,
-                            child: _CanvasItemBoundingBox(
-                              item: widget.controller._root,
                               node: widget.controller._root.toNode(),
                               onHover: (item, hovered) {
                                 if (hovered) {
@@ -504,7 +534,8 @@ class _CanvasViewportState extends State<CanvasViewport>
                                   return const SizedBox();
                                 }
                                 Rect rect = Rect.fromPoints(
-                                    session.startPosition, session.endPosition);
+                                    session.startPosition * _transform.zoom,
+                                    session.endPosition * _transform.zoom);
                                 return Transform.translate(
                                   offset: rect.topLeft,
                                   child: Container(
@@ -547,6 +578,7 @@ class _CanvasViewportState extends State<CanvasViewport>
 
   @override
   void endSelectSession() {
+    _totalSelectionDelta = null;
     var current = _selectNotifier.value;
     if (current != null) {
       widget.onSelectionEnd?.call(current);
@@ -559,7 +591,7 @@ class _CanvasViewportState extends State<CanvasViewport>
       Polygon selection = Polygon.fromRect(
           Rect.fromPoints(current.startPosition, current.endPosition));
       CanvasHitTestResult result = CanvasHitTestResult();
-      widget.controller._root
+      widget.controller
           .hitTestSelection(result, selection, widget.selectionBehavior);
       for (var entry in result.path) {
         entry.item.selected = true;
@@ -569,6 +601,8 @@ class _CanvasViewportState extends State<CanvasViewport>
 
   @override
   void startSelectSession(Offset position) {
+    _totalSelectionDelta = Offset.zero;
+    position = position / _transform.zoom;
     var newSession =
         CanvasSelectSession(startPosition: position, endPosition: position);
     widget.onSelectionStart?.call(newSession);
@@ -578,38 +612,67 @@ class _CanvasViewportState extends State<CanvasViewport>
       },
     );
     if (widget.selectionHandler != null) {
-      _selectSession = widget.selectionHandler!.onSelectionStart(newSession);
+      _selectSession =
+          widget.selectionHandler!.onSelectionStart(this, newSession);
     }
     _selectNotifier.value = newSession;
   }
 
   @override
   void updateSelectSession(Offset delta) {
+    _totalSelectionDelta = _totalSelectionDelta! + delta;
+    delta = delta / _transform.zoom;
     var current = _selectNotifier.value;
     if (current != null) {
       widget.onSelectionChange?.call(current);
       var newSession =
           current.copyWith(endPosition: current.endPosition + delta);
       if (_selectSession != null) {
-        _selectSession!.onSelectionChange(newSession, delta);
+        _selectSession!.onSelectionChange(newSession, _totalSelectionDelta!);
       }
       _selectNotifier.value = newSession;
     }
   }
+
+  @override
+  SnappingConfiguration get snappingConfiguration => widget.snapping;
+
+  @override
+  CanvasController get controller => widget.controller;
+
+  @override
+  LayoutSnapping createLayoutSnapping(CanvasItemNode node,
+      [bool fillInSnappingPoints = true]) {
+    LayoutSnapping snapping = LayoutSnapping(
+      snappingConfiguration,
+      node.item,
+      node.parentTransform,
+    );
+    if (fillInSnappingPoints) {
+      controller.visitSnappingPoints(
+        (snappingPoint) {
+          snapping.snappingPoints.add(snappingPoint);
+        },
+      );
+    }
+    return snapping;
+  }
 }
 
 class _CanvasItemBoundingBox extends StatefulWidget {
-  final CanvasItem item;
   final CanvasItemNode node;
   final LayoutTransform? parentTransform;
   final void Function(CanvasItem item, bool hovered)? onHover;
+  final Widget? child;
 
   const _CanvasItemBoundingBox({
-    required this.item,
     this.parentTransform,
     required this.node,
     this.onHover,
+    this.child,
   });
+
+  CanvasItem get item => node.item;
 
   @override
   State<_CanvasItemBoundingBox> createState() => _CanvasItemBoundingBoxState();
@@ -657,229 +720,187 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
   Widget build(BuildContext context) {
     CanvasViewportData viewportData = CanvasViewportData.of(context);
     return ListenableBuilder(
-      listenable: widget.item.transformListenable,
+      listenable: widget.item.decorationFocusNode,
       builder: (context, child) {
-        var transform = widget.item.transform;
-        var size = transform.scaledSize;
-        Offset flipOffset = Offset(
-          size.width < 0 ? size.width : 0,
-          size.height < 0 ? size.height : 0,
-        );
-        size = size.abs();
-        return Transform.translate(
-          offset: transform.offset,
-          child: Transform.rotate(
-            angle: transform.rotation,
-            alignment: Alignment.topLeft,
-            child: GroupWidget(
-              children: [
-                Transform.translate(
-                  offset: flipOffset,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      if (viewportData.multiSelect) {
-                        widget.item.selected = !widget.item.selected;
-                      } else {
-                        viewportData.visit(
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: !widget.item.decorationFocusNode.hasFocus
+              ? () {
+                  if (viewportData.multiSelect) {
+                    widget.item.selected = !widget.item.selected;
+                  } else if (!widget.item.selected) {
+                    viewportData.visit(
+                      (item) {
+                        item.selected = item == widget.item;
+                      },
+                    );
+                  } else {
+                    widget.item.decorationFocusNode.requestFocus();
+                  }
+                }
+              : null,
+          child: ListenableBuilder(
+            listenable: widget.item.selectedNotifier,
+            builder: (context, child) {
+              return MouseRegion(
+                opaque: !widget.item.decorationFocusNode.hasFocus,
+                cursor: widget.item.decorationFocusNode.hasFocus
+                    ? MouseCursor.defer
+                    : widget.item.selected
+                        ? SystemMouseCursors.move
+                        : SystemMouseCursors.click,
+                onEnter: (event) {
+                  if (widget.onHover != null) {
+                    widget.onHover!(widget.item, true);
+                  }
+                },
+                onExit: (event) {
+                  if (widget.onHover != null) {
+                    widget.onHover!(widget.item, false);
+                  }
+                },
+                child: child,
+              );
+            },
+            child: PanGesture(
+              onPanStart: (details) {
+                if (!widget.item.selected) {
+                  if (viewportData.multiSelect) {
+                    widget.item.selected = !widget.item.selected;
+                  } else {
+                    viewportData.visit(
+                      (item) {
+                        item.selected = item == widget.item;
+                      },
+                    );
+                  }
+                }
+                _session = viewportData.beginTransform(rootSelectionOnly: true);
+                _startItem = findSelected();
+                _startLayout = _startItem!.item.layout;
+                _totalOffset = Offset.zero;
+                _layoutSnapping = LayoutSnapping(viewportData.snapping,
+                    _startItem!.item, _startItem!.parentTransform);
+                viewportData.fillInSnappingPoints(_layoutSnapping!);
+                _startOffset = details.localPosition;
+              },
+              onPanUpdate: (details) {
+                var item = _startItem!;
+                Offset delta =
+                    details.delta.multiply(widget.node.item.transform.scale);
+                delta = rotatePoint(delta, globalRotation);
+                _totalOffset = _totalOffset! + delta;
+                Offset localDelta = _totalOffset!;
+                double rotation = _computeRotation(item.parent);
+                localDelta = rotatePoint(localDelta, -rotation);
+                item.item.layout = _startLayout!.drag(
+                  localDelta,
+                  snapping: _layoutSnapping,
+                );
+                _session!.visit(
+                  (node) {
+                    if (node.item == item.item) {
+                      return;
+                    }
+                    Offset localDelta =
+                        _layoutSnapping?.newOffsetDelta ?? _totalOffset!;
+                    if (node.parentTransform != null) {
+                      localDelta = rotatePoint(
+                          localDelta, -node.parentTransform!.rotation);
+                    }
+                    node.newLayout =
+                        node.layout.drag(localDelta, snapping: _layoutSnapping);
+                  },
+                );
+                _session!.apply();
+                CanvasHitTestResult result = CanvasHitTestResult();
+                var position = _startOffset!;
+                position = widget.node.toGlobal(position);
+                viewportData.hitTest(result, position);
+                for (var i = result.path.length - 1; i >= 0; i--) {
+                  var entry = result.path[i];
+                  if (entry.item == item.item) {
+                    continue;
+                  }
+                  if (item.item.isDescendantOf(entry.item)) {
+                    continue;
+                  }
+                  _targetReparent = entry.item;
+                  return;
+                }
+                // reparent to root
+                if (!viewportData.controller._root.children
+                    .contains(item.item)) {
+                  _targetReparent = viewportData.controller._root;
+                  return;
+                }
+                _targetReparent = null;
+              },
+              onPanEnd: (details) {
+                _session = null;
+                _totalOffset = null;
+                _layoutSnapping = null;
+                _startLayout = null;
+                _startOffset = null;
+                var oldParent = widget.node.parent;
+                if (_targetReparent != null &&
+                    oldParent?.item != _targetReparent) {
+                  bool result = viewportData.onReparent?.call(
+                        ReparentDetails(
+                          item: widget.item,
+                          oldParent: oldParent?.item,
+                          newParent: _targetReparent,
+                        ),
+                      ) ??
+                      true;
+                  if (result) {
+                    // find same ancestor between old parent and new parent
+                    if (oldParent != null) {
+                      CanvasItemNode? current = oldParent;
+                      Layout currentLayout = widget.item.layout;
+                      while (current != null) {
+                        if (current.item.isDescendantOf(_targetReparent!)) {
+                          break;
+                        }
+                        var parent = current.parent;
+                        if (parent == null) {
+                          break;
+                        }
+                        currentLayout =
+                            currentLayout.transferToParent(current.item.layout);
+                        current = current.parent;
+                      }
+                      // current is the common ancestor
+                      if (current != null) {
+                        current.visitTo(
+                          _targetReparent!,
                           (item) {
-                            item.selected = item == widget.item;
+                            if (item == current!.item) {
+                              return;
+                            }
+                            currentLayout =
+                                currentLayout.transferToChild(item.layout);
                           },
                         );
                       }
-                    },
-                    child: ListenableBuilder(
-                      listenable: widget.item.selectedNotifier,
-                      builder: (context, child) {
-                        return MouseRegion(
-                          cursor: widget.item.selected
-                              ? SystemMouseCursors.move
-                              : SystemMouseCursors.click,
-                          onEnter: (event) {
-                            if (widget.onHover != null) {
-                              widget.onHover!(widget.item, true);
-                            }
-                          },
-                          onExit: (event) {
-                            if (widget.onHover != null) {
-                              widget.onHover!(widget.item, false);
-                            }
-                          },
-                          child: child,
-                        );
-                      },
-                      child: PanGesture(
-                        onPanStart: (details) {
-                          if (!widget.item.selected) {
-                            if (viewportData.multiSelect) {
-                              widget.item.selected = !widget.item.selected;
-                            } else {
-                              viewportData.visit(
-                                (item) {
-                                  item.selected = item == widget.item;
-                                },
-                              );
-                            }
-                          }
-                          _session = viewportData.beginTransform(
-                              rootSelectionOnly: true);
-                          _startItem = findSelected();
-                          _startLayout = _startItem!.item.layout;
-                          _totalOffset = Offset.zero;
-                          _layoutSnapping = LayoutSnapping(
-                              viewportData.snapping,
-                              _startItem!.item,
-                              _startItem!.parentTransform);
-                          viewportData.fillInSnappingPoints(_layoutSnapping!);
-                          _startOffset = details.localPosition;
-                        },
-                        onPanUpdate: (details) {
-                          var item = _startItem!;
-                          Offset delta = details.delta;
-                          delta = rotatePoint(delta, globalRotation);
-                          _totalOffset = _totalOffset! + delta;
-                          Offset localDelta = _totalOffset!;
-                          double rotation = _computeRotation(item.parent);
-                          localDelta = rotatePoint(localDelta, -rotation);
-                          item.item.layout = _startLayout!.drag(
-                            localDelta,
-                            snapping: _layoutSnapping,
-                          );
-                          _session!.visit(
-                            (node) {
-                              if (node.item == item.item) {
-                                return;
-                              }
-                              Offset localDelta =
-                                  _layoutSnapping?.newOffsetDelta ??
-                                      _totalOffset!;
-                              if (node.parentTransform != null) {
-                                localDelta = rotatePoint(localDelta,
-                                    -node.parentTransform!.rotation);
-                              }
-                              node.newLayout = node.layout
-                                  .drag(localDelta, snapping: _layoutSnapping);
-                            },
-                          );
-                          _session!.apply();
-                          CanvasHitTestResult result = CanvasHitTestResult();
-                          var position = _startOffset!;
-                          position = widget.node.toGlobal(position);
-                          viewportData.hitTest(result, position);
-                          for (var i = result.path.length - 1; i >= 0; i--) {
-                            var entry = result.path[i];
-                            if (entry.item == item.item) {
-                              continue;
-                            }
-                            if (item.item.isDescendantOf(entry.item)) {
-                              continue;
-                            }
-                            _targetReparent = entry.item;
-                            return;
-                          }
-                          // reparent to root
-                          if (!viewportData.controller._root.children
-                              .contains(item.item)) {
-                            _targetReparent = viewportData.controller._root;
-                            return;
-                          }
-                          _targetReparent = null;
-                        },
-                        onPanEnd: (details) {
-                          _session = null;
-                          _totalOffset = null;
-                          _layoutSnapping = null;
-                          _startLayout = null;
-                          _startOffset = null;
-                          var oldParent = widget.node.parent;
-                          if (_targetReparent != null &&
-                              oldParent?.item != _targetReparent) {
-                            bool result = viewportData.onReparent?.call(
-                                  ReparentDetails(
-                                    item: widget.item,
-                                    oldParent: oldParent?.item,
-                                    newParent: _targetReparent,
-                                  ),
-                                ) ??
-                                true;
-                            if (result) {
-                              // find same ancestor between old parent and new parent
-                              if (oldParent != null) {
-                                CanvasItemNode? current = oldParent;
-                                Layout currentLayout = widget.item.layout;
-                                while (current != null) {
-                                  if (current.item
-                                      .isDescendantOf(_targetReparent!)) {
-                                    break;
-                                  }
-                                  var parent = current.parent;
-                                  if (parent == null) {
-                                    break;
-                                  }
-                                  currentLayout = currentLayout
-                                      .transferToParent(current.item.layout);
-                                  current = current.parent;
-                                }
-                                // current is the common ancestor
-                                if (current != null) {
-                                  current.visitTo(
-                                    _targetReparent!,
-                                    (item) {
-                                      if (item == current!.item) {
-                                        return;
-                                      }
-                                      currentLayout = currentLayout
-                                          .transferToChild(item.layout);
-                                    },
-                                  );
-                                }
-                                widget.item.layout = currentLayout;
-                                oldParent.item.removeChild(widget.item);
-                              }
-                              _targetReparent!.addChild(widget.item);
-                            }
-                          }
-                        },
-                        onPanCancel: () {
-                          if (_session != null) {
-                            _session!.reset();
-                            _session = null;
-                          }
-                          _totalOffset = null;
-                          _layoutSnapping = null;
-                          _startLayout = null;
-                          _startOffset = null;
-                        },
-                        child: MetaData(
-                          metaData: this,
-                          child: SizedBox.fromSize(
-                            size: size,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                ListenableBuilder(
-                  listenable: widget.item.childListenable,
-                  builder: (context, child) {
-                    return GroupWidget(
-                      children: [
-                        for (var child in widget.item.children)
-                          _CanvasItemBoundingBox(
-                            item: child,
-                            parentTransform: widget.parentTransform == null
-                                ? widget.item.transform
-                                : widget.parentTransform! *
-                                    widget.item.transform,
-                            node: child.toNode(widget.node),
-                            onHover: widget.onHover,
-                          ),
-                      ],
-                    );
-                  },
-                ),
-              ],
+                      widget.item.layout = currentLayout;
+                      oldParent.item.removeChild(widget.item);
+                    }
+                    _targetReparent!.addChild(widget.item);
+                  }
+                }
+              },
+              onPanCancel: () {
+                if (_session != null) {
+                  _session!.reset();
+                  _session = null;
+                }
+                _totalOffset = null;
+                _layoutSnapping = null;
+                _startLayout = null;
+                _startOffset = null;
+              },
+              child: widget.child,
             ),
           ),
         );
@@ -889,30 +910,65 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox> {
 }
 
 class CanvasItemWidget extends StatefulWidget {
-  final CanvasItem? parent;
-  final CanvasItem item;
+  final CanvasItemNode node;
   final Widget? background;
+  final void Function(CanvasItem item, bool hovered)? onHover;
+  final LayoutTransform? parentTransform;
 
   const CanvasItemWidget({
     super.key,
-    this.parent,
-    required this.item,
+    required this.node,
     this.background,
+    this.onHover,
+    this.parentTransform,
   });
+
+  CanvasItem get item => node.item;
 
   @override
   State<CanvasItemWidget> createState() => _CanvasItemWidgetState();
 }
 
 class _CanvasItemWidgetState extends State<CanvasItemWidget> {
+  Widget? buildChild(BuildContext context) {
+    var background = widget.item.build(context);
+    if (widget.item.canTransform) {
+      var layoutTransform = widget.item.transform;
+      return Transform.scale(
+        scaleX: layoutTransform.scale.dx,
+        scaleY: layoutTransform.scale.dy,
+        alignment: Alignment.topLeft,
+        child: _CanvasItemBoundingBox(
+          node: widget.node,
+          onHover: widget.onHover,
+          parentTransform: widget.parentTransform,
+          child: background == null
+              ? null
+              : Box(
+                  size: layoutTransform.size,
+                  child: ListenableBuilder(
+                      listenable: widget.item.decorationFocusNode,
+                      builder: (context, child) {
+                        return IgnorePointer(
+                          ignoring: !widget.item.decorationFocusNode.hasFocus,
+                          child: background,
+                        );
+                      }),
+                ),
+        ),
+      );
+    }
+    return background;
+  }
+
   @override
   Widget build(BuildContext context) {
-    Widget? background = widget.item.build(context);
     Widget? secondaryBackground = widget.background;
     return ListenableBuilder(
         listenable: widget.item.transformListenable,
         builder: (context, child) {
           var layoutTransform = widget.item.transform;
+          Widget? backgroundChild = buildChild(context);
           return Transform.translate(
             offset: layoutTransform.offset,
             child: Transform.rotate(
@@ -921,24 +977,18 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
               child: GroupWidget(
                 children: [
                   if (secondaryBackground != null) secondaryBackground,
-                  if (background != null)
-                    Transform.scale(
-                      scaleX: layoutTransform.scale.dx,
-                      scaleY: layoutTransform.scale.dy,
-                      alignment: Alignment.topLeft,
-                      child: Box(
-                        size: layoutTransform.size,
-                        child: background,
-                      ),
-                    ),
+                  if (backgroundChild != null) backgroundChild,
                   ListenableBuilder(
                     listenable: widget.item.childListenable,
                     builder: (context, child) {
                       return GroupWidget(
                         children: widget.item.children.map((child) {
                           return CanvasItemWidget(
-                            item: child,
-                            parent: widget.item,
+                            node: child.toNode(widget.node),
+                            parentTransform: widget.parentTransform == null
+                                ? layoutTransform
+                                : widget.parentTransform! * layoutTransform,
+                            onHover: widget.onHover,
                           );
                         }).toList(),
                       );
@@ -955,5 +1005,9 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
 extension SizeExtension on Size {
   Size abs() {
     return Size(width.abs(), height.abs());
+  }
+
+  Offset toOffset() {
+    return Offset(width, height);
   }
 }
