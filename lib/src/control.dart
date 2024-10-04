@@ -1,4 +1,5 @@
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/foundation.dart';
 import 'package:canvas/src/helper_widget.dart';
 import 'package:canvas/src/util.dart';
 import 'package:flutter/material.dart';
@@ -42,21 +43,22 @@ class StandardTransformControlThemeData {
 class StandardTransformControl extends TransformControl {
   const StandardTransformControl();
   @override
-  Widget build(BuildContext context, CanvasItemNode node) {
-    return StandardTransformControlWidget(item: node.item, node: node);
+  Widget build(BuildContext context, CanvasItem item, bool canTransform) {
+    return StandardTransformControlWidget(
+        item: item, canTransform: canTransform);
   }
 }
 
 class StandardTransformControlWidget extends StatefulWidget {
-  final CanvasItemNode node;
   final CanvasItem item;
   final LayoutTransform? parentTransform;
+  final bool canTransform;
 
   const StandardTransformControlWidget({
     super.key,
     required this.item,
-    required this.node,
     this.parentTransform,
+    required this.canTransform,
   });
 
   @override
@@ -65,18 +67,17 @@ class StandardTransformControlWidget extends StatefulWidget {
 }
 
 class _StandardTransformControlWidgetState
-    extends State<StandardTransformControlWidget> {
-  bool _hover = false;
-
+    extends State<StandardTransformControlWidget> with CanvasElementDragger {
   late StandardTransformControlThemeData theme;
   late CanvasViewportData viewportData;
   Offset? _totalOffset;
   TransformSession? _session;
   double? _startRotation;
   VoidCallback? _onUpdate;
-  CanvasItemNode? _startNode;
+  CanvasItem? _startNode;
   Layout? _startLayout;
   LayoutSnapping? _snapping;
+  LayoutChanges? _changes;
 
   double get globalRotation {
     double rotation = widget.item.transform.rotation;
@@ -86,16 +87,25 @@ class _StandardTransformControlWidgetState
     return rotation;
   }
 
-  CanvasItemNode _findSelected() {
-    CanvasItemNode? current = widget.node;
+  CanvasItem _findSelected() {
+    CanvasItem? current = widget.item;
     while (current != null) {
       var parent = current.parent;
-      if (parent != null && !parent.item.selected) {
+      if (parent != null && !parent.selected) {
         break;
       }
       current = parent;
     }
-    return current ?? widget.node;
+    return current ?? widget.item;
+  }
+
+  @override
+  void handleDragAdjustment(Offset delta) {
+    if (_totalOffset != null && _onUpdate != null) {
+      _totalOffset = _totalOffset! - delta / viewportData.handle.transform.zoom;
+      _onUpdate!();
+      viewportData.handle.drag(delta);
+    }
   }
 
   @override
@@ -114,29 +124,33 @@ class _StandardTransformControlWidgetState
 
   @override
   Widget build(BuildContext context) {
+    double viewportZoom = viewportData.handle.transform.zoom;
     return ListenableBuilder(
       listenable: Listenable.merge({
         widget.item.selectedNotifier,
         widget.item.layoutListenable,
+        viewportData.handle.focusedItemListenable,
       }),
       builder: (context, child) {
         return Transform.translate(
-          offset: widget.item.transform.offset * viewportData.zoom,
+          offset: widget.item.transform.offset * viewportZoom,
           child: Transform.rotate(
             angle: widget.item.transform.rotation,
             alignment: Alignment.topLeft,
             child: GroupWidget(
               children: [
-                _buildSelection(context),
+                if (widget.item is! RootCanvasItem) _buildSelection(context),
                 ListenableBuilder(
-                  listenable: widget.item.childListenable,
+                  listenable: widget.item.childrenListenable,
                   builder: (context, child) {
                     return GroupWidget(
                       children: [
                         for (final child in widget.item.children)
                           StandardTransformControlWidget(
                             item: child,
-                            node: child.toNode(widget.node),
+                            // canTransform: !child.contentFocused,
+                            // TODO: Fix this
+                            canTransform: true,
                             parentTransform: widget.parentTransform == null
                                 ? widget.item.transform
                                 : widget.parentTransform! *
@@ -146,7 +160,10 @@ class _StandardTransformControlWidgetState
                     );
                   },
                 ),
-                if (widget.item.selected) ..._buildControls(context),
+                if (widget.item.selected &&
+                    widget.item.opaque &&
+                    widget.canTransform)
+                  ..._buildControls(context),
               ],
             ),
           ),
@@ -157,47 +174,47 @@ class _StandardTransformControlWidgetState
 
   Widget _wrapWithPanHandler({
     required Widget child,
-    required void Function(TransformNode node, Offset delta,
-            {LayoutSnapping? snapping})
-        visitor,
-    required Offset? Function(LayoutSnapping snapping) snapping,
+    required void Function(TransformNode node, Offset delta) visitor,
     String? debugName,
   }) {
+    double viewportZoom = viewportData.handle.transform.zoom;
     return PanGesture(
       onPanStart: (details) {
         _totalOffset = Offset.zero;
-        _session = viewportData.beginTransform();
+        _session = viewportData.handle.beginTransform();
         _startNode = _findSelected();
-        _startLayout = _startNode!.item.layout;
-        _snapping = LayoutSnapping(viewportData.snapping, _startNode!.item,
-            _startNode!.parentTransform);
-        viewportData.fillInSnappingPoints(_snapping!);
+        _startLayout = _startNode!.layout;
+        _snapping = LayoutSnapping(viewportData.handle.snappingConfiguration,
+            _startNode!, _startNode!.parentTransform);
+        viewportData.handle.fillInSnappingPoints(_snapping!);
+        viewportData.handle.startDraggingSession(this);
+        _changes = _startLayout!.createChanges();
       },
       onPanUpdate: (details) {
         Offset delta = details.delta;
-        _totalOffset = _totalOffset! + delta / viewportData.zoom;
+        _totalOffset = _totalOffset! + delta / viewportZoom;
         void update() {
+          _session!.reset();
           TransformNode node = TransformNode(
-            _startNode!.item,
-            _startNode!.item.transform,
+            _startNode!,
+            _startNode!.transform,
             null,
             _startLayout!,
           );
           visitor(
             node,
             _totalOffset!,
-            snapping: _snapping,
           );
-          node.apply();
+          node.apply(node.layout, snapping: _snapping);
           _session!.visit(
             (node) {
-              if (node.item == _startNode!.item) {
+              if (node.item == _startNode) {
                 return;
               }
-              visitor(node, snapping(_snapping!) ?? _totalOffset!);
+              visitor(node, _totalOffset!);
+              node.apply(node.layout, snapping: _snapping);
             },
           );
-          _session!.apply();
         }
 
         _onUpdate = update;
@@ -209,6 +226,7 @@ class _StandardTransformControlWidgetState
         _session = null;
         _startNode = null;
         _startLayout = null;
+        viewportData.handle.endDraggingSession(this);
       },
       onPanCancel: () {
         if (_session != null) {
@@ -219,6 +237,7 @@ class _StandardTransformControlWidgetState
         _onUpdate = null;
         _startNode = null;
         _startLayout = null;
+        viewportData.handle.endDraggingSession(this);
       },
       child: child,
     );
@@ -228,7 +247,8 @@ class _StandardTransformControlWidgetState
     required Widget child,
     required Alignment alignment,
   }) {
-    Size scaledSize = widget.item.transform.scaledSize * viewportData.zoom;
+    double viewportZoom = viewportData.handle.transform.zoom;
+    Size scaledSize = widget.item.transform.scaledSize * viewportZoom;
     Offset origin = !viewportData.anchoredRotate
         ? Offset(scaledSize.width / 2, scaledSize.height / 2)
         : (alignment * -1).alongSize(scaledSize);
@@ -239,12 +259,12 @@ class _StandardTransformControlWidgetState
         var diff = origin - localPosition;
         var angle = diff.direction;
         _startRotation = angle;
-        _session = viewportData.beginTransform();
+        _session = viewportData.handle.beginTransform();
         _startNode = _findSelected();
-        _startLayout = _startNode!.item.layout;
-        _snapping = LayoutSnapping(viewportData.snapping, _startNode!.item,
-            _startNode!.parentTransform);
-        viewportData.fillInSnappingPoints(_snapping!);
+        _startLayout = _startNode!.layout;
+        _snapping = LayoutSnapping(
+            viewportData.snapping, _startNode!, _startNode!.parentTransform);
+        viewportData.handle.fillInSnappingPoints(_snapping!);
       },
       onPanUpdate: (details) {
         void update() {
@@ -253,7 +273,7 @@ class _StandardTransformControlWidgetState
           var diff = origin - localPosition;
           var angle = diff.direction;
           var delta = angle - _startRotation!;
-          _startNode!.item.layout = _startLayout!.rotate(
+          _startNode!.layout = _startLayout!.rotate(
             delta,
             alignment: !viewportData.anchoredRotate
                 ? Alignment.center
@@ -262,14 +282,20 @@ class _StandardTransformControlWidgetState
           );
           _session!.visit(
             (node) {
-              if (_startNode!.item.isDescendantOf(node.item)) {
+              if (_startNode!.isDescendantOf(node.item)) {
                 return;
               }
-              node.newLayout = node.layout.rotate(
-                  _snapping?.newRotationDelta ?? delta,
-                  alignment: !viewportData.anchoredRotate
-                      ? Alignment.center
-                      : alignment * -1);
+              // node.newLayout = node.layout.rotate(
+              //     _snapping?.newRotationDelta ?? delta,
+              //     alignment: !viewportData.anchoredRotate
+              //         ? Alignment.center
+              //         : alignment * -1);
+              node.changes.rotate(
+                _snapping?.newRotationDelta ?? delta,
+                alignment: !viewportData.anchoredRotate
+                    ? Alignment.center
+                    : alignment * -1,
+              );
             },
           );
           _session!.apply();
@@ -299,41 +325,59 @@ class _StandardTransformControlWidgetState
     );
   }
 
-  double _normalizeSize(double size) {
-    return size <= 0 ? 0 : size;
-  }
-
   bool get _isScaling => viewportData.resizeMode == ResizeMode.scale;
 
+  Rect _inflateRect(Rect rect, Offset size) {
+    return Rect.fromLTWH(
+      rect.left - size.dx,
+      rect.top - size.dy,
+      rect.width + size.dx * 2,
+      rect.height + size.dy * 2,
+    );
+  }
+
   List<Widget> _buildControls(BuildContext context) {
+    double viewportZoom = viewportData.handle.transform.zoom;
     Offset halfSize =
         Offset(theme.handleSize.width / 2, theme.handleSize.height / 2);
     Offset handleSize = Offset(theme.handleSize.width, theme.handleSize.height);
     Offset sizeRotation =
         Offset(theme.rotationHandleSize.width, theme.rotationHandleSize.height);
-    Size size = widget.item.transform.scaledSize * viewportData.zoom;
-    double xStart = 0;
-    double xEnd = size.width;
-    double yStart = 0;
-    double yEnd = size.height;
-    double xRotStart = -halfSize.dx;
-    double yRotStart = -halfSize.dy;
-    double xRotEnd = size.width + halfSize.dx;
-    double yRotEnd = size.height + halfSize.dy;
+    Offset halfRotationSize = sizeRotation / 2;
+    Size size = widget.item.transform.scaledSize * viewportZoom;
+    Rect bounds = Rect.fromLTWH(0, 0, size.width, size.height);
+    Rect rotationBounds = _inflateRect(bounds, halfSize);
+    Offset topLeft = bounds.topLeft - halfSize;
+    Offset topRight = bounds.topRight - halfSize;
+    Offset bottomLeft = bounds.bottomLeft - halfSize;
+    Offset bottomRight = bounds.bottomRight - halfSize;
+    Offset rotationTopLeft = rotationBounds.topLeft - halfRotationSize;
+    Offset rotationTopRight = rotationBounds.topRight - halfRotationSize;
+    Offset rotationBottomLeft = rotationBounds.bottomLeft - halfRotationSize;
+    Offset rotationBottomRight = rotationBounds.bottomRight - halfRotationSize;
+    Offset top = Offset(bounds.left + halfSize.dx, bounds.top - halfSize.dy);
+    Offset right = Offset(bounds.right - halfSize.dx, bounds.top + halfSize.dy);
+    Offset bottom =
+        Offset(bounds.left + halfSize.dx, bounds.bottom - halfSize.dy);
+    Offset left = Offset(bounds.left - halfSize.dx, bounds.top + halfSize.dy);
     bool flipX = size.width < 0;
     bool flipY = size.height < 0;
-    if (flipX) {
-      xRotEnd = size.width - halfSize.dx - sizeRotation.dx;
-      xRotStart = halfSize.dx + sizeRotation.dx;
+    double horizontalLength = bounds.width - handleSize.dx;
+    double verticalLength = bounds.height - handleSize.dy;
+    if (horizontalLength < 0) {
+      top = top.translate(horizontalLength, 0);
+      bottom = bottom.translate(horizontalLength, 0);
+      horizontalLength = horizontalLength.abs();
     }
-    if (flipY) {
-      yRotEnd = size.height - halfSize.dy - sizeRotation.dy;
-      yRotStart = halfSize.dy + sizeRotation.dy;
+    if (verticalLength < 0) {
+      left = left.translate(0, verticalLength);
+      right = right.translate(0, verticalLength);
+      verticalLength = verticalLength.abs();
     }
     return [
       // top left rotation
       Transform.translate(
-        offset: Offset(xRotStart, yRotStart) - sizeRotation,
+        offset: rotationTopLeft,
         child: MouseRegion(
           cursor: ResizeCursor.bottomLeft
               .getMouseCursor(globalRotation, flipX, flipY),
@@ -348,7 +392,7 @@ class _StandardTransformControlWidgetState
       ),
       // top right rotation
       Transform.translate(
-        offset: Offset(xRotEnd, yRotStart) + Offset(0, -sizeRotation.dy),
+        offset: rotationTopRight,
         child: MouseRegion(
           cursor: ResizeCursor.bottomRight
               .getMouseCursor(globalRotation, flipX, flipY),
@@ -363,7 +407,7 @@ class _StandardTransformControlWidgetState
       ),
       // bottom right rotation
       Transform.translate(
-        offset: Offset(xRotEnd, yRotEnd),
+        offset: rotationBottomRight,
         child: MouseRegion(
           cursor: ResizeCursor.topRight
               .getMouseCursor(globalRotation, flipX, flipY),
@@ -378,7 +422,7 @@ class _StandardTransformControlWidgetState
       ),
       // bottom left rotation
       Transform.translate(
-        offset: Offset(xRotStart, yRotEnd) + Offset(-sizeRotation.dx, 0),
+        offset: rotationBottomLeft,
         child: MouseRegion(
           cursor:
               ResizeCursor.topLeft.getMouseCursor(globalRotation, flipX, flipY),
@@ -393,30 +437,34 @@ class _StandardTransformControlWidgetState
       ),
       // top
       Transform.translate(
-        offset: Offset(0, yStart) + Offset(halfSize.dx, -halfSize.dy),
+        offset: top,
         child: MouseRegion(
           cursor: ResizeCursor.top.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'top',
-            visitor: (node, delta, {LayoutSnapping? snapping}) {
+            visitor: (node, delta) {
               if (_isScaling) {
-                node.newLayout = node.layout.rescaleTop(
-                  delta,
-                  symmetric: viewportData.symmetricResize,
-                  snapping: snapping,
-                );
+                // node.newLayout = node.layout.rescaleTop(
+                //   delta,
+                //   symmetric: viewportData.symmetricResize,
+                //   snapping: snapping,
+                // );
+                node.changes
+                    .rescaleTop(delta, symmetric: viewportData.symmetricResize);
                 return;
               }
-              node.newLayout = node.layout.resizeTop(
-                delta,
-                symmetric: viewportData.symmetricResize,
-                snapping: snapping,
-              );
+              // node.newLayout = node.layout.resizeTop(
+              //   delta,
+              //   symmetric: viewportData.symmetricResize,
+              //   snapping: snapping,
+              // );
+              node.changes
+                  .resizeTop(delta, symmetric: viewportData.symmetricResize);
             },
-            snapping: (snapping) =>
-                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+            // snapping: (snapping) =>
+            //     _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
-              width: _normalizeSize(size.width - handleSize.dx),
+              width: horizontalLength,
               height: theme.handleSize.height,
             ),
           ),
@@ -424,7 +472,7 @@ class _StandardTransformControlWidgetState
       ),
       // right
       Transform.translate(
-        offset: Offset(xEnd, 0) + Offset(-halfSize.dx, halfSize.dy),
+        offset: right,
         child: MouseRegion(
           cursor:
               ResizeCursor.right.getMouseCursor(globalRotation, flipX, flipY),
@@ -449,14 +497,14 @@ class _StandardTransformControlWidgetState
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
               width: theme.handleSize.width,
-              height: _normalizeSize(size.height - handleSize.dy),
+              height: verticalLength,
             ),
           ),
         ),
       ),
       // bottom
       Transform.translate(
-        offset: Offset(0, yEnd) + Offset(halfSize.dx, -halfSize.dy),
+        offset: bottom,
         child: MouseRegion(
           cursor:
               ResizeCursor.bottom.getMouseCursor(globalRotation, flipX, flipY),
@@ -480,7 +528,7 @@ class _StandardTransformControlWidgetState
             snapping: (snapping) =>
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
-              width: _normalizeSize(size.width - handleSize.dx),
+              width: horizontalLength,
               height: theme.handleSize.height,
             ),
           ),
@@ -488,7 +536,7 @@ class _StandardTransformControlWidgetState
       ),
       // left
       Transform.translate(
-        offset: Offset(xStart, 0) + Offset(-halfSize.dx, halfSize.dy),
+        offset: left,
         child: MouseRegion(
           cursor:
               ResizeCursor.left.getMouseCursor(globalRotation, flipX, flipY),
@@ -513,14 +561,14 @@ class _StandardTransformControlWidgetState
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
               width: theme.handleSize.width,
-              height: _normalizeSize(size.height - handleSize.dy),
+              height: verticalLength,
             ),
           ),
         ),
       ),
       // top left
       Transform.translate(
-        offset: Offset(xStart, yStart) - halfSize,
+        offset: topLeft,
         child: MouseRegion(
           cursor:
               ResizeCursor.topLeft.getMouseCursor(globalRotation, flipX, flipY),
@@ -556,7 +604,7 @@ class _StandardTransformControlWidgetState
       ),
       // top right
       Transform.translate(
-        offset: Offset(xEnd, yStart) + Offset(-halfSize.dx, -halfSize.dy),
+        offset: topRight,
         child: MouseRegion(
           cursor: ResizeCursor.topRight
               .getMouseCursor(globalRotation, flipX, flipY),
@@ -592,7 +640,7 @@ class _StandardTransformControlWidgetState
       ),
       // bottom left
       Transform.translate(
-        offset: Offset(xStart, yEnd) + Offset(-halfSize.dx, -halfSize.dy),
+        offset: bottomLeft,
         child: MouseRegion(
           cursor: ResizeCursor.bottomLeft
               .getMouseCursor(globalRotation, flipX, flipY),
@@ -628,7 +676,7 @@ class _StandardTransformControlWidgetState
       ),
       // bottom right
       Transform.translate(
-        offset: Offset(xEnd, yEnd) + Offset(-halfSize.dx, -halfSize.dy),
+        offset: bottomRight,
         child: MouseRegion(
           cursor: ResizeCursor.bottomRight
               .getMouseCursor(globalRotation, flipX, flipY),
@@ -666,7 +714,8 @@ class _StandardTransformControlWidgetState
   }
 
   Widget _buildSelection(BuildContext context) {
-    Size size = widget.item.transform.scaledSize * viewportData.zoom;
+    Size size =
+        widget.item.transform.scaledSize * viewportData.handle.transform.zoom;
     Offset flipOffset = Offset(
       size.width < 0 ? size.width : 0,
       size.height < 0 ? size.height : 0,
@@ -677,12 +726,14 @@ class _StandardTransformControlWidgetState
       child: IgnorePointer(
         child: SizedBox.fromSize(
           size: size,
-          child: Container(
-            decoration:
-                viewportData.hoveredItem == widget.item || widget.item.selected
-                    ? theme.selectionDecoration
-                    : null,
-          ),
+          child: Builder(builder: (context) {
+            return Container(
+              decoration: viewportData.handle.hoveredItem == widget.item ||
+                      widget.item.selected
+                  ? theme.selectionDecoration
+                  : null,
+            );
+          }),
         ),
       ),
     );

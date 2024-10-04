@@ -1,23 +1,40 @@
+import 'package:canvas/canvas.dart';
+import 'package:canvas/src/util.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 class GroupWidget extends MultiChildRenderObjectWidget {
+  final Size? size;
+  final Clip clipBehavior;
   const GroupWidget({
     super.key,
     super.children,
+    this.size,
+    this.clipBehavior = Clip.none,
   });
 
   @override
   RenderObject createRenderObject(BuildContext context) {
-    return RenderGroup();
+    return RenderGroup(size: size);
   }
 
   @override
   void updateRenderObject(
       BuildContext context, covariant RenderGroup renderObject) {
-    renderObject.markNeedsLayout();
+    bool needsLayout = false;
+    if (renderObject._size != size) {
+      renderObject._size = size;
+      needsLayout = true;
+    }
+    if (renderObject._clipBehavior != clipBehavior) {
+      renderObject._clipBehavior = clipBehavior;
+      needsLayout = true;
+    }
+    if (needsLayout) {
+      renderObject.markNeedsLayout();
+    }
   }
 }
 
@@ -32,9 +49,15 @@ class RenderGroup extends RenderBox
     maxWidth: _bigSize,
     maxHeight: _bigSize,
   );
+  Size? _size;
+  Clip _clipBehavior;
   RenderGroup({
     List<RenderBox>? children,
-  }) {
+    Size? size,
+    Clip clipBehavior = Clip.none,
+  })  : _clipBehavior = clipBehavior,
+        _size = size,
+        super() {
     addAll(children);
   }
 
@@ -47,7 +70,12 @@ class RenderGroup extends RenderBox
 
   @override
   void performLayout() {
-    size = constraints.biggest;
+    var localSize = _size;
+    if (localSize == null) {
+      size = constraints.biggest;
+    } else {
+      size = localSize.abs();
+    }
     RenderBox? child = firstChild;
     while (child != null) {
       final childParentData = child.parentData as GroupParentData;
@@ -86,7 +114,19 @@ class RenderGroup extends RenderBox
     RenderBox? child = firstChild;
     while (child != null) {
       final childParentData = child.parentData as GroupParentData;
-      context.paintChild(child, offset + childParentData.offset);
+      if (_clipBehavior != Clip.none) {
+        context.pushClipRect(
+          needsCompositing,
+          offset + childParentData.offset,
+          Offset.zero & (_size ?? size),
+          (context, offset) {
+            context.paintChild(child!, offset);
+          },
+          clipBehavior: _clipBehavior,
+        );
+      } else {
+        context.paintChild(child, offset + childParentData.offset);
+      }
       child = childParentData.nextSibling;
     }
   }
@@ -281,38 +321,39 @@ class Box extends StatelessWidget {
   }
 }
 
-class AlwaysHitBox extends LeafRenderObjectWidget {
-  const AlwaysHitBox({
-    super.key,
+class IsolationPainter extends CustomPainter {
+  static const double _big = 999999999999999;
+  static const Offset _bigOffset = Offset(-_big / 2, -_big / 2);
+  static const Size _bigSize = Size(_big, _big);
+  static Iterable<Path> createBounds(Iterable<CanvasItem> items) {
+    return items.map((e) => e.globalBoundingBox.path);
+  }
+
+  final Iterable<Path> holes;
+  final Color color;
+
+  const IsolationPainter({
+    required this.holes,
+    required this.color,
   });
 
   @override
-  RenderObject createRenderObject(BuildContext context) {
-    return RenderAlwaysHitBox();
-  }
-}
-
-class RenderAlwaysHitBox extends RenderBox {
-  RenderAlwaysHitBox();
-
-  @override
-  bool hitTest(BoxHitTestResult result, {required Offset position}) {
-    result.add(BoxHitTestEntry(this, position));
-    return true;
-  }
-
-  @override
-  bool hitTestSelf(Offset position) {
-    return true;
+  void paint(Canvas canvas, Size size) {
+    Rect bounds = _bigOffset & _bigSize;
+    Path path = Path()..addRect(bounds);
+    path.fillType = PathFillType.evenOdd;
+    Path clipPath = Path();
+    for (final hole in holes) {
+      clipPath = Path.combine(PathOperation.union, clipPath, hole);
+    }
+    path.addPath(clipPath, Offset.zero);
+    canvas.clipPath(path);
+    canvas.drawRect(bounds, Paint()..color = color);
   }
 
   @override
-  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
-    return true;
-  }
-
-  @override
-  void performLayout() {
-    size = constraints.biggest;
+  bool shouldRepaint(covariant IsolationPainter oldDelegate) {
+    return !iterableEquals(oldDelegate.holes, holes) ||
+        oldDelegate.color != color;
   }
 }

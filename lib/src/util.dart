@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:canvas/canvas.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 Size calculateTextSize(TextSpan textSpan,
@@ -34,6 +36,87 @@ Offset rotatePoint(Offset point, double angle) {
     point.dx * cosAngle - point.dy * sinAngle,
     point.dx * sinAngle + point.dy * cosAngle,
   );
+}
+
+CanvasItem? findReparentTarget(
+    CanvasItem item, CanvasHitTestResult hitTestResult) {
+  // print('-------------');
+  for (final path in hitTestResult.path) {
+    final target = path.item;
+    if (target == item) {
+      continue;
+    }
+    // print('target: $target');
+    var parent = target.parent;
+    bool parentFocused = true;
+    bool parentClipped = false;
+    CanvasItem? currentParent = parent;
+    while (currentParent != null) {
+      if (currentParent.opaque && currentParent.clipContent) {
+        parentClipped = true;
+        break;
+      }
+      currentParent = currentParent.parent;
+    }
+    if (parentClipped) {
+      if (parentFocused) {
+        return target;
+      }
+    } else {
+      return target;
+    }
+  }
+  return null;
+}
+
+void reparent(CanvasItem item, CanvasItem target) {
+  CanvasItem? currentParent = item.parent;
+  if (currentParent == target) {
+    return;
+  }
+  Layout currentLayout = item.layout;
+  while (currentParent != null) {
+    if (currentParent.isDescendantOf(target)) {
+      break;
+    }
+    var parent = currentParent.parent;
+    if (parent == null) {
+      break;
+    }
+    currentLayout = currentLayout.transferToParent(currentParent.layout);
+    currentParent = parent;
+  }
+  // currentParent is the common ancestor of item and target
+  if (currentParent != null) {
+    currentParent.visitTo(
+      target,
+      (item) {
+        if (item == currentParent) {
+          return;
+        }
+        currentLayout = currentLayout.transferToChild(item.layout);
+      },
+    );
+  }
+  item.layout = currentLayout;
+  var oldParent = item.parent;
+  if (oldParent != null) {
+    oldParent.removeChild(item);
+  }
+  target.addChild(item);
+}
+
+bool iterableEquals<T>(Iterable<T> a, Iterable<T> b) {
+  if (a == b) {
+    return true;
+  }
+  if (a is List<T> && b is List<T>) {
+    return listEquals(a, b);
+  }
+  if (a is Set<T> && b is Set<T>) {
+    return setEquals(a, b);
+  }
+  return a.length == b.length && a.every(b.contains);
 }
 
 Offset proportionalDelta(Offset offset, double aspectRatio) {

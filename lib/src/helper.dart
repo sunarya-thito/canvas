@@ -23,29 +23,29 @@ class CreateObjectHandler extends CanvasSelectionHandler {
 
   CanvasSelectionSession _start(
       CanvasViewportHandle handle, Offset position, bool instant) {
-    CanvasItemNode? targetParent;
+    CanvasItem? targetParent;
     if (createAtRoot) {
-      targetParent = controller.root.toNode();
+      targetParent = controller.root;
     } else {
       CanvasHitTestResult result = CanvasHitTestResult();
       controller.hitTest(result, position);
       if (result.path.isEmpty) {
-        targetParent = controller.root.toNode();
+        targetParent = controller.root;
       } else {
-        targetParent = result.path.last.node;
+        targetParent = result.path.last.item;
       }
     }
     CanvasItem createdItem = createItem(position, instant);
     createdItem.selected = true;
     Layout layout = createdItem.layout;
     controller.visitTo(
-      targetParent.item,
+      targetParent,
       (item) {
         layout = layout.transferToChild(item.layout);
       },
     );
     createdItem.layout = layout;
-    targetParent.item.addChild(createdItem);
+    targetParent.addChild(createdItem);
     return CreateObjectSession(
       handle: handle,
       targetParent: targetParent,
@@ -62,7 +62,7 @@ class CreateObjectHandler extends CanvasSelectionHandler {
 
 class CreateObjectSession extends CanvasSelectionSession {
   final CanvasViewportHandle handle;
-  final CanvasItemNode targetParent;
+  final CanvasItem targetParent;
   final CanvasItem createdItem;
   final Layout initialLayout;
 
@@ -74,13 +74,12 @@ class CreateObjectSession extends CanvasSelectionSession {
 
   @override
   void onSelectionCancel() {
-    targetParent.item.removeChild(createdItem);
+    targetParent.removeChild(createdItem);
   }
 
   @override
   void onSelectionChange(CanvasSelectSession session, Offset totalDelta) {
-    LayoutSnapping snapping =
-        handle.createLayoutSnapping(createdItem.toNode(targetParent));
+    LayoutSnapping snapping = handle.createLayoutSnapping(createdItem);
     Layout newLayout = initialLayout.resizeBottomRight(totalDelta,
         snapping: snapping,
         symmetric: handle.symmetricResize,

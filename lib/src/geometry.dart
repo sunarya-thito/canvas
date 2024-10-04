@@ -147,6 +147,11 @@ class Polygon {
 
     return Polygon(subjectPoints);
   }
+
+  @override
+  String toString() {
+    return 'Polygon{points: $points}';
+  }
 }
 
 bool _edgesIntersect(Offset p1, Offset p2, Offset q1, Offset q2) {

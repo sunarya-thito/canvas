@@ -162,6 +162,8 @@ class _CanvasExampleState extends State<CanvasExample>
     );
   }
 
+  int _objectCreationCount = 0;
+
   bool _shiftDown = false; // using shift
   bool _altDown = false; // using alt
   bool _ctrlDown = false; // using ctrl
@@ -169,7 +171,28 @@ class _CanvasExampleState extends State<CanvasExample>
   ResizeMode _resizeMode = ResizeMode.resize;
   ToolMode _toolMode = ToolMode.select;
   SelectionBehavior _selectionBehavior = SelectionBehavior.contain;
-  bool snapToGrid = true;
+  bool snapToGrid = false;
+
+  List<Color> _colors = [
+    Colors.red,
+    Colors.green,
+    Colors.blue,
+    Colors.orange,
+    Colors.purple,
+    Colors.yellow,
+    Colors.pink,
+    Colors.teal,
+  ];
+  List<String> _debugLabels = [
+    'Red',
+    'Green',
+    'Blue',
+    'Orange',
+    'Purple',
+    'Yellow',
+    'Pink',
+    'Teal',
+  ];
 
   CanvasSelectionHandler? get _selectionHandler {
     switch (_toolMode) {
@@ -180,10 +203,13 @@ class _CanvasExampleState extends State<CanvasExample>
           controller: _controller,
           createAtRoot: _ctrlDown,
           createItem: (offset, instant) {
+            int index = (_objectCreationCount++) % _colors.length;
             return FrameCanvasItem(
               onRefresh: () {
                 setState(() {});
               },
+              color: _colors[index],
+              debugLabel: _debugLabels[index],
               layout: AbsoluteLayout(
                 offset: offset,
                 size: instant ? Size(100, 100) : Size.zero,
@@ -200,6 +226,7 @@ class _CanvasExampleState extends State<CanvasExample>
               onRefresh: () {
                 setState(() {});
               },
+              text: 'New Text',
               layout: AbsoluteLayout(
                 offset: offset,
                 size: instant ? Size(100, 100) : Size.zero,
@@ -229,7 +256,7 @@ class _CanvasExampleState extends State<CanvasExample>
             children: [
               Expanded(
                 child: ListenableBuilder(
-                    listenable: _controller.childListenable,
+                    listenable: _controller.childrenListenable,
                     builder: (context, child) {
                       return TreeView<CanvasItem>(
                         nodes: _convert(_controller.root),
@@ -278,82 +305,109 @@ class _CanvasExampleState extends State<CanvasExample>
         Expanded(
           child: Stack(
             children: [
-              Focus(
-                focusNode: _focusNode,
-                onKeyEvent: (node, event) {
-                  if (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
-                      event.logicalKey == LogicalKeyboardKey.shiftRight) {
-                    if (event is KeyDownEvent) {
-                      setState(() {
-                        _shiftDown = true;
-                      });
-                    } else if (event is KeyUpEvent) {
-                      setState(() {
-                        _shiftDown = false;
-                      });
-                    }
-                    return KeyEventResult.handled;
-                  }
-                  if (event.logicalKey == LogicalKeyboardKey.altLeft ||
-                      event.logicalKey == LogicalKeyboardKey.altRight) {
-                    if (event is KeyDownEvent) {
-                      setState(() {
-                        _altDown = true;
-                      });
-                    } else if (event is KeyUpEvent) {
-                      setState(() {
-                        _altDown = false;
-                      });
-                    }
-                    return KeyEventResult.handled;
-                  }
-                  if (event.logicalKey == LogicalKeyboardKey.controlLeft ||
-                      event.logicalKey == LogicalKeyboardKey.controlRight) {
-                    if (event is KeyDownEvent) {
-                      setState(() {
-                        _ctrlDown = true;
-                      });
-                    } else if (event is KeyUpEvent) {
-                      setState(() {
-                        _ctrlDown = false;
-                      });
-                    }
-                    return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
+              Shortcuts(
+                shortcuts: {
+                  LogicalKeySet(LogicalKeyboardKey.delete):
+                      const DeleteObjectIntent(),
                 },
-                child: Listener(
-                  onPointerDown: (event) {
-                    _focusNode.requestFocus();
-                  },
-                  child: CanvasViewport(
-                    onReparent: (details) {
-                      return !_ctrlDown;
-                    },
-                    selectionHandler: _selectionHandler,
-                    gestures: DesktopCanvasGestures(
-                      shouldHandleEvent: (event) {
-                        return event is PointerScrollEvent &&
-                            event is! DesktopPointerScrollEvent;
+                child: Actions(
+                  actions: {
+                    DeleteObjectIntent: CallbackAction(
+                      onInvoke: (intent) {
+                        List<CustomCanvasItem> items = [];
+                        _controller.root.visit(
+                          (item) {
+                            if (item is CustomCanvasItem &&
+                                item.selectedNotifier.value) {
+                              items.add(item);
+                            }
+                          },
+                        );
+                        for (final item in items) {
+                          item.remove();
+                        }
+                        return null;
                       },
                     ),
-                    onSelectionEnd: (value) {
-                      setState(() {
-                        _toolMode = ToolMode.select;
-                      });
+                  },
+                  child: Focus(
+                    focusNode: _focusNode,
+                    onKeyEvent: (node, event) {
+                      if (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+                          event.logicalKey == LogicalKeyboardKey.shiftRight) {
+                        if (event is KeyDownEvent) {
+                          setState(() {
+                            _shiftDown = true;
+                          });
+                        } else if (event is KeyUpEvent) {
+                          setState(() {
+                            _shiftDown = false;
+                          });
+                        }
+                        return KeyEventResult.handled;
+                      }
+                      if (event.logicalKey == LogicalKeyboardKey.altLeft ||
+                          event.logicalKey == LogicalKeyboardKey.altRight) {
+                        if (event is KeyDownEvent) {
+                          setState(() {
+                            _altDown = true;
+                          });
+                        } else if (event is KeyUpEvent) {
+                          setState(() {
+                            _altDown = false;
+                          });
+                        }
+                        return KeyEventResult.handled;
+                      }
+                      if (event.logicalKey == LogicalKeyboardKey.controlLeft ||
+                          event.logicalKey == LogicalKeyboardKey.controlRight) {
+                        if (event is KeyDownEvent) {
+                          setState(() {
+                            _ctrlDown = true;
+                          });
+                        } else if (event is KeyUpEvent) {
+                          setState(() {
+                            _ctrlDown = false;
+                          });
+                        }
+                        return KeyEventResult.handled;
+                      }
+                      return KeyEventResult.ignored;
                     },
-                    alignment: Alignment(0, 0.25),
-                    controller: _controller,
-                    multiSelect: _shiftDown,
-                    resizeMode: _resizeMode,
-                    proportionalResize: _altDown,
-                    symmetricResize: _ctrlDown,
-                    anchoredRotate: _altDown,
-                    selectionBehavior: _selectionBehavior,
-                    snapping: SnappingConfiguration(
-                      gridSnapping: snapToGrid ? Offset(10, 10) : null,
+                    child: Listener(
+                      onPointerDown: (event) {
+                        _focusNode.requestFocus();
+                      },
+                      child: CanvasViewport(
+                        onReparent: (details) {
+                          return !_ctrlDown;
+                        },
+                        selectionHandler: _selectionHandler,
+                        gestures: DesktopCanvasGestures(
+                          shouldHandleEvent: (event) {
+                            return event is PointerScrollEvent &&
+                                event is! DesktopPointerScrollEvent;
+                          },
+                        ),
+                        onSelectionEnd: (value) {
+                          setState(() {
+                            _toolMode = ToolMode.select;
+                          });
+                        },
+                        alignment: Alignment(0, 0.25),
+                        controller: _controller,
+                        multiSelect: _shiftDown,
+                        resizeMode: _resizeMode,
+                        proportionalResize: _altDown,
+                        symmetricResize: _ctrlDown,
+                        anchoredRotate: _altDown,
+                        selectionBehavior: _selectionBehavior,
+                        snapping: SnappingConfiguration(
+                          gridSnapping: snapToGrid ? Offset(10, 10) : null,
+                        ),
+                        canvasSize: Size(400, 600),
+                      ),
                     ),
-                    canvasSize: Size(400, 600),
                   ),
                 ),
               ),
@@ -524,7 +578,7 @@ class CustomCanvasItem extends CanvasItemAdapter {
     super.selected = false,
     required this.onRefresh,
   }) {
-    childListenable.addListener(() {
+    childrenListenable.addListener(() {
       _refreshTreeNodes();
       onRefresh();
     });
@@ -554,7 +608,7 @@ class CustomCanvasItem extends CanvasItemAdapter {
 
   void _refreshTreeNodes() {
     for (final child in children) {
-      child.childListenable.addListener(_listener);
+      child.childrenListenable.addListener(_listener);
       child.selectedNotifier.addListener(_listener);
     }
     _treeItem = _treeItem.updateChildren(
@@ -576,8 +630,11 @@ class FrameCanvasItem extends CustomCanvasItem {
     super.debugLabel,
     super.layout,
     super.selected,
+    Color color = Colors.red,
     required super.onRefresh,
-  });
+  }) {
+    colorNotifier.value = color;
+  }
 
   @override
   Widget? build(BuildContext context) {
@@ -589,7 +646,6 @@ class FrameCanvasItem extends CustomCanvasItem {
             color: colorNotifier.value,
             borderRadius: borderRadiusNotifier.value,
           ),
-          child: child,
         );
       },
     );
@@ -612,7 +668,13 @@ class TextCanvasItem extends CustomCanvasItem {
     super.layout,
     super.selected,
     required super.onRefresh,
-  });
+    String text = '',
+  }) {
+    controller.text = text;
+  }
+
+  @override
+  bool get hasContent => true;
 
   @override
   Widget? build(BuildContext context) {
@@ -621,10 +683,18 @@ class TextCanvasItem extends CustomCanvasItem {
           styleNotifier,
           alignNotifier,
           verticalAlignNotifier,
+          // contentFocusedNotifier,
         }),
         builder: (context, child) {
+          // if (!contentFocusedNotifier.value) {
+          //   return Text(
+          //     controller.text,
+          //     style: styleNotifier.value,
+          //     textAlign: alignNotifier.value,
+          //     overflow: TextOverflow.visible,
+          //   );
+          // }
           return TextField(
-            focusNode: decorationFocusNode,
             padding: EdgeInsets.zero,
             border: false,
             maxLines: null,
@@ -637,4 +707,8 @@ class TextCanvasItem extends CustomCanvasItem {
           );
         });
   }
+}
+
+class DeleteObjectIntent extends Intent {
+  const DeleteObjectIntent();
 }
