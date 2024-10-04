@@ -627,7 +627,6 @@ abstract class LayoutChanges {
 
 abstract class Layout {
   const Layout();
-  LayoutChanges createChanges();
   void performLayout(CanvasItem item, [CanvasItem? parent]);
   void performSelfLayout(CanvasItem item);
   Layout drag(Offset delta, {LayoutSnapping? snapping});

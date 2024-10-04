@@ -144,12 +144,11 @@ class TransformSession {
     }
   }
 
-  void apply({LayoutSnapping? snapping}) {
+  void apply() {
     for (var node in nodes) {
-      // if (node.newLayout != null && node.newLayout != node.layout) {
-      //   node.item.layout = node.newLayout!;
-      // }
-      node.apply(node.layout, snapping: snapping);
+      if (node.newLayout != null && node.newLayout != node.layout) {
+        node.item.layout = node.newLayout!;
+      }
     }
   }
 
@@ -165,20 +164,14 @@ class TransformNode {
   final LayoutTransform transform;
   final LayoutTransform? parentTransform;
   final Layout layout;
-  // Layout? newLayout;
-  final LayoutChanges changes;
+  Layout? newLayout;
 
-  TransformNode(this.item, this.transform, this.parentTransform, this.layout)
-      : changes = layout.createChanges();
+  TransformNode(this.item, this.transform, this.parentTransform, this.layout);
 
-  void apply(Layout layout, {LayoutSnapping? snapping}) {
-    if (snapping != null) {
-      changes.snap(snapping);
+  void apply(Layout layout) {
+    if (newLayout != null && newLayout != item.layout) {
+      item.layout = newLayout!;
     }
-    changes.apply(layout);
-    // if (newLayout != null && newLayout != item.layout) {
-    //   item.layout = newLayout!;
-    // }
   }
 }
 
@@ -199,14 +192,8 @@ class CanvasHitTestResult {
 }
 
 class CanvasViewportData extends InheritedWidget {
-  // TODO not everything belongs here, for example onReparenting and onReparentEnd
-  // those should be in CanvasViewportHandle, and anything else that updates
-  // quite frequently needs to be moved to CanvasViewportHandle and has its own
-  // listenable.
-  // TODO also add CanvasViewportHandle in here
   final CanvasController controller;
   final ResizeMode resizeMode;
-  // final TransformControl transformControl;
   final bool multiSelect;
   final bool symmetricResize;
   final bool proportionalResize;
@@ -1087,9 +1074,8 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
                         localDelta = rotatePoint(
                             localDelta, -node.parentTransform!.rotation);
                       }
-                      node.changes.drag(localDelta);
-                      // node.newLayout = node.layout
-                      //     .drag(localDelta, snapping: _layoutSnapping);
+                      node.newLayout = node.layout
+                          .drag(localDelta, snapping: _layoutSnapping);
                     },
                   );
                   _session!.apply();

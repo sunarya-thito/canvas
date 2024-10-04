@@ -77,7 +77,6 @@ class _StandardTransformControlWidgetState
   CanvasItem? _startNode;
   Layout? _startLayout;
   LayoutSnapping? _snapping;
-  LayoutChanges? _changes;
 
   double get globalRotation {
     double rotation = widget.item.transform.rotation;
@@ -174,7 +173,8 @@ class _StandardTransformControlWidgetState
 
   Widget _wrapWithPanHandler({
     required Widget child,
-    required void Function(TransformNode node, Offset delta) visitor,
+    required void Function(TransformNode node, Offset delta, {LayoutSnapping? snapping}) visitor,
+    required Offset? Function(LayoutSnapping snapping) snapping,
     String? debugName,
   }) {
     double viewportZoom = viewportData.handle.transform.zoom;
@@ -188,7 +188,6 @@ class _StandardTransformControlWidgetState
             _startNode!, _startNode!.parentTransform);
         viewportData.handle.fillInSnappingPoints(_snapping!);
         viewportData.handle.startDraggingSession(this);
-        _changes = _startLayout!.createChanges();
       },
       onPanUpdate: (details) {
         Offset delta = details.delta;
@@ -204,15 +203,16 @@ class _StandardTransformControlWidgetState
           visitor(
             node,
             _totalOffset!,
+            snapping: _snapping,
           );
-          node.apply(node.layout, snapping: _snapping);
+          node.apply(node.layout);
           _session!.visit(
             (node) {
               if (node.item == _startNode) {
                 return;
               }
-              visitor(node, _totalOffset!);
-              node.apply(node.layout, snapping: _snapping);
+              visitor(node, snapping(_snapping!) ?? _totalOffset!);
+              node.apply(node.layout);
             },
           );
         }
@@ -285,17 +285,11 @@ class _StandardTransformControlWidgetState
               if (_startNode!.isDescendantOf(node.item)) {
                 return;
               }
-              // node.newLayout = node.layout.rotate(
-              //     _snapping?.newRotationDelta ?? delta,
-              //     alignment: !viewportData.anchoredRotate
-              //         ? Alignment.center
-              //         : alignment * -1);
-              node.changes.rotate(
-                _snapping?.newRotationDelta ?? delta,
-                alignment: !viewportData.anchoredRotate
-                    ? Alignment.center
-                    : alignment * -1,
-              );
+              node.newLayout = node.layout.rotate(
+                  _snapping?.newRotationDelta ?? delta,
+                  alignment: !viewportData.anchoredRotate
+                      ? Alignment.center
+                      : alignment * -1);
             },
           );
           _session!.apply();
@@ -442,27 +436,23 @@ class _StandardTransformControlWidgetState
           cursor: ResizeCursor.top.getMouseCursor(globalRotation, flipX, flipY),
           child: _wrapWithPanHandler(
             debugName: 'top',
-            visitor: (node, delta) {
+            visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
-                // node.newLayout = node.layout.rescaleTop(
-                //   delta,
-                //   symmetric: viewportData.symmetricResize,
-                //   snapping: snapping,
-                // );
-                node.changes
-                    .rescaleTop(delta, symmetric: viewportData.symmetricResize);
+                node.newLayout = node.layout.rescaleTop(
+                  delta,
+                  symmetric: viewportData.symmetricResize,
+                  snapping: snapping,
+                );
                 return;
               }
-              // node.newLayout = node.layout.resizeTop(
-              //   delta,
-              //   symmetric: viewportData.symmetricResize,
-              //   snapping: snapping,
-              // );
-              node.changes
-                  .resizeTop(delta, symmetric: viewportData.symmetricResize);
+              node.newLayout = node.layout.resizeTop(
+                delta,
+                symmetric: viewportData.symmetricResize,
+                snapping: snapping,
+              );
             },
-            // snapping: (snapping) =>
-            //     _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+            snapping: (snapping) =>
+                _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
               width: horizontalLength,
               height: theme.handleSize.height,
