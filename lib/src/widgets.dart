@@ -10,12 +10,16 @@ import '../canvas.dart';
 class CanvasViewportThemeData {
   final Color backgroundColor;
   final Color isolationColor;
+  final Color snappingColor;
+  final double snappingStrokeWidth;
   final Decoration canvasDecoration;
   final Decoration selectionDecoration;
 
   const CanvasViewportThemeData({
     this.backgroundColor = const Color(0xFFB0B0B0),
     this.isolationColor = const Color(0x80FFFFFF),
+    this.snappingColor = const Color(0x80198CE8),
+    this.snappingStrokeWidth = 1,
     this.canvasDecoration = const BoxDecoration(
       color: Color(0xFFFFFFFF),
       boxShadow: [
@@ -38,16 +42,13 @@ class CanvasViewportThemeData {
   });
 }
 
-class CanvasController implements Listenable, CanvasParent {
-  final RootCanvasItem _root = RootCanvasItem(
-    layout: const AbsoluteLayout(),
-  );
+class CanvasController implements Listenable {
+  final RootCanvasItem _root;
 
   final ValueNotifier<Offset?> _cursorPosition = ValueNotifier(null);
 
-  CanvasController({List<CanvasItem> children = const []}) {
-    _root.children = children;
-  }
+  CanvasController({List<CanvasItem> children = const []})
+      : _root = RootCanvasItem(children: children);
 
   ValueListenable<Offset?> get cursorPositionListenable => _cursorPosition;
   Offset? get cursorPosition => _cursorPosition.value;
@@ -57,13 +58,15 @@ class CanvasController implements Listenable, CanvasParent {
   }
 
   void visitWithTransform(
-      void Function(CanvasItem item, LayoutTransform? parentTransform) visitor,
+      void Function(CanvasItem item, Matrix4? parentTransform) visitor,
       {bool rootSelectionOnly = false}) {
     _root.visitWithTransform(visitor, rootSelectionOnly: rootSelectionOnly);
   }
 
-  void visitSnappingPoints(void Function(SnappingPoint snappingPoint) visitor) {
-    _root.visitSnappingPoints(visitor);
+  void visitSnappingPoints(
+      void Function(CanvasItem item, SnappingPoint snappingPoint) visitor,
+      SnappingToggle snappingToggle) {
+    _root.visitSnappingPoints(visitor, snappingToggle);
   }
 
   void hitTestSelection(CanvasHitTestResult result, Polygon selection,
@@ -80,53 +83,45 @@ class CanvasController implements Listenable, CanvasParent {
     _root.visitTo(target, visitor);
   }
 
-  @override
   List<CanvasItem> get children => _root.children;
   set children(List<CanvasItem> children) => _root.children = children;
 
   @override
   void addListener(listener) {
-    _root.layoutListenable.addListener(listener);
+    _root.constraintsListenable.addListener(listener);
     _root.childrenListenable.addListener(listener);
   }
 
   @override
   void removeListener(listener) {
-    _root.layoutListenable.removeListener(listener);
+    _root.constraintsListenable.removeListener(listener);
     _root.childrenListenable.removeListener(listener);
   }
 
-  @override
   void addChild(CanvasItem child) {
     _root.addChild(child);
   }
 
-  @override
   void removeChild(CanvasItem child) {
     _root.removeChild(child);
   }
 
-  @override
   void addChildren(List<CanvasItem> children) {
     _root.addChildren(children);
   }
 
-  @override
   void removeChildren(List<CanvasItem> children) {
     _root.removeChildren(children);
   }
 
-  @override
   void insertChild(int index, CanvasItem child) {
     _root.insertChild(index, child);
   }
 
-  @override
   void removeChildAt(int index) {
     _root.removeChildAt(index);
   }
 
-  @override
   ValueListenable<List<CanvasItem>> get childrenListenable =>
       _root.childrenListenable;
 
@@ -146,15 +141,15 @@ class TransformSession {
 
   void apply() {
     for (var node in nodes) {
-      if (node.newLayout != null && node.newLayout != node.layout) {
-        node.item.layout = node.newLayout!;
+      if (node.newConstraint != null && node.newConstraint != node.constraint) {
+        node.item.constraints = node.newConstraint!;
       }
     }
   }
 
   void reset() {
     for (var node in nodes) {
-      node.item.layout = node.layout;
+      node.item.constraints = node.constraint;
     }
   }
 }
@@ -162,15 +157,16 @@ class TransformSession {
 class TransformNode {
   final CanvasItem item;
   final LayoutTransform transform;
-  final LayoutTransform? parentTransform;
-  final Layout layout;
-  Layout? newLayout;
+  final Matrix4? parentTransform;
+  final ItemConstraints constraint;
+  ItemConstraints? newConstraint;
 
-  TransformNode(this.item, this.transform, this.parentTransform, this.layout);
+  TransformNode(
+      this.item, this.transform, this.parentTransform, this.constraint);
 
-  void apply(Layout layout) {
-    if (newLayout != null && newLayout != item.layout) {
-      item.layout = newLayout!;
+  void apply(ItemConstraints layout) {
+    if (newConstraint != null && newConstraint != item.constraints) {
+      item.constraints = newConstraint!;
     }
   }
 }
@@ -232,7 +228,7 @@ class CanvasViewportData extends InheritedWidget {
 
 enum ResizeMode { resize, scale }
 
-typedef EventPredicate<T> = bool Function(T details);
+typedef Predicate<T> = bool Function(T details);
 typedef EventConsumer<T> = void Function(T details);
 
 class CanvasViewport extends StatefulWidget {
@@ -244,7 +240,7 @@ class CanvasViewport extends StatefulWidget {
   final bool symmetricResize;
   final bool proportionalResize;
   final bool anchoredRotate;
-  final EventPredicate<ReparentDetails>? onReparent;
+  final Predicate<ReparentDetails>? onReparent;
   final EventConsumer<CanvasTransform>? onTransform;
   final CanvasTransform initialTransform;
   final CanvasGestures gestures;
@@ -295,14 +291,6 @@ class CanvasViewport extends StatefulWidget {
   State<CanvasViewport> createState() => _CanvasViewportState();
 }
 
-class _ImmutableSetNotifier<T> extends ValueNotifier<Set<T>> {
-  _ImmutableSetNotifier(Set<T> value) : super(value);
-
-  void _notify() {
-    notifyListeners();
-  }
-}
-
 class _CanvasViewportState extends State<CanvasViewport>
     with CanvasViewportHandle, SingleTickerProviderStateMixin {
   /// to preserve state and to prevent unnecessary rebuilds
@@ -320,6 +308,8 @@ class _CanvasViewportState extends State<CanvasViewport>
       ValueNotifier(null);
   final ValueNotifier<CanvasItem?> _focusedItemNotifier = ValueNotifier(null);
   final ValueNotifier<Offset?> _cursorPositionNotifier = ValueNotifier(null);
+  final MutableNotifier<Map<CanvasElementDragger, SnappingResult?>>
+      _snappingTargetNotifier = MutableNotifier({});
   Offset? _localCursor;
 
   Offset? _totalSelectionDelta;
@@ -339,6 +329,18 @@ class _CanvasViewportState extends State<CanvasViewport>
   }
 
   @override
+  void markSnappingTarget(
+      CanvasElementDragger owner, SnappingResult? snappingPoint) {
+    if (_tickerTicket.contains(owner)) {
+      var old = _snappingTargetNotifier.value[owner];
+      _snappingTargetNotifier.value[owner] = snappingPoint;
+      if (old != snappingPoint) {
+        _snappingTargetNotifier.notify();
+      }
+    }
+  }
+
+  @override
   void markFocused(CanvasItem node) {
     _focusedItemNotifier.value = node;
   }
@@ -352,6 +354,7 @@ class _CanvasViewportState extends State<CanvasViewport>
     _transformNotifier = ValueNotifier(widget.initialTransform);
     _cursorPositionNotifier.addListener(_handleCursorPositionUpdate);
     _ticker = createTicker(_handleTicker);
+    widget.controller.root.performLayout(const BoxConstraints());
   }
 
   void _handleCursorPositionUpdate() {
@@ -370,6 +373,7 @@ class _CanvasViewportState extends State<CanvasViewport>
     }
     if (widget.controller != oldWidget.controller) {
       _handleCursorPositionUpdate();
+      widget.controller.root.performLayout(const BoxConstraints());
     }
   }
 
@@ -464,62 +468,66 @@ class _CanvasViewportState extends State<CanvasViewport>
   Widget build(BuildContext context) {
     final theme = widget.theme;
     var canvasOffset = widget.alignment.alongSize(widget.canvasSize);
-    return ListenableBuilder(
-        listenable: _transformNotifier,
-        builder: (context, child) {
-          return ColoredBox(
-            color: theme.backgroundColor,
-            child: LayoutBuilder(builder: (context, constraints) {
-              var offset = widget.alignment.alongSize(constraints.biggest);
-              var transform = this.transform;
-              _canvasOffset =
-                  offset + transform.offset - canvasOffset * transform.zoom;
-              _size = constraints.biggest;
-              return Listener(
-                onPointerMove: (event) {
-                  _localCursor = event.localPosition;
-                  _cursorPositionNotifier.value =
-                      _localToViewport(event.localPosition, _size);
-                },
-                child: MouseRegion(
-                  onEnter: (event) {
+    return CanvasViewportData(
+      controller: widget.controller,
+      resizeMode: widget.resizeMode,
+      multiSelect: widget.multiSelect,
+      symmetricResize: widget.symmetricResize,
+      proportionalResize: widget.proportionalResize,
+      anchoredRotate: widget.anchoredRotate,
+      snapping: widget.snapping,
+      handle: this,
+      child: ListenableBuilder(
+          listenable: _transformNotifier,
+          builder: (context, child) {
+            return ColoredBox(
+              color: theme.backgroundColor,
+              child: LayoutBuilder(builder: (context, constraints) {
+                var offset = widget.alignment.alongSize(constraints.biggest);
+                var transform = this.transform;
+                _canvasOffset =
+                    offset + transform.offset - canvasOffset * transform.zoom;
+                _size = constraints.biggest;
+                return Listener(
+                  onPointerMove: (event) {
+                    _localCursor = event.localPosition;
                     _cursorPositionNotifier.value =
                         _localToViewport(event.localPosition, _size);
-                    _localCursor = event.localPosition;
                   },
-                  onExit: (event) {
-                    _cursorPositionNotifier.value = null;
-                    _localCursor = null;
-                  },
-                  onHover: (event) {
-                    _cursorPositionNotifier.value =
-                        _localToViewport(event.localPosition, _size);
-                    _localCursor = event.localPosition;
-                  },
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      widget.controller._root.visit(
-                        (item) {
-                          item.selected = false;
-                        },
-                      );
+                  child: MouseRegion(
+                    onEnter: (event) {
+                      _cursorPositionNotifier.value =
+                          _localToViewport(event.localPosition, _size);
+                      _localCursor = event.localPosition;
                     },
-                    child: _wrapGestures(
-                      context,
-                      Stack(
-                        fit: StackFit.passthrough,
-                        children: [
-                          ClipRect(
-                            child: CanvasViewportData(
-                              controller: widget.controller,
-                              resizeMode: widget.resizeMode,
-                              multiSelect: widget.multiSelect,
-                              symmetricResize: widget.symmetricResize,
-                              proportionalResize: widget.proportionalResize,
-                              anchoredRotate: widget.anchoredRotate,
-                              snapping: widget.snapping,
-                              handle: this,
+                    onExit: (event) {
+                      _cursorPositionNotifier.value = null;
+                      _localCursor = null;
+                    },
+                    onHover: (event) {
+                      _cursorPositionNotifier.value =
+                          _localToViewport(event.localPosition, _size);
+                      _localCursor = event.localPosition;
+                    },
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        if (_focusedItemNotifier.value != null) {
+                          _focusedItemNotifier.value = null;
+                        } else {
+                          widget.controller._root.visit(
+                            (item) {
+                              item.selected = false;
+                            },
+                          );
+                        }
+                      },
+                      child: _wrapGestures(
+                        context,
+                        Stack(
+                          fit: StackFit.passthrough,
+                          children: [
+                            ClipRect(
                               child: Transform.translate(
                                 offset: offset +
                                     transform.offset -
@@ -656,27 +664,64 @@ class _CanvasViewportState extends State<CanvasViewport>
                                     //     ),
                                     //   ),
                                     // ),
-                                    widget.transformControl.build(
-                                        context, widget.controller._root, false)
+                                    IgnorePointer(
+                                      child: ListenableBuilder(
+                                          listenable: _snappingTargetNotifier,
+                                          builder: (context, child) {
+                                            return CustomPaint(
+                                              painter: SnappingPreviewPainter(
+                                                points: _snappingTargetNotifier
+                                                    .value.values
+                                                    .whereType<SnappingResult>()
+                                                    .toList(),
+                                                color: theme.snappingColor,
+                                                strokeWidth:
+                                                    theme.snappingStrokeWidth,
+                                              ),
+                                            );
+                                          }),
+                                    ),
                                   ],
                                 ),
                               ),
                             ),
-                          ),
-                          if (_shouldCancelObjectDragging)
                             Positioned.fill(
-                              child: widget.gestures.wrapViewport(
-                                  context, const SizedBox(), this),
+                              child: _CanvasItemBoundingBox(
+                                item: widget.controller.root,
+                                parentTransform: LayoutTransform(
+                                  offset: _canvasOffset,
+                                  scale: Offset(transform.zoom, transform.zoom),
+                                ).toMatrix4(),
+                                onHover: (item, hovered) {
+                                  if (hovered) {
+                                    _hoveredItemNotifier.value = item;
+                                  } else {
+                                    if (_hoveredItemNotifier.value == item) {
+                                      _hoveredItemNotifier.value = null;
+                                    }
+                                  }
+                                },
+                              ),
                             ),
-                        ],
+                            Positioned.fill(
+                              child: widget.transformControl.build(
+                                  context, widget.controller._root, false),
+                            ),
+                            if (_shouldCancelObjectDragging)
+                              Positioned.fill(
+                                child: widget.gestures.wrapViewport(
+                                    context, const SizedBox(), this),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            }),
-          );
-        });
+                );
+              }),
+            );
+          }),
+    );
   }
 
   @override
@@ -760,24 +805,114 @@ class _CanvasViewportState extends State<CanvasViewport>
   }
 
   @override
+  void visitSnappingPoints(
+      void Function(CanvasItem item, SnappingPoint snappingPoint) visitor,
+      SnappingToggle snappingToggle,
+      [bool snapToCanvas = true]) {
+    widget.controller.visitSnappingPoints(visitor, snappingToggle);
+    if (snapToCanvas) {
+      var root = widget.controller.root;
+      var canvasSize = widget.canvasSize;
+      var topLeft = Offset.zero;
+      if (snappingToggle.topLeft) {
+        visitor(root, SnappingPoint(position: topLeft, angle: 0));
+      }
+      if (snappingToggle.topRight && canvasSize.width > 0) {
+        visitor(
+          root,
+          SnappingPoint(
+              position: topLeft + Offset(canvasSize.width, 0), angle: 0),
+        );
+      }
+      if (snappingToggle.bottomLeft && canvasSize.height > 0) {
+        visitor(
+          root,
+          SnappingPoint(
+              position: topLeft + Offset(0, canvasSize.height), angle: 0),
+        );
+      }
+      if (snappingToggle.bottomRight &&
+          canvasSize.width > 0 &&
+          canvasSize.height > 0) {
+        visitor(
+          root,
+          SnappingPoint(
+            position: topLeft + Offset(canvasSize.width, canvasSize.height),
+            angle: 0,
+          ),
+        );
+      }
+      if (snappingToggle.center &&
+          canvasSize.width > 0 &&
+          canvasSize.height > 0) {
+        visitor(
+          root,
+          SnappingPoint(
+              position:
+                  topLeft + Offset(canvasSize.width / 2, canvasSize.height / 2),
+              angle: 0),
+        );
+      }
+      if (snappingToggle.top && canvasSize.width > 0) {
+        visitor(
+          root,
+          SnappingPoint(
+              position: topLeft + Offset(canvasSize.width / 2, 0), angle: 0),
+        );
+      }
+      if (snappingToggle.bottom &&
+          canvasSize.width > 0 &&
+          canvasSize.height > 0) {
+        visitor(
+          root,
+          SnappingPoint(
+              position:
+                  topLeft + Offset(canvasSize.width / 2, canvasSize.height),
+              angle: 0),
+        );
+      }
+      if (snappingToggle.left && canvasSize.height > 0) {
+        visitor(
+          root,
+          SnappingPoint(
+              position: topLeft + Offset(0, canvasSize.height / 2), angle: 0),
+        );
+      }
+      if (snappingToggle.right &&
+          canvasSize.width > 0 &&
+          canvasSize.height > 0) {
+        visitor(
+          root,
+          SnappingPoint(
+              position:
+                  topLeft + Offset(canvasSize.width, canvasSize.height / 2),
+              angle: 0),
+        );
+      }
+    }
+  }
+
+  @override
   SnappingConfiguration get snappingConfiguration => widget.snapping;
 
   @override
   CanvasController get controller => widget.controller;
 
   @override
-  LayoutSnapping createLayoutSnapping(CanvasItem item,
-      [bool fillInSnappingPoints = true]) {
+  LayoutSnapping createLayoutSnapping(Predicate<CanvasItem> predicate) {
     LayoutSnapping snapping = LayoutSnapping(
       snappingConfiguration,
-      item,
-      item.parentTransform,
     );
-    if (fillInSnappingPoints) {
-      controller.visitSnappingPoints(
-        (snappingPoint) {
+    if (widget.snapping.enableObjectSnapping) {
+      visitSnappingPoints(
+        (item, snappingPoint) {
+          if (!predicate(item)) {
+            return;
+          }
           snapping.snappingPoints.add(snappingPoint);
         },
+        snappingConfiguration.snappingToggle,
+        snappingConfiguration.snapToCanvas,
       );
     }
     return snapping;
@@ -790,6 +925,10 @@ class _CanvasViewportState extends State<CanvasViewport>
   @override
   void endDraggingSession(CanvasElementDragger owner) {
     if (_tickerTicket.remove(owner)) {
+      if (_snappingTargetNotifier.value.containsKey(owner)) {
+        _snappingTargetNotifier.value.remove(owner);
+        _snappingTargetNotifier.notify();
+      }
       _checkTicker();
     }
   }
@@ -880,15 +1019,13 @@ class _CanvasViewportState extends State<CanvasViewport>
 
 class _CanvasItemBoundingBox extends StatefulWidget {
   final CanvasItem item;
-  final LayoutTransform? parentTransform;
+  final Matrix4? parentTransform;
   final void Function(CanvasItem item, bool hovered)? onHover;
-  final Widget? child;
 
   const _CanvasItemBoundingBox({
     this.parentTransform,
     required this.item,
     this.onHover,
-    this.child,
   });
 
   @override
@@ -901,7 +1038,7 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
   Offset? _totalOffset;
   LayoutSnapping? _layoutSnapping;
   CanvasItem? _startItem;
-  Layout? _startLayout;
+  ItemConstraints? _startLayout;
   CanvasItem? _targetReparent;
   CanvasViewportData? _viewportData;
   VoidCallback? _onUpdate;
@@ -925,13 +1062,13 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
     return _viewportData!;
   }
 
-  double get globalRotation {
-    var rotation = widget.item.transform.rotation;
-    if (widget.parentTransform != null) {
-      rotation += widget.parentTransform!.rotation;
-    }
-    return rotation;
-  }
+  // double get globalRotation {
+  //   var rotation = widget.item.transform.rotation;
+  //   if (widget.parentTransform != null) {
+  //     rotation += widget.parentTransform!.transformRotation;
+  //   }
+  //   return rotation;
+  // }
 
   CanvasItem findSelected() {
     CanvasItem? current = widget.item;
@@ -945,36 +1082,39 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
     return current ?? widget.item;
   }
 
-  double _computeRotation(CanvasItem? node) {
-    double rotation = 0;
-    while (node != null) {
-      rotation += node.transform.rotation;
-      node = node.parent;
-    }
-    return rotation;
-  }
+  // double _computeRotation(CanvasItem? node) {
+  //   double rotation = 0;
+  //   while (node != null) {
+  //     rotation += node.transform.rotation;
+  //     node = node.parent;
+  //   }
+  //   return rotation;
+  // }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge({
         widget.item.parentListenable,
+        widget.item.transformListenable,
         viewportData.handle.focusedItemListenable,
       }),
       builder: (context, child) {
         var parent = widget.item.parent;
+        var focused = viewportData.handle.focusedItem;
         return IgnorePointer(
           // ignoring: !parentFocused,
           // TODO: fix this
-          ignoring: false,
+          ignoring: (focused != null &&
+              (focused == widget.item || !focused.isDescendant(widget.item))),
           child: ListenableBuilder(
             listenable: widget.item.selectedNotifier,
             builder: (context, child) {
               return GestureDetector(
-                behavior: HitTestBehavior.translucent,
+                behavior: HitTestBehavior.deferToChild,
                 // onTap: parentFocused
                 // TODO: fix this
-                onTap: true
+                onTap: (focused == null || focused.isDescendant(widget.item))
                     ? () {
                         if (viewportData.multiSelect) {
                           widget.item.selected = !widget.item.selected;
@@ -985,16 +1125,19 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
                             },
                           );
                         } else {
+                          viewportData.handle.markFocused(widget.item);
                           // widget.item.contentFocused = widget.item.hasContent;
                           // TODO: fix this
                         }
                       }
                     : null,
                 child: MouseRegion(
+                  hitTestBehavior: HitTestBehavior.deferToChild,
                   // opaque: parentFocused,
                   // cursor: contentFocused
                   // TODO: fix this
-                  cursor: true
+                  opaque: focused == null || focused.isDescendant(widget.item),
+                  cursor: (focused == null || focused.isDescendant(widget.item))
                       ? MouseCursor.defer
                       : widget.item.selected
                           ? SystemMouseCursors.move
@@ -1014,6 +1157,7 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
               );
             },
             child: PanGesture(
+              behavior: HitTestBehavior.deferToChild,
               // enable: parentFocused && !contentFocused,
               onPanStart: (details) {
                 viewportData.handle.startDraggingSession(this);
@@ -1031,38 +1175,29 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
                 _session =
                     viewportData.handle.beginTransform(rootSelectionOnly: true);
                 _startItem = findSelected();
-                _startLayout = _startItem!.layout;
+                _startLayout = _startItem!.constraints;
                 _totalOffset = Offset.zero;
-                _layoutSnapping = LayoutSnapping(viewportData.snapping,
-                    _startItem!, _startItem!.parentTransform);
-                viewportData.handle.fillInSnappingPoints(_layoutSnapping!);
+                _layoutSnapping = viewportData.handle.createLayoutSnapping(
+                  (details) {
+                    return !details.selected;
+                  },
+                );
               },
               onPanUpdate: (details) {
-                Offset flip;
-                var size = widget.item.transform.size;
-                if (size.width < 0 && size.height < 0) {
-                  flip = const Offset(-1, -1);
-                } else if (size.width < 0) {
-                  flip = const Offset(-1, 1);
-                } else if (size.height < 0) {
-                  flip = const Offset(1, -1);
-                } else {
-                  flip = const Offset(1, 1);
-                }
                 var item = _startItem!;
-                Offset delta = details.delta
-                    .multiply(widget.item.transform.scale)
-                    .multiply(flip);
-                delta = rotatePoint(delta, globalRotation);
+                Offset delta = details.delta;
                 _totalOffset = _totalOffset! + delta;
                 void update() {
                   Offset localDelta = _totalOffset!;
-                  double rotation = _computeRotation(item.parent);
-                  localDelta = rotatePoint(localDelta, -rotation);
-                  item.layout = _startLayout!.drag(
-                    localDelta,
+                  item.constraints = _startLayout!.drag(
+                    _startItem!,
+                    handleDeltaTransform(localDelta, item),
                     snapping: _layoutSnapping,
                   );
+                  if (_layoutSnapping != null) {
+                    viewportData.handle.markSnappingTarget(
+                        this, _layoutSnapping!.snappedPoint);
+                  }
                   _session!.visit(
                     (node) {
                       if (node.item == item) {
@@ -1071,11 +1206,12 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
                       Offset localDelta =
                           _layoutSnapping?.newOffsetDelta ?? _totalOffset!;
                       if (node.parentTransform != null) {
-                        localDelta = rotatePoint(
-                            localDelta, -node.parentTransform!.rotation);
+                        localDelta = rotatePoint(localDelta,
+                            -node.parentTransform!.transformRotation);
                       }
-                      node.newLayout = node.layout
-                          .drag(localDelta, snapping: _layoutSnapping);
+                      node.newConstraint = node.constraint.drag(
+                          node.item, localDelta,
+                          snapping: _layoutSnapping);
                     },
                   );
                   _session!.apply();
@@ -1096,6 +1232,7 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
               onPanEnd: (details) {
                 var item = _startItem!;
                 var targetReparent = _targetReparent;
+                print('targetReparent: $targetReparent');
                 viewportData.handle.endDraggingSession(this);
                 _session = null;
                 _onUpdate = null;
@@ -1129,7 +1266,43 @@ class _CanvasItemBoundingBoxState extends State<_CanvasItemBoundingBox>
                 _startItem = null;
                 viewportData.handle.handleReparenting(null);
               },
-              child: widget.child,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: BoundingBoxPainter(
+                        globalTransform: widget.parentTransform == null
+                            ? widget.item.transform.toMatrix4()
+                            : widget.parentTransform! *
+                                widget.item.transform.toMatrix4(),
+                        shouldScaleX: true,
+                        shouldScaleY: true,
+                        itemSize: widget.item.transform.size,
+                        size: widget.item.transform.size,
+                        alignment: Alignment.topLeft,
+                        selfAlignment: Alignment.topLeft,
+                      ),
+                    ),
+                  ),
+                  ListenableBuilder(
+                    listenable: widget.item.childrenListenable,
+                    builder: (context, child) {
+                      return Stack(
+                        children: widget.item.children.map((child) {
+                          return _CanvasItemBoundingBox(
+                            item: child,
+                            parentTransform: widget.parentTransform == null
+                                ? widget.item.transform.toMatrix4()
+                                : widget.parentTransform! *
+                                    widget.item.transform.toMatrix4(),
+                            onHover: widget.onHover,
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -1142,7 +1315,7 @@ class CanvasItemWidget extends StatefulWidget {
   final CanvasItem item;
   final Widget? background;
   final void Function(CanvasItem item, bool hovered)? onHover;
-  final LayoutTransform? parentTransform;
+  final Matrix4? parentTransform;
   final CanvasViewportHandle handle;
 
   const CanvasItemWidget({
@@ -1163,32 +1336,22 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
     var background = widget.item.build(context);
     if (widget.item.opaque) {
       var layoutTransform = widget.item.transform;
-      return Transform.scale(
-        scaleX: layoutTransform.scale.dx,
-        scaleY: layoutTransform.scale.dy,
-        alignment: Alignment.topLeft,
-        child: Box(
-          size: layoutTransform.size,
-          child: _CanvasItemBoundingBox(
-            item: widget.item,
-            onHover: widget.onHover,
-            parentTransform: widget.parentTransform,
-            child: background == null
-                ? null
-                : ListenableBuilder(
-                    // listenable: widget.item.contentFocusedNotifier,
+      return Box(
+        size: layoutTransform.size,
+        child: background == null
+            ? null
+            : ListenableBuilder(
+                // listenable: widget.item.contentFocusedNotifier,
+                // TODO: Fix this
+                listenable: Listenable.merge([]),
+                builder: (context, child) {
+                  return IgnorePointer(
+                    // ignoring: !widget.item.contentFocused,
                     // TODO: Fix this
-                    listenable: Listenable.merge([]),
-                    builder: (context, child) {
-                      return IgnorePointer(
-                        // ignoring: !widget.item.contentFocused,
-                        // TODO: Fix this
-                        ignoring: false,
-                        child: background,
-                      );
-                    }),
-          ),
-        ),
+                    ignoring: false,
+                    child: background,
+                  );
+                }),
       );
     }
     return background;
@@ -1209,41 +1372,39 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
           var layoutTransform = widget.item.transform;
           var scaledSize = layoutTransform.scaledSize;
           Widget? backgroundChild = buildChild(context);
-          return Transform.translate(
-            offset: layoutTransform.offset,
-            child: Transform.rotate(
-              angle: layoutTransform.rotation,
-              alignment: Alignment.topLeft,
-              child: GroupWidget(
-                size: widget.item.clipContent && widget.item.opaque
-                    // TODO: Fix this
-                    // widget.item.opaque &&
-                    // !widget.item.contentFocused
-                    ? scaledSize
-                    : null,
-                clipBehavior: widget.item.clipContent && widget.item.opaque
-                    // TODO: Fix this
-                    // widget.item.opaque &&
-                    // !widget.item.contentFocused
-                    ? Clip.hardEdge
-                    : Clip.none,
-                children: [
-                  if (secondaryBackground != null) secondaryBackground,
-                  if (backgroundChild != null) backgroundChild,
-                  GroupWidget(
-                    children: widget.item.children.map((child) {
-                      return CanvasItemWidget(
-                        handle: widget.handle,
-                        item: child,
-                        parentTransform: widget.parentTransform == null
-                            ? layoutTransform
-                            : widget.parentTransform! * layoutTransform,
-                        onHover: widget.onHover,
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
+          return Transform(
+            transform: layoutTransform.toMatrix4(),
+            alignment: Alignment.topLeft,
+            child: GroupWidget(
+              size: widget.item.clipContent && widget.item.opaque
+                  // TODO: Fix this
+                  // widget.item.opaque &&
+                  // !widget.item.contentFocused
+                  ? scaledSize
+                  : null,
+              clipBehavior: widget.item.clipContent && widget.item.opaque
+                  // TODO: Fix this
+                  // widget.item.opaque &&
+                  // !widget.item.contentFocused
+                  ? Clip.hardEdge
+                  : Clip.none,
+              children: [
+                if (secondaryBackground != null) secondaryBackground,
+                if (backgroundChild != null) backgroundChild,
+                GroupWidget(
+                  children: widget.item.children.map((child) {
+                    return CanvasItemWidget(
+                      handle: widget.handle,
+                      item: child,
+                      parentTransform: widget.parentTransform == null
+                          ? layoutTransform.toMatrix4()
+                          : widget.parentTransform! *
+                              layoutTransform.toMatrix4(),
+                      onHover: widget.onHover,
+                    );
+                  }).toList(),
+                ),
+              ],
             ),
           );
         });

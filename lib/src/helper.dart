@@ -37,14 +37,14 @@ class CreateObjectHandler extends CanvasSelectionHandler {
     }
     CanvasItem createdItem = createItem(position, instant);
     createdItem.selected = true;
-    Layout layout = createdItem.layout;
+    ItemConstraints layout = createdItem.constraints;
     controller.visitTo(
       targetParent,
       (item) {
-        layout = layout.transferToChild(item.layout);
+        layout = layout.transferToChild(item.constraints);
       },
     );
-    createdItem.layout = layout;
+    createdItem.constraints = layout;
     targetParent.addChild(createdItem);
     return CreateObjectSession(
       handle: handle,
@@ -64,13 +64,13 @@ class CreateObjectSession extends CanvasSelectionSession {
   final CanvasViewportHandle handle;
   final CanvasItem targetParent;
   final CanvasItem createdItem;
-  final Layout initialLayout;
+  final ItemConstraints initialLayout;
 
   CreateObjectSession({
     required this.handle,
     required this.targetParent,
     required this.createdItem,
-  }) : initialLayout = createdItem.layout;
+  }) : initialLayout = createdItem.constraints;
 
   @override
   void onSelectionCancel() {
@@ -79,12 +79,17 @@ class CreateObjectSession extends CanvasSelectionSession {
 
   @override
   void onSelectionChange(CanvasSelectSession session, Offset totalDelta) {
-    LayoutSnapping snapping = handle.createLayoutSnapping(createdItem);
-    Layout newLayout = initialLayout.resizeBottomRight(totalDelta,
+    LayoutSnapping snapping = handle.createLayoutSnapping(
+      (details) {
+        return details != createdItem;
+      },
+    );
+    ItemConstraints newLayout = initialLayout.resizeBottomRight(
+        createdItem, totalDelta,
         snapping: snapping,
         symmetric: handle.symmetricResize,
         proportional: handle.proportionalResize);
-    createdItem.layout = newLayout;
+    createdItem.constraints = newLayout;
   }
 
   @override

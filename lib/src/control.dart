@@ -4,10 +4,25 @@ import 'package:canvas/src/helper_widget.dart';
 import 'package:canvas/src/util.dart';
 import 'package:flutter/material.dart';
 
+class HandleDecoration {
+  final Color? color;
+  final Color? borderColor;
+  final double? borderWidth;
+
+  const HandleDecoration({
+    this.color,
+    this.borderColor,
+    this.borderWidth,
+  });
+}
+
 class StandardTransformControlThemeData {
-  final Decoration decoration;
-  final Decoration scaleDecoration;
-  final Decoration selectionDecoration;
+  // final Decoration decoration;
+  // final Decoration scaleDecoration;
+  // final Decoration selectionDecoration;
+  final HandleDecoration decoration;
+  final HandleDecoration scaleDecoration;
+  final HandleDecoration selectionDecoration;
 
   final Size handleSize;
   final Size rotationHandleSize;
@@ -22,17 +37,31 @@ class StandardTransformControlThemeData {
 
   factory StandardTransformControlThemeData.defaultThemeData() {
     return StandardTransformControlThemeData(
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF198CE8), width: 1),
+      // decoration: BoxDecoration(
+      //   border: Border.all(color: const Color(0xFF198CE8), width: 1),
+      //   color: const Color(0xFFFFFFFF),
+      // ),
+      // scaleDecoration: BoxDecoration(
+      //   border: Border.all(color: const Color(0xFF198CE8), width: 1),
+      //   color: const Color(0xFF198CE8),
+      // ),
+      // selectionDecoration: BoxDecoration(
+      //   border: Border.all(color: const Color(0xFF198CE8), width: 1),
+      //   color: const Color(0x00000000),
+      // ),
+      decoration: HandleDecoration(
         color: const Color(0xFFFFFFFF),
+        borderColor: const Color(0xFF198CE8),
+        borderWidth: 1,
       ),
-      scaleDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF198CE8), width: 1),
+      scaleDecoration: HandleDecoration(
         color: const Color(0xFF198CE8),
+        borderColor: const Color(0xFF198CE8),
+        borderWidth: 1,
       ),
-      selectionDecoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF198CE8), width: 1),
-        color: const Color(0x00000000),
+      selectionDecoration: HandleDecoration(
+        borderColor: const Color(0xFF198CE8),
+        borderWidth: 1,
       ),
       handleSize: const Size(8, 8),
       rotationHandleSize: const Size(10, 10),
@@ -51,7 +80,7 @@ class StandardTransformControl extends TransformControl {
 
 class StandardTransformControlWidget extends StatefulWidget {
   final CanvasItem item;
-  final LayoutTransform? parentTransform;
+  final Matrix4? parentTransform;
   final bool canTransform;
 
   const StandardTransformControlWidget({
@@ -66,25 +95,53 @@ class StandardTransformControlWidget extends StatefulWidget {
       _StandardTransformControlWidgetState();
 }
 
+class DragSession {
+  final CanvasItem item;
+  final ItemConstraints startLayout;
+  final Offset startOffset;
+  final LayoutSnapping snapping;
+  final TransformSession transformSession;
+  final VoidCallback onUpdate;
+
+  Offset totalOffset = Offset.zero;
+
+  DragSession({
+    required this.item,
+    required this.startOffset,
+    required this.snapping,
+    required this.transformSession,
+    required this.onUpdate,
+  }) : startLayout = item.constraints;
+}
+
+class RotateDragSession extends DragSession {
+  final double startRotation;
+
+  double totalRotationDelta = 0;
+
+  RotateDragSession({
+    required super.item,
+    required super.startOffset,
+    required super.snapping,
+    required super.transformSession,
+    required super.onUpdate,
+    required this.startRotation,
+  });
+}
+
 class _StandardTransformControlWidgetState
     extends State<StandardTransformControlWidget> with CanvasElementDragger {
   late StandardTransformControlThemeData theme;
   late CanvasViewportData viewportData;
-  Offset? _totalOffset;
-  TransformSession? _session;
-  double? _startRotation;
-  VoidCallback? _onUpdate;
-  CanvasItem? _startNode;
-  Layout? _startLayout;
-  LayoutSnapping? _snapping;
+  // Offset? _totalOffset;
+  // TransformSession? _session;
+  // double? _startRotation;
+  // VoidCallback? _onUpdate;
+  // CanvasItem? _startNode;
+  // ItemConstraints? _startLayout;
+  // LayoutSnapping? _snapping;
 
-  double get globalRotation {
-    double rotation = widget.item.transform.rotation;
-    if (widget.parentTransform != null) {
-      rotation += widget.parentTransform!.rotation;
-    }
-    return rotation;
-  }
+  DragSession? _dragSession;
 
   CanvasItem _findSelected() {
     CanvasItem? current = widget.item;
@@ -100,9 +157,15 @@ class _StandardTransformControlWidgetState
 
   @override
   void handleDragAdjustment(Offset delta) {
-    if (_totalOffset != null && _onUpdate != null) {
-      _totalOffset = _totalOffset! - delta / viewportData.handle.transform.zoom;
-      _onUpdate!();
+    // if (_totalOffset != null && _onUpdate != null) {
+    //   _totalOffset =
+    //       (_totalOffset! - delta / viewportData.handle.transform.zoom);
+    //   _onUpdate!();
+    //   viewportData.handle.drag(delta);
+    // }
+    if (_dragSession != null) {
+      _dragSession!.totalOffset = _dragSession!.totalOffset - delta;
+      _dragSession!.onUpdate();
       viewportData.handle.drag(delta);
     }
   }
@@ -112,11 +175,10 @@ class _StandardTransformControlWidgetState
     super.didChangeDependencies();
     theme = StandardTransformControlThemeData.defaultThemeData();
     viewportData = CanvasViewportData.of(context);
-    if (_onUpdate != null) {
+    if (_dragSession != null) {
+      VoidCallback onUpdate = _dragSession!.onUpdate;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_onUpdate != null) {
-          _onUpdate!();
-        }
+        onUpdate();
       });
     }
   }
@@ -125,45 +187,102 @@ class _StandardTransformControlWidgetState
   Widget build(BuildContext context) {
     double viewportZoom = viewportData.handle.transform.zoom;
     return ListenableBuilder(
+      listenable: Listenable.merge([
+        widget.item.selectedNotifier,
+        widget.item.transformListenable,
+        viewportData.handle.focusedItemListenable,
+      ]),
+      builder: (context, child) {
+        return Stack(
+          children: [
+            Positioned.fill(
+                child: IgnorePointer(child: _buildBoundingBox(context))),
+            Positioned.fill(
+              child: ListenableBuilder(
+                listenable: Listenable.merge([
+                  widget.item.childrenListenable,
+                  viewportData.handle.focusedItemListenable,
+                ]),
+                builder: (context, child) {
+                  return GroupWidget(
+                    children: [
+                      for (final child in widget.item.children)
+                        StandardTransformControlWidget(
+                          item: child,
+                          canTransform: !(viewportData.handle.focusedItem
+                                  ?.isDescendant(child) ??
+                              false),
+                          parentTransform: widget.parentTransform == null
+                              ? widget.item.transform.toMatrix4()
+                              : widget.parentTransform! *
+                                  widget.item.transform.toMatrix4(),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            if (widget.item.selected &&
+                widget.item.opaque &&
+                widget.canTransform)
+              ..._buildHandleControls(context).map((e) {
+                return Positioned.fill(child: e);
+              }),
+          ],
+        );
+      },
+    );
+    return ListenableBuilder(
       listenable: Listenable.merge({
         widget.item.selectedNotifier,
-        widget.item.layoutListenable,
+        widget.item.transformListenable,
         viewportData.handle.focusedItemListenable,
       }),
       builder: (context, child) {
+        var controlOffset = widget.item.transform.offset * viewportZoom;
         return Transform.translate(
-          offset: widget.item.transform.offset * viewportZoom,
+          offset: controlOffset,
           child: Transform.rotate(
             angle: widget.item.transform.rotation,
             alignment: Alignment.topLeft,
-            child: GroupWidget(
-              children: [
-                if (widget.item is! RootCanvasItem) _buildSelection(context),
-                ListenableBuilder(
-                  listenable: widget.item.childrenListenable,
-                  builder: (context, child) {
-                    return GroupWidget(
-                      children: [
-                        for (final child in widget.item.children)
-                          StandardTransformControlWidget(
-                            item: child,
-                            // canTransform: !child.contentFocused,
-                            // TODO: Fix this
-                            canTransform: true,
-                            parentTransform: widget.parentTransform == null
-                                ? widget.item.transform
-                                : widget.parentTransform! *
-                                    widget.item.transform,
-                          ),
-                      ],
-                    );
-                  },
-                ),
-                if (widget.item.selected &&
-                    widget.item.opaque &&
-                    widget.canTransform)
-                  ..._buildControls(context),
-              ],
+            child: Transform.scale(
+              scaleX: widget.item.transform.scale.dx,
+              scaleY: widget.item.transform.scale.dy,
+              alignment: Alignment.topLeft,
+              child: GroupWidget(
+                children: [
+                  if (widget.item is! RootCanvasItem) _buildSelection(context),
+                  ListenableBuilder(
+                    listenable: Listenable.merge({
+                      widget.item.childrenListenable,
+                      viewportData.handle.focusedItemListenable,
+                    }),
+                    builder: (context, child) {
+                      return GroupWidget(
+                        children: [
+                          for (final child in widget.item.children)
+                            StandardTransformControlWidget(
+                              item: child,
+                              // canTransform: !child.contentFocused,
+                              // TODO: Fix this
+                              canTransform: !(viewportData.handle.focusedItem
+                                      ?.isDescendant(child) ??
+                                  false),
+                              parentTransform: widget.parentTransform == null
+                                  ? widget.item.transform
+                                  : widget.parentTransform! *
+                                      widget.item.transform,
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                  if (widget.item.selected &&
+                      widget.item.opaque &&
+                      widget.canTransform)
+                    ..._buildControls(context),
+                ],
+              ),
             ),
           ),
         );
@@ -173,70 +292,72 @@ class _StandardTransformControlWidgetState
 
   Widget _wrapWithPanHandler({
     required Widget child,
-    required void Function(TransformNode node, Offset delta, {LayoutSnapping? snapping}) visitor,
+    required void Function(TransformNode node, Offset delta,
+            {LayoutSnapping? snapping})
+        visitor,
     required Offset? Function(LayoutSnapping snapping) snapping,
     String? debugName,
   }) {
     double viewportZoom = viewportData.handle.transform.zoom;
     return PanGesture(
+      behavior: HitTestBehavior.deferToChild,
       onPanStart: (details) {
-        _totalOffset = Offset.zero;
-        _session = viewportData.handle.beginTransform();
-        _startNode = _findSelected();
-        _startLayout = _startNode!.layout;
-        _snapping = LayoutSnapping(viewportData.handle.snappingConfiguration,
-            _startNode!, _startNode!.parentTransform);
-        viewportData.handle.fillInSnappingPoints(_snapping!);
+        _dragSession = DragSession(
+          item: _findSelected(),
+          startOffset: details.localPosition,
+          snapping: viewportData.handle.createLayoutSnapping(
+            (details) {
+              return !details.selected;
+            },
+          ),
+          transformSession: viewportData.handle.beginTransform(),
+          onUpdate: () {
+            var dragSession = _dragSession!;
+            TransformNode node = TransformNode(
+              dragSession.item,
+              // _startNode!.transform,
+              dragSession.item.transform,
+              null,
+              // _startLayout!,
+              dragSession.startLayout,
+            );
+            var deltaOffset = dragSession.totalOffset;
+            visitor(
+              node,
+              handleDeltaTransform(deltaOffset, dragSession.item),
+              snapping: dragSession.snapping,
+            );
+            node.apply(node.constraint);
+            dragSession.transformSession.visit(
+              (node) {
+                if (node.item == dragSession.item) {
+                  return;
+                }
+                visitor(node, snapping(dragSession.snapping) ?? deltaOffset);
+                node.apply(node.constraint);
+              },
+            );
+            dragSession.transformSession.apply();
+          },
+        );
         viewportData.handle.startDraggingSession(this);
       },
       onPanUpdate: (details) {
         Offset delta = details.delta;
-        _totalOffset = _totalOffset! + delta / viewportZoom;
-        void update() {
-          _session!.reset();
-          TransformNode node = TransformNode(
-            _startNode!,
-            _startNode!.transform,
-            null,
-            _startLayout!,
-          );
-          visitor(
-            node,
-            _totalOffset!,
-            snapping: _snapping,
-          );
-          node.apply(node.layout);
-          _session!.visit(
-            (node) {
-              if (node.item == _startNode) {
-                return;
-              }
-              visitor(node, snapping(_snapping!) ?? _totalOffset!);
-              node.apply(node.layout);
-            },
-          );
-        }
-
-        _onUpdate = update;
-        update();
+        var dragSession = _dragSession!;
+        dragSession.totalOffset =
+            dragSession.totalOffset + delta / viewportZoom;
+        dragSession.onUpdate();
       },
       onPanEnd: (_) {
-        _totalOffset = null;
-        _onUpdate = null;
-        _session = null;
-        _startNode = null;
-        _startLayout = null;
+        _dragSession = null;
         viewportData.handle.endDraggingSession(this);
       },
       onPanCancel: () {
-        if (_session != null) {
-          _session!.reset();
+        if (_dragSession != null) {
+          _dragSession!.transformSession.reset();
+          _dragSession = null;
         }
-        _totalOffset = null;
-        _session = null;
-        _onUpdate = null;
-        _startNode = null;
-        _startLayout = null;
         viewportData.handle.endDraggingSession(this);
       },
       child: child,
@@ -248,72 +369,84 @@ class _StandardTransformControlWidgetState
     required Alignment alignment,
   }) {
     double viewportZoom = viewportData.handle.transform.zoom;
-    Size scaledSize = widget.item.transform.scaledSize * viewportZoom;
+    Size scaledSize = widget.item.transform.size * viewportZoom;
     Offset origin = !viewportData.anchoredRotate
         ? Offset(scaledSize.width / 2, scaledSize.height / 2)
         : (alignment * -1).alongSize(scaledSize);
     return PanGesture(
+      behavior: HitTestBehavior.deferToChild,
       onPanStart: (details) {
         var localPosition =
             alignment.alongSize(scaledSize) + details.localPosition;
         var diff = origin - localPosition;
         var angle = diff.direction;
-        _startRotation = angle;
-        _session = viewportData.handle.beginTransform();
-        _startNode = _findSelected();
-        _startLayout = _startNode!.layout;
-        _snapping = LayoutSnapping(
-            viewportData.snapping, _startNode!, _startNode!.parentTransform);
-        viewportData.handle.fillInSnappingPoints(_snapping!);
-      },
-      onPanUpdate: (details) {
-        void update() {
-          var localPosition =
-              alignment.alongSize(scaledSize) + details.localPosition;
-          var diff = origin - localPosition;
-          var angle = diff.direction;
-          var delta = angle - _startRotation!;
-          _startNode!.layout = _startLayout!.rotate(
-            delta,
-            alignment: !viewportData.anchoredRotate
-                ? Alignment.center
-                : alignment * -1,
-            snapping: _snapping,
-          );
-          _session!.visit(
-            (node) {
-              if (_startNode!.isDescendantOf(node.item)) {
-                return;
-              }
-              node.newLayout = node.layout.rotate(
-                  _snapping?.newRotationDelta ?? delta,
+        _dragSession = RotateDragSession(
+          item: _findSelected(),
+          startOffset: details.localPosition,
+          snapping: viewportData.handle.createLayoutSnapping(
+            (details) {
+              return !details.selected;
+            },
+          ),
+          transformSession: viewportData.handle.beginTransform(),
+          onUpdate: () {
+            var dragSession = _dragSession as RotateDragSession;
+            TransformNode node = TransformNode(
+              dragSession.item,
+              dragSession.item.transform,
+              null,
+              dragSession.startLayout,
+            );
+            var deltaAngle = dragSession.totalRotationDelta;
+            node.newConstraint = node.constraint.rotate(
+              node.item,
+              deltaAngle,
+              alignment: !viewportData.anchoredRotate
+                  ? Alignment.center
+                  : alignment * -1,
+              snapping: dragSession.snapping,
+            );
+            node.apply(node.constraint);
+            dragSession.transformSession.visit(
+              (node) {
+                if (node.item == dragSession.item) {
+                  return;
+                }
+                node.newConstraint = node.constraint.rotate(
+                  node.item,
+                  deltaAngle,
                   alignment: !viewportData.anchoredRotate
                       ? Alignment.center
-                      : alignment * -1);
-            },
-          );
-          _session!.apply();
-        }
-
-        _onUpdate = update;
-        update();
+                      : alignment * -1,
+                  snapping: dragSession.snapping,
+                );
+                node.apply(node.constraint);
+              },
+            );
+            dragSession.transformSession.apply();
+          },
+          startRotation: angle,
+        );
+      },
+      onPanUpdate: (details) {
+        var dragSession = _dragSession as RotateDragSession;
+        var localPosition =
+            alignment.alongSize(scaledSize) + details.localPosition;
+        var diff = origin - localPosition;
+        var angle = diff.direction;
+        var delta = angle - dragSession.startRotation;
+        dragSession.totalRotationDelta = delta;
+        dragSession.onUpdate();
       },
       onPanEnd: (details) {
-        _startRotation = null;
-        _session = null;
-        _startLayout = null;
-        _startNode = null;
-        _onUpdate = null;
+        _dragSession = null;
       },
       onPanCancel: () {
-        if (_session != null) {
-          _session!.reset();
+        var dragSession = _dragSession as RotateDragSession?;
+        if (dragSession != null) {
+          dragSession.transformSession.reset();
+          _dragSession = null;
         }
-        _onUpdate = null;
-        _startRotation = null;
-        _startLayout = null;
-        _startNode = null;
-        _session = null;
       },
       child: child,
     );
@@ -331,14 +464,43 @@ class _StandardTransformControlWidgetState
   }
 
   List<Widget> _buildControls(BuildContext context) {
+    var parentTransform = widget.parentTransform;
+    var controlHandleSize = theme.handleSize;
+    var controlRotationSize = theme.rotationHandleSize;
+    // if (parentTransform != null) {
+    //   controlHandleSize = Size(
+    //     controlHandleSize.width / parentTransform.scale.dx,
+    //     controlHandleSize.height / parentTransform.scale.dy,
+    //   );
+    //   controlRotationSize = Size(
+    //     controlRotationSize.width / parentTransform.scale.dx,
+    //     controlRotationSize.height / parentTransform.scale.dy,
+    //   );
+    // }
+    // divide by item scale
+    controlRotationSize = Size(
+      controlRotationSize.width / widget.item.transform.scale.dx,
+      controlRotationSize.height / widget.item.transform.scale.dy,
+    );
+    controlHandleSize = Size(
+      controlHandleSize.width / widget.item.transform.scale.dx,
+      controlHandleSize.height / widget.item.transform.scale.dy,
+    );
+    double globalRotation = widget.item.transform.rotation;
+    // if (parentTransform != null) {
+    //   globalRotation += parentTransform.rotation;
+    // }
     double viewportZoom = viewportData.handle.transform.zoom;
+
     Offset halfSize =
-        Offset(theme.handleSize.width / 2, theme.handleSize.height / 2);
-    Offset handleSize = Offset(theme.handleSize.width, theme.handleSize.height);
+        Offset(controlHandleSize.width / 2, controlHandleSize.height / 2);
+    Offset handleSize =
+        Offset(controlHandleSize.width, controlHandleSize.height);
+
     Offset sizeRotation =
-        Offset(theme.rotationHandleSize.width, theme.rotationHandleSize.height);
+        Offset(controlRotationSize.width, controlRotationSize.height);
     Offset halfRotationSize = sizeRotation / 2;
-    Size size = widget.item.transform.scaledSize * viewportZoom;
+    Size size = widget.item.transform.size * viewportZoom;
     Rect bounds = Rect.fromLTWH(0, 0, size.width, size.height);
     Rect rotationBounds = _inflateRect(bounds, halfSize);
     Offset topLeft = bounds.topLeft - halfSize;
@@ -378,8 +540,8 @@ class _StandardTransformControlWidgetState
           child: _wrapWithRotationHandler(
             alignment: Alignment.topLeft,
             child: SizedBox(
-              width: theme.rotationHandleSize.width,
-              height: theme.rotationHandleSize.height,
+              width: controlRotationSize.width,
+              height: controlRotationSize.height,
             ),
           ),
         ),
@@ -393,8 +555,8 @@ class _StandardTransformControlWidgetState
           child: _wrapWithRotationHandler(
             alignment: Alignment.topRight,
             child: SizedBox(
-              width: theme.rotationHandleSize.width,
-              height: theme.rotationHandleSize.height,
+              width: controlRotationSize.width,
+              height: controlRotationSize.height,
             ),
           ),
         ),
@@ -408,8 +570,8 @@ class _StandardTransformControlWidgetState
           child: _wrapWithRotationHandler(
             alignment: Alignment.bottomRight,
             child: SizedBox(
-              width: theme.rotationHandleSize.width,
-              height: theme.rotationHandleSize.height,
+              width: controlRotationSize.width,
+              height: controlRotationSize.height,
             ),
           ),
         ),
@@ -423,8 +585,8 @@ class _StandardTransformControlWidgetState
           child: _wrapWithRotationHandler(
             alignment: Alignment.bottomLeft,
             child: SizedBox(
-              width: theme.rotationHandleSize.width,
-              height: theme.rotationHandleSize.height,
+              width: controlRotationSize.width,
+              height: controlRotationSize.height,
             ),
           ),
         ),
@@ -438,14 +600,16 @@ class _StandardTransformControlWidgetState
             debugName: 'top',
             visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
-                node.newLayout = node.layout.rescaleTop(
+                node.newConstraint = node.constraint.rescaleTop(
+                  node.item,
                   delta,
                   symmetric: viewportData.symmetricResize,
                   snapping: snapping,
                 );
                 return;
               }
-              node.newLayout = node.layout.resizeTop(
+              node.newConstraint = node.constraint.resizeTop(
+                node.item,
                 delta,
                 symmetric: viewportData.symmetricResize,
                 snapping: snapping,
@@ -455,7 +619,7 @@ class _StandardTransformControlWidgetState
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
               width: horizontalLength,
-              height: theme.handleSize.height,
+              height: controlHandleSize.height,
             ),
           ),
         ),
@@ -470,14 +634,16 @@ class _StandardTransformControlWidgetState
             debugName: 'right',
             visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
-                node.newLayout = node.layout.rescaleRight(
+                node.newConstraint = node.constraint.rescaleRight(
+                  node.item,
                   delta,
                   symmetric: viewportData.symmetricResize,
                   snapping: snapping,
                 );
                 return;
               }
-              node.newLayout = node.layout.resizeRight(
+              node.newConstraint = node.constraint.resizeRight(
+                node.item,
                 delta,
                 symmetric: viewportData.symmetricResize,
                 snapping: snapping,
@@ -486,7 +652,7 @@ class _StandardTransformControlWidgetState
             snapping: (snapping) =>
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
-              width: theme.handleSize.width,
+              width: controlHandleSize.width,
               height: verticalLength,
             ),
           ),
@@ -502,14 +668,16 @@ class _StandardTransformControlWidgetState
             debugName: 'bottom',
             visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
-                node.newLayout = node.layout.rescaleBottom(
+                node.newConstraint = node.constraint.rescaleBottom(
+                  node.item,
                   delta,
                   symmetric: viewportData.symmetricResize,
                   snapping: snapping,
                 );
                 return;
               }
-              node.newLayout = node.layout.resizeBottom(
+              node.newConstraint = node.constraint.resizeBottom(
+                node.item,
                 delta,
                 symmetric: viewportData.symmetricResize,
                 snapping: snapping,
@@ -519,7 +687,7 @@ class _StandardTransformControlWidgetState
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
               width: horizontalLength,
-              height: theme.handleSize.height,
+              height: controlHandleSize.height,
             ),
           ),
         ),
@@ -534,14 +702,16 @@ class _StandardTransformControlWidgetState
             debugName: 'left',
             visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
-                node.newLayout = node.layout.rescaleLeft(
+                node.newConstraint = node.constraint.rescaleLeft(
+                  node.item,
                   delta,
                   symmetric: viewportData.symmetricResize,
                   snapping: snapping,
                 );
                 return;
               }
-              node.newLayout = node.layout.resizeLeft(
+              node.newConstraint = node.constraint.resizeLeft(
+                node.item,
                 delta,
                 symmetric: viewportData.symmetricResize,
                 snapping: snapping,
@@ -550,7 +720,7 @@ class _StandardTransformControlWidgetState
             snapping: (snapping) =>
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: SizedBox(
-              width: theme.handleSize.width,
+              width: controlHandleSize.width,
               height: verticalLength,
             ),
           ),
@@ -566,7 +736,8 @@ class _StandardTransformControlWidgetState
             debugName: 'top left',
             visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
-                node.newLayout = node.layout.rescaleTopLeft(
+                node.newConstraint = node.constraint.rescaleTopLeft(
+                  node.item,
                   delta,
                   proportional: viewportData.proportionalResize,
                   symmetric: viewportData.symmetricResize,
@@ -574,7 +745,8 @@ class _StandardTransformControlWidgetState
                 );
                 return;
               }
-              node.newLayout = node.layout.resizeTopLeft(
+              node.newConstraint = node.constraint.resizeTopLeft(
+                node.item,
                 delta,
                 proportional: viewportData.proportionalResize,
                 symmetric: viewportData.symmetricResize,
@@ -584,10 +756,10 @@ class _StandardTransformControlWidgetState
             snapping: (snapping) =>
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: Container(
-              width: theme.handleSize.width,
-              height: theme.handleSize.height,
-              decoration:
-                  !_isScaling ? theme.decoration : theme.scaleDecoration,
+              width: controlHandleSize.width,
+              height: controlHandleSize.height,
+              // decoration:
+              //     !_isScaling ? theme.decoration : theme.scaleDecoration,
             ),
           ),
         ),
@@ -602,7 +774,8 @@ class _StandardTransformControlWidgetState
             debugName: 'top right',
             visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
-                node.newLayout = node.layout.rescaleTopRight(
+                node.newConstraint = node.constraint.rescaleTopRight(
+                  node.item,
                   delta,
                   proportional: viewportData.proportionalResize,
                   symmetric: viewportData.symmetricResize,
@@ -610,7 +783,8 @@ class _StandardTransformControlWidgetState
                 );
                 return;
               }
-              node.newLayout = node.layout.resizeTopRight(
+              node.newConstraint = node.constraint.resizeTopRight(
+                node.item,
                 delta,
                 proportional: viewportData.proportionalResize,
                 symmetric: viewportData.symmetricResize,
@@ -620,10 +794,10 @@ class _StandardTransformControlWidgetState
             snapping: (snapping) =>
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: Container(
-              width: theme.handleSize.width,
-              height: theme.handleSize.height,
-              decoration:
-                  !_isScaling ? theme.decoration : theme.scaleDecoration,
+              width: controlHandleSize.width,
+              height: controlHandleSize.height,
+              // decoration:
+              //     !_isScaling ? theme.decoration : theme.scaleDecoration,
             ),
           ),
         ),
@@ -638,7 +812,8 @@ class _StandardTransformControlWidgetState
             debugName: 'bottom left',
             visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
-                node.newLayout = node.layout.rescaleBottomLeft(
+                node.newConstraint = node.constraint.rescaleBottomLeft(
+                  node.item,
                   delta,
                   proportional: viewportData.proportionalResize,
                   symmetric: viewportData.symmetricResize,
@@ -646,7 +821,8 @@ class _StandardTransformControlWidgetState
                 );
                 return;
               }
-              node.newLayout = node.layout.resizeBottomLeft(
+              node.newConstraint = node.constraint.resizeBottomLeft(
+                node.item,
                 delta,
                 proportional: viewportData.proportionalResize,
                 symmetric: viewportData.symmetricResize,
@@ -656,10 +832,10 @@ class _StandardTransformControlWidgetState
             snapping: (snapping) =>
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: Container(
-              width: theme.handleSize.width,
-              height: theme.handleSize.height,
-              decoration:
-                  !_isScaling ? theme.decoration : theme.scaleDecoration,
+              width: controlHandleSize.width,
+              height: controlHandleSize.height,
+              // decoration:
+              //     !_isScaling ? theme.decoration : theme.scaleDecoration,
             ),
           ),
         ),
@@ -674,7 +850,8 @@ class _StandardTransformControlWidgetState
             debugName: 'bottom right',
             visitor: (node, delta, {LayoutSnapping? snapping}) {
               if (_isScaling) {
-                node.newLayout = node.layout.rescaleBottomRight(
+                node.newConstraint = node.constraint.rescaleBottomRight(
+                  node.item,
                   delta,
                   proportional: viewportData.proportionalResize,
                   symmetric: viewportData.symmetricResize,
@@ -682,7 +859,8 @@ class _StandardTransformControlWidgetState
                 );
                 return;
               }
-              node.newLayout = node.layout.resizeBottomRight(
+              node.newConstraint = node.constraint.resizeBottomRight(
+                node.item,
                 delta,
                 proportional: viewportData.proportionalResize,
                 symmetric: viewportData.symmetricResize,
@@ -692,10 +870,10 @@ class _StandardTransformControlWidgetState
             snapping: (snapping) =>
                 _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
             child: Container(
-              width: theme.handleSize.width,
-              height: theme.handleSize.height,
-              decoration:
-                  !_isScaling ? theme.decoration : theme.scaleDecoration,
+              width: controlHandleSize.width,
+              height: controlHandleSize.height,
+              // decoration:
+              //     !_isScaling ? theme.decoration : theme.scaleDecoration,
             ),
           ),
         ),
@@ -704,8 +882,7 @@ class _StandardTransformControlWidgetState
   }
 
   Widget _buildSelection(BuildContext context) {
-    Size size =
-        widget.item.transform.scaledSize * viewportData.handle.transform.zoom;
+    Size size = widget.item.transform.size * viewportData.handle.transform.zoom;
     Offset flipOffset = Offset(
       size.width < 0 ? size.width : 0,
       size.height < 0 ? size.height : 0,
@@ -718,13 +895,483 @@ class _StandardTransformControlWidgetState
           size: size,
           child: Builder(builder: (context) {
             return Container(
-              decoration: viewportData.handle.hoveredItem == widget.item ||
-                      widget.item.selected
-                  ? theme.selectionDecoration
-                  : null,
-            );
+                // decoration: viewportData.handle.hoveredItem == widget.item ||
+                //         widget.item.selected
+                //     ? theme.selectionDecoration
+                //     : null,
+                );
           }),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBoundingBox(BuildContext context) {
+    return _buildHandle(
+      size: widget.item.transform.size,
+      shouldScaleX: true,
+      shouldScaleY: true,
+      alignment: Alignment.topLeft,
+      selfAlignment: Alignment.topLeft,
+      borderColor: theme.selectionDecoration.borderColor,
+      color: theme.selectionDecoration.color,
+      strokeWidth: theme.selectionDecoration.borderWidth,
+    );
+  }
+
+  List<Widget> _buildHandleControls(BuildContext context) {
+    double widthDiff = theme.handleSize.width - theme.rotationHandleSize.width;
+    double heightDiff =
+        theme.handleSize.height - theme.rotationHandleSize.height;
+    double horizontalMargin = theme.handleSize.width - widthDiff;
+    double verticalMargin = theme.handleSize.height - heightDiff;
+    bool flipX = widget.item.transform.size.width < 0;
+    bool flipY = widget.item.transform.size.height < 0;
+    var decoration = viewportData.resizeMode == ResizeMode.resize
+        ? theme.decoration
+        : theme.scaleDecoration;
+    return [
+      // top resize
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        opaque: false,
+        cursor: ResizeCursor.top.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithPanHandler(
+          debugName: 'top',
+          visitor: (node, delta, {LayoutSnapping? snapping}) {
+            if (_isScaling) {
+              node.newConstraint = node.constraint.rescaleTop(
+                node.item,
+                delta,
+                symmetric: viewportData.symmetricResize,
+                snapping: snapping,
+              );
+              return;
+            }
+            node.newConstraint = node.constraint.resizeTop(
+              node.item,
+              delta,
+              symmetric: viewportData.symmetricResize,
+              snapping: snapping,
+            );
+          },
+          snapping: (snapping) =>
+              _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+          child: _buildHandle(
+            size:
+                Size(widget.item.transform.size.width, theme.handleSize.height),
+            shouldScaleX: true,
+            alignment: Alignment.topCenter,
+            selfAlignment: Alignment.center,
+          ),
+        ),
+      ),
+      // right resize
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        opaque: false,
+        cursor: ResizeCursor.right.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithPanHandler(
+          debugName: 'right',
+          visitor: (node, delta, {LayoutSnapping? snapping}) {
+            if (_isScaling) {
+              node.newConstraint = node.constraint.rescaleRight(
+                node.item,
+                delta,
+                symmetric: viewportData.symmetricResize,
+                snapping: snapping,
+              );
+              return;
+            }
+            node.newConstraint = node.constraint.resizeRight(
+              node.item,
+              delta,
+              symmetric: viewportData.symmetricResize,
+              snapping: snapping,
+            );
+          },
+          snapping: (snapping) =>
+              _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+          child: _buildHandle(
+            size:
+                Size(theme.handleSize.width, widget.item.transform.size.height),
+            shouldScaleY: true,
+            alignment: Alignment.centerRight,
+            selfAlignment: Alignment.center,
+          ),
+        ),
+      ),
+      // bottom resize
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        opaque: false,
+        cursor: ResizeCursor.bottom.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithPanHandler(
+          debugName: 'bottom',
+          visitor: (node, delta, {LayoutSnapping? snapping}) {
+            if (_isScaling) {
+              node.newConstraint = node.constraint.rescaleBottom(
+                node.item,
+                delta,
+                symmetric: viewportData.symmetricResize,
+                snapping: snapping,
+              );
+              return;
+            }
+            node.newConstraint = node.constraint.resizeBottom(
+              node.item,
+              delta,
+              symmetric: viewportData.symmetricResize,
+              snapping: snapping,
+            );
+          },
+          snapping: (snapping) =>
+              _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+          child: _buildHandle(
+            size:
+                Size(widget.item.transform.size.width, theme.handleSize.height),
+            shouldScaleX: true,
+            alignment: Alignment.bottomCenter,
+            selfAlignment: Alignment.center,
+          ),
+        ),
+      ),
+      // left resize
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        opaque: false,
+        cursor: ResizeCursor.left.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithPanHandler(
+          debugName: 'left',
+          visitor: (node, delta, {LayoutSnapping? snapping}) {
+            if (_isScaling) {
+              node.newConstraint = node.constraint.rescaleLeft(
+                node.item,
+                delta,
+                symmetric: viewportData.symmetricResize,
+                snapping: snapping,
+              );
+              return;
+            }
+            node.newConstraint = node.constraint.resizeLeft(
+              node.item,
+              delta,
+              symmetric: viewportData.symmetricResize,
+              snapping: snapping,
+            );
+          },
+          snapping: (snapping) =>
+              _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+          child: _buildHandle(
+            size:
+                Size(theme.handleSize.width, widget.item.transform.size.height),
+            shouldScaleY: true,
+            alignment: Alignment.centerLeft,
+            selfAlignment: Alignment.center,
+          ),
+        ),
+      ),
+      // top left resize
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        opaque: false,
+        cursor: ResizeCursor.topLeft.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithPanHandler(
+          debugName: 'top left',
+          visitor: (node, delta, {LayoutSnapping? snapping}) {
+            if (_isScaling) {
+              node.newConstraint = node.constraint.rescaleTopLeft(
+                node.item,
+                delta,
+                proportional: viewportData.proportionalResize,
+                symmetric: viewportData.symmetricResize,
+                snapping: snapping,
+              );
+              return;
+            }
+            node.newConstraint = node.constraint.resizeTopLeft(
+              node.item,
+              delta,
+              proportional: viewportData.proportionalResize,
+              symmetric: viewportData.symmetricResize,
+              snapping: snapping,
+            );
+          },
+          snapping: (snapping) =>
+              _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+          child: _buildHandle(
+            size: theme.handleSize,
+            alignment: Alignment.topLeft,
+            selfAlignment: Alignment.center,
+            borderColor: decoration.borderColor,
+            color: decoration.color,
+            strokeWidth: decoration.borderWidth,
+          ),
+        ),
+      ),
+      // top right resize
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        cursor: ResizeCursor.topRight.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithPanHandler(
+          debugName: 'top right',
+          visitor: (node, delta, {LayoutSnapping? snapping}) {
+            if (_isScaling) {
+              node.newConstraint = node.constraint.rescaleTopRight(
+                node.item,
+                delta,
+                proportional: viewportData.proportionalResize,
+                symmetric: viewportData.symmetricResize,
+                snapping: snapping,
+              );
+              return;
+            }
+            node.newConstraint = node.constraint.resizeTopRight(
+              node.item,
+              delta,
+              proportional: viewportData.proportionalResize,
+              symmetric: viewportData.symmetricResize,
+              snapping: snapping,
+            );
+          },
+          snapping: (snapping) =>
+              _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+          child: _buildHandle(
+            size: theme.handleSize,
+            alignment: Alignment.topRight,
+            selfAlignment: Alignment.center,
+            borderColor: decoration.borderColor,
+            color: decoration.color,
+            strokeWidth: decoration.borderWidth,
+          ),
+        ),
+      ),
+      // bottom right resize
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        cursor: ResizeCursor.bottomRight.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithPanHandler(
+          debugName: 'bottom right',
+          visitor: (node, delta, {LayoutSnapping? snapping}) {
+            if (_isScaling) {
+              node.newConstraint = node.constraint.rescaleBottomRight(
+                node.item,
+                delta,
+                proportional: viewportData.proportionalResize,
+                symmetric: viewportData.symmetricResize,
+                snapping: snapping,
+              );
+              return;
+            }
+            node.newConstraint = node.constraint.resizeBottomRight(
+              node.item,
+              delta,
+              proportional: viewportData.proportionalResize,
+              symmetric: viewportData.symmetricResize,
+              snapping: snapping,
+            );
+          },
+          snapping: (snapping) =>
+              _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+          child: _buildHandle(
+            size: theme.handleSize,
+            alignment: Alignment.bottomRight,
+            selfAlignment: Alignment.center,
+            borderColor: decoration.borderColor,
+            color: decoration.color,
+            strokeWidth: decoration.borderWidth,
+          ),
+        ),
+      ),
+      // bottom left resize
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        cursor: ResizeCursor.bottomLeft.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithPanHandler(
+          debugName: 'bottom left',
+          visitor: (node, delta, {LayoutSnapping? snapping}) {
+            if (_isScaling) {
+              node.newConstraint = node.constraint.rescaleBottomLeft(
+                node.item,
+                delta,
+                proportional: viewportData.proportionalResize,
+                symmetric: viewportData.symmetricResize,
+                snapping: snapping,
+              );
+              return;
+            }
+            node.newConstraint = node.constraint.resizeBottomLeft(
+              node.item,
+              delta,
+              proportional: viewportData.proportionalResize,
+              symmetric: viewportData.symmetricResize,
+              snapping: snapping,
+            );
+          },
+          snapping: (snapping) =>
+              _isScaling ? snapping.newScaleDelta : snapping.newSizeDelta,
+          child: _buildHandle(
+            size: theme.handleSize,
+            alignment: Alignment.bottomLeft,
+            selfAlignment: Alignment.center,
+            borderColor: decoration.borderColor,
+            color: decoration.color,
+            strokeWidth: decoration.borderWidth,
+          ),
+        ),
+      ),
+      // top left rotation
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        cursor: ResizeCursor.bottomLeft.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithRotationHandler(
+          alignment: Alignment.topLeft,
+          child: _buildHandle(
+            size: theme.rotationHandleSize,
+            margin: EdgeInsets.symmetric(
+              horizontal: horizontalMargin,
+              vertical: verticalMargin,
+            ),
+            alignment: Alignment.topLeft,
+            selfAlignment: Alignment.center,
+          ),
+        ),
+      ),
+      // top right rotation
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        cursor: ResizeCursor.bottomRight.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithRotationHandler(
+          alignment: Alignment.topRight,
+          child: _buildHandle(
+            size: theme.rotationHandleSize,
+            margin: EdgeInsets.symmetric(
+              horizontal: -horizontalMargin,
+              vertical: verticalMargin,
+            ),
+            alignment: Alignment.topRight,
+            selfAlignment: Alignment.center,
+          ),
+        ),
+      ),
+      // bottom right rotation
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        cursor: ResizeCursor.topRight.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _wrapWithRotationHandler(
+          alignment: Alignment.bottomRight,
+          child: _buildHandle(
+            size: theme.rotationHandleSize,
+            margin: EdgeInsets.symmetric(
+              horizontal: -horizontalMargin,
+              vertical: -verticalMargin,
+            ),
+            alignment: Alignment.bottomRight,
+            selfAlignment: Alignment.center,
+          ),
+        ),
+      ),
+      // bottom left rotation
+      MouseRegion(
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        cursor: ResizeCursor.topLeft.getMouseCursor(
+          widget.item.transform.rotation,
+          flipX,
+          flipY,
+        ),
+        child: _buildHandle(
+          size: theme.rotationHandleSize,
+          margin: EdgeInsets.symmetric(
+            horizontal: horizontalMargin,
+            vertical: -verticalMargin,
+          ),
+          alignment: Alignment.bottomLeft,
+          selfAlignment: Alignment.center,
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildHandle({
+    required Size size,
+    required Alignment alignment,
+    required Alignment selfAlignment,
+    bool shouldScaleX = false,
+    bool shouldScaleY = false,
+    Color? borderColor,
+    double? strokeWidth,
+    Color? color,
+    EdgeInsets margin = EdgeInsets.zero,
+  }) {
+    double viewportZoom = viewportData.handle.transform.zoom;
+    LayoutTransform canvasTransform = LayoutTransform(
+      offset: viewportData.handle.canvasOffset,
+      scale: Offset(viewportZoom, viewportZoom),
+    );
+    return CustomPaint(
+      painter: BoundingBoxPainter(
+        shouldScaleX: shouldScaleX,
+        shouldScaleY: shouldScaleY,
+        // globalTransform: canvasTransform *
+        //     (widget.parentTransform != null
+        //         ? widget.parentTransform! * widget.item.transform
+        //         : widget.item.transform),
+        globalTransform: canvasTransform.toMatrix4() *
+            (widget.parentTransform != null
+                ? widget.parentTransform! * widget.item.transform.toMatrix4()
+                : widget.item.transform.toMatrix4()),
+        selfAlignment: selfAlignment,
+        itemSize: widget.item.transform.size,
+        size: size,
+        alignment: alignment,
+        borderColor: borderColor,
+        strokeWidth: strokeWidth,
+        color: color,
+        margin: margin,
       ),
     );
   }

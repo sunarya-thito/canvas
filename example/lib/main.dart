@@ -36,128 +36,234 @@ class _CanvasExampleState extends State<CanvasExample>
     super.initState();
     _controller = CanvasController(
       children: [
+        BoxCanvasItem(
+            debugLabel: 'Red',
+            decoration: GestureDetector(
+              onTap: () {
+                print('Red tapped');
+              },
+              child: Container(
+                color: Colors.red,
+                child: Center(
+                  child: Text('Red'),
+                ),
+              ),
+            ),
+            constraints: FixedConstraints(
+              offset: Offset.zero,
+              size: Size(100, 100),
+              scale: Offset(1, 1),
+              rotation: _degToRad(0),
+              shear: Offset(0.5, 0.5),
+            ),
+            children: [
+              BoxCanvasItem(
+                debugLabel: 'Green',
+                decoration: GestureDetector(
+                  onTap: () {
+                    print('Green tapped');
+                  },
+                  child: Container(
+                    color: Colors.green,
+                    child: Center(
+                      child: Text('Green'),
+                    ),
+                  ),
+                ),
+                children: [
+                  BoxCanvasItem(
+                    debugLabel: 'Orange',
+                    decoration: GestureDetector(
+                      onTap: () {
+                        print('Orange tapped');
+                      },
+                      child: Container(
+                        color: Colors.orange,
+                        child: Center(
+                          child: Text('Orange'),
+                        ),
+                      ),
+                    ),
+                    constraints: FixedConstraints(
+                      offset: Offset(50, 25),
+                      size: Size(50, 50),
+                      rotation: _degToRad(25),
+                    ),
+                  ),
+                ],
+                constraints: FixedConstraints(
+                  offset: Offset(100, 100),
+                  size: Size(50, 50),
+                  scale: Offset(-1, 2),
+                  rotation: _degToRad(25),
+                ),
+              ),
+            ]),
+        BoxCanvasItem(
+          debugLabel: 'Purple',
+          decoration: GestureDetector(
+            onTap: () {
+              print('Purple tapped');
+            },
+            child: Container(
+              color: Colors.purple,
+              child: Center(
+                child: Text('Purple'),
+              ),
+            ),
+          ),
+          constraints: FixedConstraints(
+            offset: Offset(200, 0),
+            size: Size(100, 100),
+            scale: Offset(1, 1),
+            rotation: _degToRad(0),
+            shear: Offset(0, 0.5),
+          ),
+          children: [
+            BoxCanvasItem(
+              debugLabel: 'Yellow',
+              decoration: GestureDetector(
+                onTap: () {
+                  print('Yellow tapped');
+                },
+                child: Container(
+                  color: Colors.yellow,
+                  child: Center(
+                    child: Text('Yellow'),
+                  ),
+                ),
+              ),
+              children: [
+                BoxCanvasItem(
+                  debugLabel: 'Blue',
+                  decoration: GestureDetector(
+                    onTap: () {
+                      print('Blue tapped');
+                    },
+                    child: Container(
+                      color: Colors.blue,
+                      child: Center(
+                        child: Text('Blue'),
+                      ),
+                    ),
+                  ),
+                  constraints: FixedConstraints(
+                    offset: Offset(50, 50),
+                    size: Size(50, 50),
+                  ),
+                ),
+              ],
+              constraints: FixedConstraints(
+                offset: Offset(100, 100),
+                size: Size(50, 50),
+                scale: Offset(2, 2),
+              ),
+            ),
+          ],
+        ),
+
+        // FLEX TEST
         // BoxCanvasItem(
-        //     debugLabel: 'Red',
-        //     decoration: GestureDetector(
-        //       onTap: () {
-        //         print('Red tapped');
-        //       },
-        //       child: Container(
-        //         color: Colors.red,
-        //         child: Center(
-        //           child: Text('Red'),
-        //         ),
-        //       ),
+        //     constraints: FixedConstraints(
+        //       size: Size(500, 200),
         //     ),
-        //     layout: AbsoluteLayout(
-        //       offset: Offset.zero,
-        //       size: Size(100, 100),
-        //       scale: Offset(2, 2),
-        //       rotation: _degToRad(0),
+        //     debugLabel: 'Red Flex',
+        //     decoration: Container(
+        //       color: Colors.red,
+        //     ),
+        //     layout: FlexLayout(
+        //       padding: EdgeInsets.only(
+        //         top: 10,
+        //         left: 10,
+        //         right: 10,
+        //         bottom: 10,
+        //       ),
+        //       gap: 10,
+        //       direction: Axis.horizontal,
+        //       mainAxisAlignment: FlexAlignment.center,
+        //       crossAxisAlignment: FlexAlignment.end,
         //     ),
         //     children: [
         //       BoxCanvasItem(
-        //         debugLabel: 'Green',
-        //         decoration: GestureDetector(
-        //           onTap: () {
-        //             print('Green tapped');
-        //           },
-        //           child: Container(
-        //             color: Colors.green,
-        //             child: Center(
-        //               child: Text('Green'),
-        //             ),
-        //           ),
+        //         debugLabel: 'Green Flex',
+        //         decoration: Container(
+        //           color: Colors.green,
+        //         ),
+        //         constraints: FlexibleConstraints(
+        //           width: SizeConstraint.fixed(100),
+        //           height: SizeConstraint.fill(),
+        //         ),
+        //       ),
+        //       BoxCanvasItem(
+        //         debugLabel: 'Blue Flex',
+        //         decoration: Container(
+        //           color: Colors.blue,
+        //         ),
+        //         layout: FlexLayout(
+        //           direction: Axis.vertical,
+        //           mainAxisAlignment: FlexAlignment.center,
+        //           crossAxisAlignment: FlexAlignment.center,
+        //           gap: double.infinity,
+        //           padding: EdgeInsets.all(50),
+        //         ),
+        //         constraints: FlexibleConstraints(
+        //           width: SizeConstraint.fillBoxed(100, 550),
+        //           height: SizeConstraint.fillBoxed(100, 850),
         //         ),
         //         children: [
         //           BoxCanvasItem(
-        //             debugLabel: 'Orange',
-        //             decoration: GestureDetector(
-        //               onTap: () {
-        //                 print('Orange tapped');
-        //               },
-        //               child: Container(
-        //                 color: Colors.orange,
-        //                 child: Center(
-        //                   child: Text('Orange'),
-        //                 ),
-        //               ),
+        //             debugLabel: 'Purple Flex',
+        //             decoration: Container(
+        //               color: Colors.purple,
         //             ),
-        //             layout: AbsoluteLayout(
-        //               offset: Offset(50, 50),
-        //               size: Size(50, 50),
-        //               rotation: _degToRad(25),
+        //             constraints: FlexibleConstraints(
+        //               width: SizeConstraint.fill(),
+        //               height: SizeConstraint.fillLoose(200),
+        //             ),
+        //           ),
+        //           BoxCanvasItem(
+        //             debugLabel: 'Yellow Flex',
+        //             decoration: Container(
+        //               color: Colors.yellow,
+        //             ),
+        //             constraints: FlexibleConstraints(
+        //               width: SizeConstraint.fill(),
+        //               height: SizeConstraint.fillLoose(200),
+        //             ),
+        //           ),
+        //           BoxCanvasItem(
+        //             debugLabel: 'Yellow Flex',
+        //             decoration: Container(
+        //               color: Colors.yellow,
+        //             ),
+        //             constraints: FlexibleConstraints(
+        //               width: SizeConstraint.fill(),
+        //               height: SizeConstraint.fillLoose(200),
         //             ),
         //           ),
         //         ],
-        //         layout: AbsoluteLayout(
-        //           offset: Offset(100, 100),
-        //           size: Size(50, 50),
-        //           rotation: _degToRad(44),
+        //       ),
+        //       BoxCanvasItem(
+        //         debugLabel: 'Orange Flex',
+        //         decoration: Container(
+        //           color: Colors.orange,
+        //         ),
+        //         constraints: FlexibleConstraints(
+        //           width: SizeConstraint.fixed(100),
+        //           height: SizeConstraint.fill(),
         //         ),
         //       ),
-        //     ]),
-        // BoxCanvasItem(
-        //   debugLabel: 'Purple',
-        //   decoration: GestureDetector(
-        //     onTap: () {
-        //       print('Purple tapped');
-        //     },
-        //     child: Container(
-        //       color: Colors.purple,
-        //       child: Center(
-        //         child: Text('Purple'),
-        //       ),
-        //     ),
-        //   ),
-        //   layout: AbsoluteLayout(
-        //     offset: Offset(200, 0),
-        //     size: Size(100, 100),
-        //     scale: Offset(1, 1),
-        //     rotation: _degToRad(25),
-        //   ),
-        //   children: [
-        //     BoxCanvasItem(
-        //       debugLabel: 'Yellow',
-        //       decoration: GestureDetector(
-        //         onTap: () {
-        //           print('Yellow tapped');
-        //         },
-        //         child: Container(
-        //           color: Colors.yellow,
-        //           child: Center(
-        //             child: Text('Yellow'),
-        //           ),
+        //       BoxCanvasItem(
+        //         constraints: FixedConstraints(
+        //           offset: Offset(200, 40),
+        //           size: Size(100, 100),
+        //         ),
+        //         debugLabel: 'Gray Flex',
+        //         decoration: Container(
+        //           color: Colors.gray,
         //         ),
         //       ),
-        //       children: [
-        //         BoxCanvasItem(
-        //           debugLabel: 'Blue',
-        //           decoration: GestureDetector(
-        //             onTap: () {
-        //               print('Blue tapped');
-        //             },
-        //             child: Container(
-        //               color: Colors.blue,
-        //               child: Center(
-        //                 child: Text('Blue'),
-        //               ),
-        //             ),
-        //           ),
-        //           layout: AbsoluteLayout(
-        //             offset: Offset(50, 50),
-        //             size: Size(50, 50),
-        //           ),
-        //         ),
-        //       ],
-        //       layout: AbsoluteLayout(
-        //         offset: Offset(100, 100),
-        //         size: Size(50, 50),
-        //         scale: Offset(2, 2),
-        //       ),
-        //     ),
-        //   ],
-        // ),
+        //     ])
       ],
     );
   }
@@ -210,7 +316,7 @@ class _CanvasExampleState extends State<CanvasExample>
               },
               color: _colors[index],
               debugLabel: _debugLabels[index],
-              layout: AbsoluteLayout(
+              constraints: FixedConstraints(
                 offset: offset,
                 size: instant ? Size(100, 100) : Size.zero,
               ),
@@ -227,7 +333,7 @@ class _CanvasExampleState extends State<CanvasExample>
                 setState(() {});
               },
               text: 'New Text',
-              layout: AbsoluteLayout(
+              constraints: FixedConstraints(
                 offset: offset,
                 size: instant ? Size(100, 100) : Size.zero,
               ),
@@ -380,7 +486,7 @@ class _CanvasExampleState extends State<CanvasExample>
                       },
                       child: CanvasViewport(
                         onReparent: (details) {
-                          return !_ctrlDown;
+                          return _ctrlDown;
                         },
                         selectionHandler: _selectionHandler,
                         gestures: DesktopCanvasGestures(
@@ -568,14 +674,15 @@ enum ToolMode {
   createText,
 }
 
-class CustomCanvasItem extends CanvasItemAdapter {
+class CustomCanvasItem extends CanvasItem {
   late TreeItem<CanvasItem> _treeItem;
   final VoidCallback onRefresh;
   CustomCanvasItem({
     super.children,
     super.debugLabel,
-    super.layout,
+    super.constraints,
     super.selected = false,
+    super.clipContent = false,
     required this.onRefresh,
   }) {
     childrenListenable.addListener(() {
@@ -628,7 +735,7 @@ class FrameCanvasItem extends CustomCanvasItem {
   FrameCanvasItem({
     super.children,
     super.debugLabel,
-    super.layout,
+    super.constraints,
     super.selected,
     Color color = Colors.red,
     required super.onRefresh,
@@ -665,7 +772,7 @@ class TextCanvasItem extends CustomCanvasItem {
   TextCanvasItem({
     super.children,
     super.debugLabel,
-    super.layout,
+    super.constraints,
     super.selected,
     required super.onRefresh,
     String text = '',

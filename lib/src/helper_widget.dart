@@ -139,6 +139,7 @@ class PanGesture extends StatefulWidget {
   final void Function(DragEndDetails details)? onPanEnd;
   final void Function()? onPanCancel;
   final Widget? child;
+  final HitTestBehavior behavior;
 
   const PanGesture({
     super.key,
@@ -147,6 +148,7 @@ class PanGesture extends StatefulWidget {
     this.onPanEnd,
     this.onPanCancel,
     this.enable = true,
+    this.behavior = HitTestBehavior.translucent,
     this.child,
   });
 
@@ -172,7 +174,7 @@ class _PanGestureState extends State<PanGesture> {
         return KeyEventResult.ignored;
       },
       child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
+        behavior: widget.behavior,
         onPanStart: widget.enable
             ? (details) {
                 _focusNode.requestFocus();
@@ -296,12 +298,12 @@ class _MousePanGestureState extends State<MousePanGesture> {
 
 class Box extends StatelessWidget {
   final Size size;
-  final Widget child;
+  final Widget? child;
 
   const Box({
     super.key,
     required this.size,
-    required this.child,
+    this.child,
   });
 
   @override
@@ -355,5 +357,197 @@ class IsolationPainter extends CustomPainter {
   bool shouldRepaint(covariant IsolationPainter oldDelegate) {
     return !iterableEquals(oldDelegate.holes, holes) ||
         oldDelegate.color != color;
+  }
+}
+
+class SnappingPreviewPainter extends CustomPainter {
+  static const Offset _startOffset = Offset(-99999, 0);
+  static const Offset _endOffset = Offset(99999, 0);
+  final List<SnappingResult> points;
+  final Color color;
+  final double strokeWidth;
+
+  const SnappingPreviewPainter({
+    required this.points,
+    required this.color,
+    required this.strokeWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final point in points) {
+      final Paint paint = Paint()
+        ..color = color
+        ..strokeWidth = 1
+        ..style = PaintingStyle.stroke;
+      final mainAxisTarget = point.mainAxisTarget;
+      final crossAxisTarget = point.crossAxisTarget;
+
+      var mainAxisPosition = mainAxisTarget.position;
+      var mainAxisAngle = mainAxisTarget.rotation;
+      var angleAddition =
+          mainAxisTarget.direction == Axis.horizontal ? kDeg90 : 0;
+      mainAxisAngle += angleAddition;
+      Offset mainAxisStartLine =
+          mainAxisPosition + rotatePoint(_startOffset, mainAxisAngle);
+      Offset mainAxisEndLine =
+          mainAxisPosition + rotatePoint(_endOffset, mainAxisAngle);
+      canvas.drawLine(mainAxisStartLine, mainAxisEndLine, paint);
+
+      if (crossAxisTarget != null) {
+        var crossAxisPosition = crossAxisTarget.position;
+        Offset crossAxisStartLine = crossAxisPosition +
+            rotatePoint(_startOffset, mainAxisAngle + kDeg90);
+        Offset crossAxisEndLine =
+            crossAxisPosition + rotatePoint(_endOffset, mainAxisAngle + kDeg90);
+        canvas.drawLine(crossAxisStartLine, crossAxisEndLine, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant SnappingPreviewPainter oldDelegate) {
+    return !iterableEquals(oldDelegate.points, points) ||
+        oldDelegate.color != color ||
+        oldDelegate.strokeWidth != strokeWidth;
+  }
+}
+
+class BoundingBoxPainter extends CustomPainter {
+  final Matrix4 globalTransform;
+  final bool shouldScaleX;
+  final bool shouldScaleY;
+  final Alignment alignment;
+  final Alignment selfAlignment;
+  final Size itemSize;
+  final Size size;
+  final Color? borderColor;
+  final double? strokeWidth;
+  final Color? color;
+  final EdgeInsets margin;
+
+  BoundingBoxPainter({
+    required this.globalTransform,
+    required this.shouldScaleX,
+    required this.shouldScaleY,
+    required this.itemSize,
+    required this.size,
+    required this.alignment,
+    required this.selfAlignment,
+    this.margin = EdgeInsets.zero,
+    this.borderColor,
+    this.strokeWidth,
+    this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    Offset topLeft = Offset.zero;
+    var handleSize = this.size.toOffset();
+    var transformScale = globalTransform.transformScale;
+    if (!shouldScaleX && !shouldScaleY) {
+      handleSize =
+          handleSize.scale(1 / transformScale.dx, 1 / transformScale.dy);
+    } else if (!shouldScaleX) {
+      handleSize = handleSize.scale(1 / transformScale.dx, 1);
+    } else if (!shouldScaleY) {
+      handleSize = handleSize.scale(1, 1 / transformScale.dy);
+    }
+    Offset bottomRight = topLeft + handleSize;
+    Offset topRight = topLeft + Offset(handleSize.dx, 0);
+    Offset bottomLeft = topLeft + Offset(0, handleSize.dy);
+
+    topLeft = topLeft - margin.topLeft.divideBy(transformScale);
+    bottomRight = bottomRight + margin.bottomRight.divideBy(transformScale);
+    topRight =
+        topRight - Offset(margin.right, margin.top).divideBy(transformScale);
+    bottomLeft = bottomLeft -
+        Offset(margin.left, margin.bottom).divideBy(transformScale);
+
+    Size itemSize = this.itemSize;
+    Offset alignedItemSize = alignment.alongSize(itemSize);
+    Offset alignedSize = selfAlignment.alongOffset(handleSize);
+
+    topLeft = topLeft - alignedSize + alignedItemSize;
+    bottomRight = bottomRight - alignedSize + alignedItemSize;
+    topRight = topRight - alignedSize + alignedItemSize;
+    bottomLeft = bottomLeft - alignedSize + alignedItemSize;
+    topLeft = globalTransform.transformPoint(topLeft);
+    bottomRight = globalTransform.transformPoint(bottomRight);
+    topRight = globalTransform.transformPoint(topRight);
+    bottomLeft = globalTransform.transformPoint(bottomLeft);
+    Path path = Path()
+      ..moveTo(topLeft.dx, topLeft.dy)
+      ..lineTo(topRight.dx, topRight.dy)
+      ..lineTo(bottomRight.dx, bottomRight.dy)
+      ..lineTo(bottomLeft.dx, bottomLeft.dy)
+      ..close();
+    if (borderColor != null && strokeWidth != null) {
+      Paint paint = Paint()
+        ..color = borderColor!
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth!;
+      canvas.drawPath(path, paint);
+    }
+    if (color != null) {
+      Paint paint = Paint()..color = color!;
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant BoundingBoxPainter oldDelegate) {
+    return oldDelegate.globalTransform != globalTransform ||
+        oldDelegate.size != size ||
+        oldDelegate.alignment != alignment ||
+        oldDelegate.borderColor != borderColor ||
+        oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.color != color ||
+        oldDelegate.margin != margin;
+  }
+
+  @override
+  bool? hitTest(Offset position) {
+    Offset topLeft = Offset.zero;
+    var handleSize = this.size.toOffset();
+    var transformScale = globalTransform.transformScale;
+    if (!shouldScaleX && !shouldScaleY) {
+      handleSize =
+          handleSize.scale(1 / transformScale.dx, 1 / transformScale.dy);
+    } else if (!shouldScaleX) {
+      handleSize = handleSize.scale(1 / transformScale.dx, 1);
+    } else if (!shouldScaleY) {
+      handleSize = handleSize.scale(1, 1 / transformScale.dy);
+    }
+    Offset bottomRight = topLeft + handleSize;
+    Offset topRight = topLeft + Offset(handleSize.dx, 0);
+    Offset bottomLeft = topLeft + Offset(0, handleSize.dy);
+
+    topLeft = topLeft - margin.topLeft.divideBy(transformScale);
+    bottomRight = bottomRight + margin.bottomRight.divideBy(transformScale);
+    topRight =
+        topRight - Offset(margin.right, margin.top).divideBy(transformScale);
+    bottomLeft = bottomLeft -
+        Offset(margin.left, margin.bottom).divideBy(transformScale);
+
+    Size itemSize = this.itemSize;
+    Offset alignedItemSize = alignment.alongSize(itemSize);
+    Offset alignedSize = selfAlignment.alongOffset(handleSize);
+
+    topLeft = topLeft - alignedSize + alignedItemSize;
+    bottomRight = bottomRight - alignedSize + alignedItemSize;
+    topRight = topRight - alignedSize + alignedItemSize;
+    bottomLeft = bottomLeft - alignedSize + alignedItemSize;
+    topLeft = globalTransform.transformPoint(topLeft);
+    bottomRight = globalTransform.transformPoint(bottomRight);
+    topRight = globalTransform.transformPoint(topRight);
+    bottomLeft = globalTransform.transformPoint(bottomLeft);
+    Path path = Path()
+      ..moveTo(topLeft.dx, topLeft.dy)
+      ..lineTo(topRight.dx, topRight.dy)
+      ..lineTo(bottomRight.dx, bottomRight.dy)
+      ..lineTo(bottomLeft.dx, bottomLeft.dy)
+      ..close();
+    return path.contains(position);
   }
 }

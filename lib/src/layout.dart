@@ -1,533 +1,247 @@
+import 'dart:math';
+
+import 'package:canvas/canvas.dart';
 import 'package:canvas/src/util.dart';
-import 'package:flutter/painting.dart';
+import 'package:flutter/widgets.dart';
 
-import '../canvas.dart';
+class FixedLayout extends Layout {
+  const FixedLayout();
+  @override
+  void performLayout(CanvasItem item, BoxConstraints constraints) {
+    var itemConstraints = item.constraints;
+    if (!itemConstraints.constrainedByParent) {
+      var newTransform = itemConstraints.constrain(item, constraints);
+      item.transform = newTransform;
+    }
+    for (var child in item.children) {
+      child.performLayout(const BoxConstraints());
+    }
+  }
 
-class AbsoluteLayout extends Layout {
-  final Offset offset;
-  final Size size;
-  final double rotation;
-  final Offset scale;
+  @override
+  double computeIntrinsicHeight(CanvasItem item) {
+    return item.transform.scaledSize.height;
+  }
 
-  const AbsoluteLayout({
-    this.offset = Offset.zero,
-    this.size = Size.zero,
-    this.rotation = 0,
-    this.scale = const Offset(1, 1),
+  @override
+  double computeIntrinsicWidth(CanvasItem item) {
+    return item.transform.scaledSize.width;
+  }
+}
+
+class FlexLayout extends Layout {
+  final FlexAlignment mainAxisAlignment;
+  final FlexAlignment crossAxisAlignment;
+  final Axis direction;
+  final double gap;
+  final EdgeInsets padding;
+
+  const FlexLayout({
+    this.mainAxisAlignment = FlexAlignment.start,
+    this.crossAxisAlignment = FlexAlignment.start,
+    this.direction = Axis.horizontal,
+    this.gap = 0,
+    this.padding = EdgeInsets.zero,
   });
 
   @override
-  String toString() {
-    return 'AbsoluteLayout(offset: $offset, size: $size, rotation: ${radToDeg(rotation)}, scale: $scale)';
+  double computeIntrinsicHeight(CanvasItem item) {
+    // TODO: implement computeIntrinsicHeight
+    throw UnimplementedError();
   }
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-
-    return other is AbsoluteLayout &&
-        other.offset == offset &&
-        other.size == size &&
-        other.rotation == rotation &&
-        other.scale == scale;
+  double computeIntrinsicWidth(CanvasItem item) {
+    // TODO: implement computeIntrinsicWidth
+    throw UnimplementedError();
   }
 
   @override
-  int get hashCode {
-    return Object.hash(offset, size, rotation, scale);
-  }
-
-  @override
-  Layout transferToChild(Layout childLayout) {
-    if (childLayout is AbsoluteLayout) {
-      return AbsoluteLayout(
-        offset: rotatePoint(offset - childLayout.offset, -childLayout.rotation),
-        size: size,
-        rotation: rotation - childLayout.rotation,
-        scale: scale,
-      );
+  void performLayout(CanvasItem item, BoxConstraints constraints) {
+    var itemConstraints = item.constraints;
+    if (!itemConstraints.constrainedByParent) {
+      var newTransform = itemConstraints.constrain(item, constraints);
+      item.transform = newTransform;
     }
-    return this;
-  }
-
-  @override
-  Layout transferToParent(Layout parentLayout) {
-    if (parentLayout is AbsoluteLayout) {
-      return AbsoluteLayout(
-        offset:
-            rotatePoint(offset, parentLayout.rotation) + parentLayout.offset,
-        size: size,
-        rotation: rotation + parentLayout.rotation,
-        scale: scale,
-      );
-    }
-    return this;
-  }
-
-  Size get scaledSize => Size(size.width * scale.dx, size.height * scale.dy);
-
-  double get aspectRatio {
-    Size scaledSize = this.scaledSize;
-    if (scaledSize.height == 0) {
-      if (scaledSize.width == 0) {
-        return 1;
-      }
-      return 0;
-    }
-    return scaledSize.width / scaledSize.height;
-  }
-
-  @override
-  void performLayout(CanvasItem item, [CanvasItem? parent]) {
-    if (parent != null && parent.layout.shouldHandleChildLayout) {
-      parent.layoutListenable.value.performLayout(parent);
+    var children = item.children;
+    if (children.isEmpty) {
       return;
     }
-    performSelfLayout(item);
-  }
-
-  @override
-  void performSelfLayout(CanvasItem item) {
-    item.transform = LayoutTransform(
-      offset: offset,
-      size: size,
-      rotation: rotation,
-      scale: scale,
-    );
-  }
-
-  @override
-  Layout drag(Offset delta, {LayoutSnapping? snapping}) {
-    var newOffset = offset + delta;
-    if (snapping != null) {
-      newOffset = snapping.config.snapToGrid(newOffset);
-      snapping.newOffsetDelta = newOffset - offset;
+    var gap = this.gap;
+    var constrainedSize = constraints.constrain(item.transform.scaledSize);
+    List<FlexLayoutPlan> plans = [];
+    var maxCrossAxisSize = 0.0;
+    var maxCrossFlexSize = 0.0;
+    var totalSize = 0.0;
+    var totalFlexSize = 0.0;
+    for (var child in children) {
+      var childConstraints = child.constraints;
+      if (childConstraints is FlexibleConstraints) {
+        SizeConstraint sizeConstraint =
+            childConstraints.getConstraint(direction);
+        SizeConstraint crossAxisSizeConstraint =
+            childConstraints.getConstraint(crossAxis(direction));
+        var plan = sizeConstraint.plan(item, direction);
+        plans.add(FlexLayoutPlan(child, plan));
+        var crossAxisPlan =
+            crossAxisSizeConstraint.plan(item, crossAxis(direction));
+        maxCrossAxisSize = max(maxCrossAxisSize, crossAxisPlan.fixedSize);
+        maxCrossFlexSize = max(maxCrossFlexSize, crossAxisPlan.flexSize);
+        totalSize += plan.fixedSize;
+        totalFlexSize += plan.flexSize;
+      } else {
+        child.performLayout(const BoxConstraints());
+      }
     }
-    return AbsoluteLayout(
-      offset: newOffset,
-      size: size,
-      rotation: rotation,
-      scale: scale,
-    );
-  }
 
-  @override
-  Layout rotate(double delta,
-      {Alignment alignment = Alignment.center, LayoutSnapping? snapping}) {
-    double newRotation = rotation + delta;
-    if (snapping != null) {
-      var oldNewRotation = newRotation;
-      newRotation = snapping.config.snapAngle(newRotation);
-      snapping.newRotationDelta = delta - (oldNewRotation - newRotation);
+    var maxSize = direction == Axis.horizontal
+        ? constrainedSize.width
+        : constrainedSize.height;
+    var maxCrossSize = direction == Axis.vertical
+        ? constrainedSize.width
+        : constrainedSize.height;
+    maxCrossSize -= _paddingSize(padding, crossAxis(direction));
+    var flexAllocatedSpace =
+        maxSize - totalSize - _paddingSize(padding, direction);
+    if (gap.isFinite) {
+      flexAllocatedSpace -= gap * (children.length - 1);
     }
-    Size scaledSize = this.scaledSize;
-    Offset before = rotatePoint(-alignment.alongSize(scaledSize), rotation);
-    Offset after = rotatePoint(-alignment.alongSize(scaledSize), newRotation);
-    Offset offsetDelta = after - before;
-    return AbsoluteLayout(
-      offset: offset + offsetDelta,
-      size: size,
-      rotation: newRotation,
-      scale: scale,
-    );
-  }
+    var layoutInfo =
+        FlexLayoutInfo(flexAllocatedSpace, item, direction, totalFlexSize);
+    var crossAxisInfo = FlexLayoutInfo(
+        maxCrossSize, item, crossAxis(direction), maxCrossFlexSize);
+    // Second iteration
+    // Find out the usedSpace
+    var usedSpace = 0.0;
+    List<FlexLayoutResult> results = [];
+    for (final childPlan in plans) {
+      var child = childPlan.item;
+      var childConstraints = child.constraints;
+      if (childConstraints is FlexibleConstraints) {
+        SizeConstraint sizeConstraint =
+            childConstraints.getConstraint(direction);
+        SizeConstraint crossAxisConstraint =
+            childConstraints.getConstraint(crossAxis(direction));
+        var size = sizeConstraint.constrain(
+            childPlan.plan, item, direction, layoutInfo);
+        var crossAxisSize = crossAxisConstraint.constrain(
+            childPlan.plan, item, crossAxis(direction), crossAxisInfo);
+        usedSpace += size.scaledSize;
+        results.add(FlexLayoutResult(child, size, crossAxisSize));
+      }
+    }
+    var remainingSpace = maxSize - usedSpace - _paddingSize(padding, direction);
 
-  @override
-  Layout resizeBottom(Offset delta,
-      {bool symmetric = false, LayoutSnapping? snapping}) {
-    Offset originalDelta = delta;
-    Size newSize;
-    if (snapping != null) {
-      newSize = Size(size.width, size.height + delta.dy);
-      var snapped = snapping.config.snapToGridSize(newSize);
-      var snappedSizeDelta = Offset(
-        snapped.width - size.width,
-        snapped.height - size.height,
-      );
-      snapping.newSizeDeltaY = snappedSizeDelta.dy;
-      newSize = Size(size.width, size.height + snappedSizeDelta.dy / scale.dy);
+    // Third iteration
+    // Position the children (align them)
+    double startOffset =
+        direction == Axis.horizontal ? padding.left : padding.top;
+    if (gap.isFinite) {
+      remainingSpace -= gap * (children.length - 1);
     } else {
-      delta = delta.divideBy(scale);
-      newSize = Size(size.width, size.height + delta.dy);
+      // space between children
+      gap = remainingSpace / (children.length - 1);
+      remainingSpace = 0;
     }
-    Layout result = AbsoluteLayout(
-      offset: offset,
-      size: newSize,
-      rotation: rotation,
-      scale: scale,
-    );
-    if (symmetric) {
-      result = result.resizeTop(-(snapping?.newSizeDelta ?? originalDelta));
+    switch (mainAxisAlignment) {
+      case FlexAlignment.start:
+        break;
+      case FlexAlignment.end:
+        startOffset += remainingSpace;
+        break;
+      case FlexAlignment.center:
+        startOffset += remainingSpace / 2;
+        break;
     }
-    return result;
-  }
-
-  @override
-  Layout resizeBottomLeft(Offset delta,
-      {bool proportional = false,
-      bool symmetric = false,
-      LayoutSnapping? snapping}) {
-    if (proportional) {
-      var proportional =
-          proportionalDelta(Offset(delta.dx, -delta.dy), aspectRatio);
-      delta = Offset(proportional.dx, -proportional.dy);
-    }
-    Layout result = resizeBottom(delta, snapping: snapping)
-        .resizeLeft(delta, snapping: snapping);
-    if (symmetric) {
-      result = result.resizeTopRight(-(snapping?.newSizeDelta ?? delta));
-    }
-    return result;
-  }
-
-  @override
-  Layout resizeBottomRight(Offset delta,
-      {bool proportional = false,
-      bool symmetric = false,
-      LayoutSnapping? snapping}) {
-    if (proportional) {
-      delta = -proportionalDelta(-delta, aspectRatio);
-    }
-    Layout result = resizeBottom(delta, snapping: snapping)
-        .resizeRight(delta, snapping: snapping);
-    if (symmetric) {
-      result = result.resizeTopLeft(-(snapping?.newSizeDelta ?? delta));
-    }
-    return result;
-  }
-
-  @override
-  Layout resizeLeft(Offset delta,
-      {bool symmetric = false, LayoutSnapping? snapping}) {
-    Offset originalDelta = delta;
-    delta = delta.onlyX();
-
-    Offset newOffset;
-    Size newSize;
-    if (snapping != null) {
-      newSize = Size(size.width - delta.dx, size.height);
-      var snapped = snapping.config.snapToGridSize(newSize);
-      var snappedSizeDelta = Offset(
-        size.width - snapped.width,
-        delta.dy,
+    for (final childResult in results) {
+      var child = childResult.item;
+      var constraints = child.constraints;
+      var size = childResult.usedSpace;
+      var crossAxisSize = childResult.crossAxisUsedSpace;
+      var crossAxisRemainingSpace = maxCrossSize - crossAxisSize.scaledSize;
+      double crossAxisStartOffset =
+          direction == Axis.horizontal ? padding.top : padding.left;
+      switch (crossAxisAlignment) {
+        case FlexAlignment.start:
+          break;
+        case FlexAlignment.end:
+          crossAxisStartOffset += crossAxisRemainingSpace;
+          break;
+        case FlexAlignment.center:
+          crossAxisStartOffset += crossAxisRemainingSpace / 2;
+          break;
+      }
+      var x = direction == Axis.horizontal ? startOffset : crossAxisStartOffset;
+      var y = direction == Axis.horizontal ? crossAxisStartOffset : startOffset;
+      var width = direction == Axis.horizontal ? size : crossAxisSize;
+      var height = direction == Axis.horizontal ? crossAxisSize : size;
+      child.transform = LayoutTransform(
+        offset: Offset(x, y),
+        size: Size(width.size, height.size),
+        scale: Offset(width.scale, height.scale),
+        rotation: constraints.rotation,
       );
-      snapping.newSizeDeltaX = snappedSizeDelta.dx;
-      newSize = Size(size.width - snappedSizeDelta.dx / scale.dx, size.height);
-      newOffset = offset + rotatePoint(snappedSizeDelta, rotation);
-    } else {
-      Offset rotatedDelta = rotatePoint(delta, rotation);
-      delta = delta.divideBy(scale);
-      newOffset = offset + rotatedDelta;
-      newSize = Size(size.width - delta.dx, size.height);
+      child.performLayout(BoxConstraints.tightFor(
+        width: width.size,
+        height: height.size,
+      ));
+      startOffset += size.scaledSize + gap;
     }
-    Layout result = AbsoluteLayout(
-      offset: newOffset,
-      size: newSize,
-      rotation: rotation,
-      scale: scale,
-    );
-    if (symmetric) {
-      result = result.resizeRight(-(snapping?.newSizeDelta ?? originalDelta));
-    }
-    return result;
   }
+}
 
-  @override
-  Layout resizeRight(Offset delta,
-      {bool symmetric = false, LayoutSnapping? snapping}) {
-    Offset originalDelta = delta;
-    delta = delta.onlyX();
-    Size newSize;
-    if (snapping != null) {
-      newSize = Size(size.width + delta.dx, size.height);
-      var snapped = snapping.config.snapToGridSize(newSize);
-      var snappedSizeDelta = Offset(
-        snapped.width - size.width,
-        snapped.height - size.height,
-      );
-      snapping.newSizeDeltaX = snappedSizeDelta.dx;
-      newSize = Size(size.width + snappedSizeDelta.dx / scale.dx, size.height);
-    } else {
-      delta = delta.divideBy(scale);
-      newSize = Size(size.width + delta.dx, size.height);
-    }
-    Layout result = AbsoluteLayout(
-      offset: offset,
-      size: newSize,
-      rotation: rotation,
-      scale: scale,
-    );
-    if (symmetric) {
-      result = result.resizeLeft(-(snapping?.newSizeDelta ?? originalDelta));
-    }
-    return result;
-  }
+class FlexLayoutPlan {
+  final CanvasItem item;
+  final FlexLayoutPlanInfo plan;
 
-  @override
-  Layout resizeTop(Offset delta,
-      {bool symmetric = false, LayoutSnapping? snapping}) {
-    Offset originalDelta = delta;
-    delta = delta.onlyY();
-    Size newSize;
-    Offset newOffset;
-    if (snapping != null) {
-      newSize = Size(size.width, size.height - delta.dy);
-      var snapped = snapping.config.snapToGridSize(newSize);
-      var snappedSizeDelta = Offset(
-        0,
-        size.height - snapped.height,
-      );
-      snapping.newSizeDeltaY = snappedSizeDelta.dy;
-      newSize = Size(size.width, size.height - snappedSizeDelta.dy / scale.dy);
-      newOffset = offset + rotatePoint(snappedSizeDelta, rotation);
-    } else {
-      Offset rotatedDelta = rotatePoint(delta, rotation);
-      delta = delta.divideBy(scale);
-      newSize = Size(size.width, size.height - delta.dy);
-      newOffset = offset + rotatedDelta;
-    }
-    Layout result = AbsoluteLayout(
-      offset: newOffset,
-      size: newSize,
-      rotation: rotation,
-      scale: scale,
-    );
-    if (symmetric) {
-      result = result.resizeBottom(-(snapping?.newSizeDelta ?? originalDelta));
-    }
-    return result;
-  }
+  FlexLayoutPlan(this.item, this.plan);
+}
 
-  @override
-  Layout resizeTopLeft(Offset delta,
-      {bool proportional = false,
-      bool symmetric = false,
-      LayoutSnapping? snapping}) {
-    if (proportional) {
-      delta = proportionalDelta(delta, aspectRatio);
-    }
-    Layout result = resizeTop(delta, snapping: snapping)
-        .resizeLeft(delta, snapping: snapping);
-    if (symmetric) {
-      result = result.resizeBottomRight(-(snapping?.newSizeDelta ?? delta));
-    }
-    return result;
-  }
+class FlexLayoutPlanInfo {
+  final double fixedSize;
+  final double flexSize;
 
-  @override
-  Layout resizeTopRight(Offset delta,
-      {bool proportional = false,
-      bool symmetric = false,
-      LayoutSnapping? snapping}) {
-    if (proportional) {
-      var proportional =
-          proportionalDelta(Offset(-delta.dx, delta.dy), aspectRatio);
-      delta = Offset(-proportional.dx, proportional.dy);
-    }
-    Layout result = resizeTop(delta, snapping: snapping)
-        .resizeRight(delta, snapping: snapping);
-    if (symmetric) {
-      result = result.resizeBottomLeft(-(snapping?.newSizeDelta ?? delta));
-    }
-    return result;
-  }
+  const FlexLayoutPlanInfo({
+    this.fixedSize = 0,
+    this.flexSize = 0,
+  });
+}
 
-  @override
-  Layout rescaleBottom(Offset delta,
-      {bool symmetric = false, LayoutSnapping? snapping}) {
-    Offset originalDelta = delta;
-    var newScale = Offset(scale.dx, scale.dy + delta.dy / size.height);
-    if (snapping != null) {
-      var oldScaledSize = scaledSize;
-      var newScaledSize =
-          Size(size.width * newScale.dx, size.height * newScale.dy);
-      var snappedSize = snapping.config.snapToGridSize(newScaledSize);
-      newScale = Offset(scale.dx, snappedSize.height / size.height);
-      snapping.newScaleDeltaY = snappedSize.height - oldScaledSize.height;
-    }
-    Layout result = AbsoluteLayout(
-      offset: offset,
-      size: size,
-      rotation: rotation,
-      scale: newScale,
-    );
-    if (symmetric) {
-      result = result.rescaleTop(-(snapping?.newScaleDelta ?? originalDelta));
-    }
-    return result;
-  }
+class FlexLayoutInfo {
+  final CanvasItem item;
+  final Axis direction;
+  final double allocatedSpace;
+  final double flexSize;
 
-  @override
-  Layout rescaleBottomLeft(Offset delta,
-      {bool symmetric = false,
-      bool proportional = false,
-      LayoutSnapping? snapping}) {
-    if (proportional) {
-      var proportional =
-          proportionalDelta(Offset(delta.dx, -delta.dy), aspectRatio);
-      delta = Offset(proportional.dx, -proportional.dy);
-    }
-    Layout result = rescaleBottom(delta, snapping: snapping)
-        .rescaleLeft(delta, snapping: snapping);
-    if (symmetric) {
-      result = result.rescaleTopRight(-(snapping?.newScaleDelta ?? delta));
-    }
-    return result;
-  }
+  FlexLayoutInfo(this.allocatedSpace, this.item, this.direction, this.flexSize);
+}
 
-  @override
-  Layout rescaleBottomRight(Offset delta,
-      {bool symmetric = false,
-      bool proportional = false,
-      LayoutSnapping? snapping}) {
-    if (proportional) {
-      delta = -proportionalDelta(-delta, aspectRatio);
-    }
-    Layout result = rescaleBottom(delta, snapping: snapping)
-        .rescaleRight(delta, snapping: snapping);
-    if (symmetric) {
-      result = result.rescaleTopLeft(-(snapping?.newScaleDelta ?? delta));
-    }
-    return result;
-  }
+class FlexConstrainResult {
+  final double size;
+  final double scale;
 
-  @override
-  Layout rescaleLeft(Offset delta,
-      {bool symmetric = false, LayoutSnapping? snapping}) {
-    Offset originalDelta = delta;
-    delta = delta.onlyX();
-    Offset rotatedDelta = rotatePoint(delta, rotation);
-    var newOffset = offset + rotatedDelta;
-    var newScale = Offset(scale.dx - delta.dx / size.width, scale.dy);
-    if (snapping != null) {
-      var oldScaledSize = scaledSize;
-      var newScaledSize =
-          Size(size.width * newScale.dx, size.height * newScale.dy);
-      var snappedSize = snapping.config.snapToGridSize(newScaledSize);
-      var snappedSizeDelta = Offset(
-        snappedSize.width - oldScaledSize.width,
-        snappedSize.height - oldScaledSize.height,
-      );
-      snappedSizeDelta = snapping.config.snapToGrid(snappedSizeDelta);
-      var newScaleDelta = Offset(
-        snappedSizeDelta.dx / size.width,
-        snappedSizeDelta.dy / size.height,
-      );
-      snapping.newScaleDeltaX = -snappedSizeDelta.dx;
-      newScale = scale + newScaleDelta;
-      newOffset = offset - rotatePoint(snappedSizeDelta, rotation);
-    }
-    Layout result = AbsoluteLayout(
-      offset: newOffset,
-      size: size,
-      rotation: rotation,
-      scale: newScale,
-    );
-    if (symmetric) {
-      result = result.rescaleRight(-(snapping?.newScaleDelta ?? originalDelta));
-    }
-    return result;
-  }
+  FlexConstrainResult({
+    this.size = 0,
+    this.scale = 1,
+  });
 
-  @override
-  Layout rescaleRight(Offset delta,
-      {bool symmetric = false, LayoutSnapping? snapping}) {
-    Offset originalDelta = delta;
-    delta = delta.onlyX();
-    var newScale = Offset(scale.dx + delta.dx / size.width, scale.dy);
-    if (snapping != null) {
-      var oldScaledSize = scaledSize;
-      var newScaledSize =
-          Size(size.width * newScale.dx, size.height * newScale.dy);
-      var snappedSize = snapping.config.snapToGridSize(newScaledSize);
-      newScale = Offset(snappedSize.width / size.width, scale.dy);
-      snapping.newScaleDeltaX = snappedSize.width - oldScaledSize.width;
-    }
-    Layout result = AbsoluteLayout(
-      offset: offset,
-      size: size,
-      rotation: rotation,
-      scale: newScale,
-    );
-    if (symmetric) {
-      result = result.rescaleLeft(-(snapping?.newScaleDelta ?? originalDelta));
-    }
-    return result;
-  }
+  double get scaledSize => size * scale;
+}
 
-  @override
-  Layout rescaleTop(Offset delta,
-      {bool symmetric = false, LayoutSnapping? snapping}) {
-    Offset originalDelta = delta;
-    delta = delta.onlyY();
-    Offset rotatedDelta = rotatePoint(delta, rotation);
-    var newScale = Offset(scale.dx, scale.dy - delta.dy / size.height);
-    var newOffset = offset + rotatedDelta;
-    if (snapping != null) {
-      var oldScaledSize = scaledSize;
-      var newScaledSize =
-          Size(size.width * newScale.dx, size.height * newScale.dy);
-      var snappedSize = snapping.config.snapToGridSize(newScaledSize);
-      var snappedSizeDelta = Offset(
-        snappedSize.width - oldScaledSize.width,
-        snappedSize.height - oldScaledSize.height,
-      );
-      snappedSizeDelta = snapping.config.snapToGrid(snappedSizeDelta);
-      var newScaleDelta = Offset(
-        snappedSizeDelta.dx / size.width,
-        snappedSizeDelta.dy / size.height,
-      );
-      snapping.newScaleDeltaY = -snappedSizeDelta.dy;
-      newScale = scale + newScaleDelta;
-      newOffset = offset - rotatePoint(snappedSizeDelta, rotation);
-    }
-    Layout result = AbsoluteLayout(
-      offset: newOffset,
-      size: size,
-      rotation: rotation,
-      scale: newScale,
-    );
-    if (symmetric) {
-      result =
-          result.rescaleBottom(-(snapping?.newScaleDelta ?? originalDelta));
-    }
-    return result;
-  }
+class FlexLayoutResult {
+  final CanvasItem item;
+  final FlexConstrainResult usedSpace;
+  final FlexConstrainResult crossAxisUsedSpace;
 
-  @override
-  Layout rescaleTopLeft(Offset delta,
-      {bool symmetric = false,
-      bool proportional = false,
-      LayoutSnapping? snapping}) {
-    if (proportional) {
-      delta = proportionalDelta(delta, aspectRatio);
-    }
-    Layout result = rescaleTop(delta, snapping: snapping)
-        .rescaleLeft(delta, snapping: snapping);
-    if (symmetric) {
-      result = result.rescaleBottomRight(-(snapping?.newScaleDelta ?? delta));
-    }
-    return result;
-  }
+  FlexLayoutResult(this.item, this.usedSpace, this.crossAxisUsedSpace);
+}
 
-  @override
-  Layout rescaleTopRight(Offset delta,
-      {bool symmetric = false,
-      bool proportional = false,
-      LayoutSnapping? snapping}) {
-    if (proportional) {
-      var proportional =
-          proportionalDelta(Offset(-delta.dx, delta.dy), aspectRatio);
-      delta = Offset(-proportional.dx, proportional.dy);
-    }
-    Layout result = rescaleTop(delta, snapping: snapping)
-        .rescaleRight(delta, snapping: snapping);
-    if (symmetric) {
-      result = result.rescaleBottomLeft(-(snapping?.newScaleDelta ?? delta));
-    }
-    return result;
-  }
+enum FlexAlignment {
+  start,
+  end,
+  center,
+}
 
-  @override
-  bool get shouldHandleChildLayout => false;
+double _paddingSize(EdgeInsets padding, Axis axis) {
+  return axis == Axis.horizontal ? padding.horizontal : padding.vertical;
 }

@@ -1,5 +1,6 @@
 library canvas;
 
+export 'src/constraints.dart';
 export 'src/control.dart';
 export 'src/foundation.dart' hide RootCanvasItem;
 export 'src/geometry.dart';

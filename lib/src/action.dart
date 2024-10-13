@@ -9,8 +9,8 @@ abstract class CanvasAction {
 }
 
 class CanvasItemLayoutChangeAction extends CanvasAction {
-  final Layout from;
-  final Layout to;
+  final ItemConstraints from;
+  final ItemConstraints to;
   final CanvasItem item;
   const CanvasItemLayoutChangeAction({
     required this.from,
@@ -20,12 +20,12 @@ class CanvasItemLayoutChangeAction extends CanvasAction {
 
   @override
   void undo() {
-    item.layout = from;
+    item.constraints = from;
   }
 
   @override
   void redo() {
-    item.layout = to;
+    item.constraints = to;
   }
 }
 
@@ -74,8 +74,8 @@ class CanvasItemReparentAction extends CanvasAction {
   final CanvasItem item;
   final CanvasItem from;
   final CanvasItem to;
-  final List<Layout> fromLayouts;
-  final List<Layout> toLayouts;
+  final List<ItemConstraints> fromLayouts;
+  final List<ItemConstraints> toLayouts;
   const CanvasItemReparentAction({
     required this.item,
     required this.from,
