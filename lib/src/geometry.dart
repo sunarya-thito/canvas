@@ -1,9 +1,32 @@
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:canvas/src/util.dart';
+import 'package:vector_math/vector_math_64.dart';
 
 const kDeg90 = 90.0 * pi / 180;
+
+Offset rotatePoint(Offset point, double angle, [Offset origin = Offset.zero]) {
+  final cosAngle = cos(angle);
+  final sinAngle = sin(angle);
+  final dx = point.dx - origin.dx;
+  final dy = point.dy - origin.dy;
+  final x = origin.dx + cosAngle * dx - sinAngle * dy;
+  final y = origin.dy + sinAngle * dx + cosAngle * dy;
+  return Offset(x, y);
+}
+
+Offset scalePoint(Offset point, Offset scale, [Offset origin = Offset.zero]) {
+  final dx = (point.dx - origin.dx) * scale.dx + origin.dx;
+  final dy = (point.dy - origin.dy) * scale.dy + origin.dy;
+  return Offset(dx, dy);
+}
+
+Offset transformOffset(Offset point, Matrix4 transform,
+    [Offset origin = Offset.zero]) {
+  final vector = Vector3(point.dx - origin.dx, point.dy - origin.dy, 0);
+  final transformed = transform.perspectiveTransform(vector);
+  return Offset(transformed.x + origin.dx, transformed.y + origin.dy);
+}
 
 class Polygon {
   static const Polygon empty = Polygon([]);

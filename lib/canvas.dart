@@ -1,10 +1,7 @@
 library canvas;
 
-export 'src/constraints.dart';
-export 'src/control.dart';
-export 'src/foundation.dart' hide RootCanvasItem;
-export 'src/geometry.dart';
-export 'src/gestures.dart';
-export 'src/helper.dart';
+export 'src/common.dart';
 export 'src/layout.dart';
+export 'src/theme.dart';
 export 'src/widgets.dart';
+export 'src/geometry.dart';
