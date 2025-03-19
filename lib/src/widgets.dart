@@ -1,6 +1,7 @@
 import 'dart:math';
 
-import 'package:canvas/src/common.dart';
+import 'package:canvas/canvas.dart';
+import 'package:canvas/src/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
@@ -53,57 +54,80 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   }
 
   void _update() {
-    setState(() {});
+    setState(() {
+      widget.state.forceRelayout();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    assert(
+        widget.state.hasSize, 'CanvasItem ${widget.state} not been laid out');
     var innerSize =
         widget.state.item.layoutData.computeInnerSize(widget.state.size);
+    Matrix4 transform =
+        widget.state.item.layoutData.computeMatrix(widget.state.size);
+    Offset position = widget.state.parentData.position;
+    Offset? editorOffset = widget.state.item.editorOffset;
+    if (editorOffset != null) {
+      transform.translate(editorOffset.dx, editorOffset.dy);
+    }
     return GroupData(
-      position: widget.state.parentData.position,
-      child: GroupWidget(
-        size: widget.state.size,
-        children: [
-          SizedBox.fromSize(
-            size: widget.state.size,
-            child: Transform(
-              transform:
-                  widget.state.item.layoutData.computeMatrix(widget.state.size),
-              child: Center(
+      position: position,
+      child: IgnorePointer(
+        ignoring: editorOffset != null,
+        child: GroupWidget(
+          size: widget.state.size,
+          children: [
+            // should this be wrapped with SizedBox (state size)?
+            Transform(
+              transform: transform,
+              child: Container(
+                width: innerSize.width,
+                height: innerSize.height,
+                decoration: BoxDecoration(
+                  color: _computeRandomColor(_count),
+                  border: Border.all(
+                    color: _computeRandomColor(_count + 1),
+                    width: 3,
+                  ),
+                ),
+                child: Text(
+                    '(${widget.state.size.width}, ${widget.state.size.height}) (rot: ${(widget.state.item.layoutData.rotation ?? 0) * 180 / pi})'),
+              ),
+            ),
+            Transform(
+              transform: widget.state.item.layoutData
+                  .computeBoundingBoxMatrix(widget.state.size),
+              child: MetaData(
+                behavior: HitTestBehavior.translucent,
+                metaData: BoundingBoxData(widget.state),
                 child: Container(
                   width: innerSize.width,
                   height: innerSize.height,
                   decoration: BoxDecoration(
-                    color: _computeRandomColor(_count),
+                    color: Color.fromARGB(50, 255, 255, 0),
                     border: Border.all(
-                      color: _computeRandomColor(_count + 1),
+                      color: Color.fromARGB(255, 255, 0, 0),
                       width: 3,
                     ),
                   ),
-                  child: Text(
-                      '(${widget.state.size.width}, ${widget.state.size.height}) (rot: ${(widget.state.item.layoutData.rotation ?? 0) * 180 / pi})'),
                 ),
               ),
             ),
-          ),
-          SizedBox.fromSize(
-            size: widget.state.size,
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Color.fromARGB(255, 0, 0, 0),
-                  width: 1,
-                ),
-              ),
+            Transform(
+              transform: transform,
+              child: GroupWidget(size: innerSize, children: [
+                ...widget.state.children.map((child) {
+                  return CanvasItemWidget(
+                    key: child.widgetKey,
+                    state: child,
+                  );
+                }),
+              ]),
             ),
-          ),
-          ...widget.state.children.map((child) {
-            return CanvasItemWidget(
-              state: child,
-            );
-          }),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -164,7 +188,9 @@ class GroupData extends ParentDataWidget<GroupParentData> {
 class GroupParentData extends ContainerBoxParentData<RenderBox> {}
 
 class GroupRenderObject extends RenderBox
-    with ContainerRenderObjectMixin<RenderBox, GroupParentData> {
+    with
+        ContainerRenderObjectMixin<RenderBox, GroupParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, GroupParentData> {
   Size groupSize;
 
   GroupRenderObject(Size size) : groupSize = size;
@@ -181,10 +207,10 @@ class GroupRenderObject extends RenderBox
     var child = firstChild;
     while (child != null) {
       var childParentData = child.parentData as GroupParentData;
-      child.layout(const BoxConstraints(), parentUsesSize: true);
+      child.layout(const BoxConstraints());
       child = childParentData.nextSibling;
     }
-    size = groupSize;
+    size = constraints.constrain(groupSize);
   }
 
   @override
@@ -198,22 +224,17 @@ class GroupRenderObject extends RenderBox
   }
 
   @override
-  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
-    var child = lastChild;
-    while (child != null) {
-      var childParentData = child.parentData as GroupParentData;
-      var hitTestResult = result.addWithPaintOffset(
-        offset: childParentData.offset,
-        position: position,
-        hitTest: (BoxHitTestResult result, Offset transformed) {
-          return child!.hitTest(result, position: transformed);
-        },
-      );
-      if (hitTestResult) {
-        return true;
-      }
-      child = childParentData.previousSibling;
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (hitTestChildren(result, position: position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    } else {
+      return false;
     }
-    return false;
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    return defaultHitTestChildren(result, position: position);
   }
 }

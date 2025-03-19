@@ -72,6 +72,11 @@ class Polygon {
     return Rect.fromLTRB(left, top, right, bottom);
   }
 
+  Polygon transform(Matrix4 transform, [Offset origin = Offset.zero]) {
+    return Polygon(
+        points.map((p) => transformOffset(p, transform, origin)).toList());
+  }
+
   Polygon translate(Offset offset) {
     return Polygon(points.map((p) => p + offset).toList());
   }

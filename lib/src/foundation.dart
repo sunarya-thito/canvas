@@ -1,11 +1,80 @@
-import 'package:canvas/src/layout.dart';
+import 'package:canvas/canvas.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/widgets.dart';
+
+class WidgetKey {
+  final CanvasItem item;
+
+  const WidgetKey(this.item);
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is WidgetKey && other.item == item;
+  }
+
+  @override
+  int get hashCode => item.hashCode;
+
+  @override
+  String toString() {
+    return 'WidgetKey{item: $item}';
+  }
+}
+
+class GizmoKey {
+  final CanvasItem item;
+
+  const GizmoKey(this.item);
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is GizmoKey && other.item == item;
+  }
+
+  @override
+  int get hashCode => item.hashCode;
+
+  @override
+  String toString() {
+    return 'GizmoKey{item: $item}';
+  }
+}
+
+class BoundingBoxKey {
+  final CanvasItem item;
+
+  const BoundingBoxKey(this.item);
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is BoundingBoxKey && other.item == item;
+  }
+
+  @override
+  int get hashCode => item.hashCode;
+
+  @override
+  String toString() {
+    return 'BoundingBoxKey{item: $item}';
+  }
+}
 
 abstract class CanvasItem {
+  final GlobalKey widgetKey = GlobalKey();
+  final GlobalKey gizmoKey = GlobalKey();
+  final GlobalKey boundingBoxKey = GlobalKey();
   final List<CanvasItemState> _attachedStates = [];
   CanvasLayoutData get layoutData;
   set layoutData(CanvasLayoutData value);
+
+  String? get debugLabel;
 
   void attach(CanvasItemState state) {
     _attachedStates.add(state);
@@ -20,19 +89,29 @@ abstract class CanvasItem {
   });
 
   List<CanvasItemState> get activeStates => List.unmodifiable(_attachedStates);
+
+  // Editor specific properties
+  Offset? get editorOffset;
+  set editorOffset(Offset? value);
+  //
 }
 
 class CanvasObject extends CanvasItem {
   CanvasLayout _layout;
   CanvasLayoutData _layoutData;
   List<CanvasItem> _children = [];
+  Offset? _editorOffset;
   @override
   List<CanvasObjectState> get _attachedStates =>
       super._attachedStates.cast<CanvasObjectState>();
+
+  final String? debugLabel;
+
   CanvasObject({
     CanvasLayout layout = const FixedLayout(),
     CanvasLayoutData layoutData = const AbsoluteLayoutData(),
     List<CanvasItem> children = const [],
+    this.debugLabel,
   })  : _layout = layout,
         _layoutData = layoutData,
         _children = children;
@@ -42,6 +121,16 @@ class CanvasObject extends CanvasItem {
       parent: parent,
       item: this,
     );
+  }
+
+  Offset? get editorOffset => _editorOffset;
+  set editorOffset(Offset? value) {
+    if (value != _editorOffset) {
+      _editorOffset = value;
+      for (var state in _attachedStates) {
+        state.markNeedsLayout();
+      }
+    }
   }
 
   @override
@@ -56,7 +145,7 @@ class CanvasObject extends CanvasItem {
     if (value != _layout) {
       _layout = value;
       for (var state in _attachedStates) {
-        state.markNeedsLayout();
+        state.requestRelayout();
         state._parentData = layout.setupParentData(state, state._parentData);
       }
     }
@@ -69,7 +158,7 @@ class CanvasObject extends CanvasItem {
     if (value != _layoutData) {
       _layoutData = value;
       for (var state in _attachedStates) {
-        state.markNeedsLayout();
+        state.requestRelayout();
       }
     }
   }
@@ -77,10 +166,18 @@ class CanvasObject extends CanvasItem {
   List<CanvasItem> get children => List.unmodifiable(_children);
 
   set children(List<CanvasItem> value) {
-    for (var state in _attachedStates) {
-      state.buildChildren(value);
+    if (!listEquals(value, _children)) {
+      _children = value;
+      for (var state in _attachedStates) {
+        state.buildChildren(value);
+        state.requestRelayout();
+      }
     }
-    _children = value;
+  }
+
+  @override
+  String toString() {
+    return 'CanvasObject{debugLabel: $debugLabel}';
   }
 }
 
@@ -97,6 +194,9 @@ class _CachedLayout {
 }
 
 abstract class CanvasItemState implements Listenable {
+  GlobalKey get widgetKey => item.widgetKey;
+  GlobalKey get gizmoKey => item.gizmoKey;
+  GlobalKey get boundingBoxKey => item.boundingBoxKey;
   CanvasItemState? get parent;
   CanvasItem get item;
   CanvasParentData? _parentData;
@@ -107,8 +207,19 @@ abstract class CanvasItemState implements Listenable {
     return parentData!;
   }
 
+  bool isDescendantOf(CanvasItemState state) {
+    var parent = this.parent;
+    while (parent != null) {
+      if (parent == state) {
+        return true;
+      }
+      parent = parent.parent;
+    }
+    return false;
+  }
+
   Size get size {
-    assert(_layoutResult != null, 'Layout not performed');
+    assert(_layoutResult != null, 'CanvasItem $this has not been laid out');
     return _layoutResult!.size;
   }
 
@@ -119,7 +230,18 @@ abstract class CanvasItemState implements Listenable {
         _layoutResult!.textDirection == textDirection;
   }
 
+  bool get hasSize => _layoutResult != null;
+
+  void requestRelayout();
+  void requestChildRelayout(CanvasItemState child);
+
   void markNeedsLayout();
+
+  void forceRelayout() {
+    var cached = _layoutResult;
+    assert(cached != null, 'CanvasItem $this has not been laid out');
+    forceLayout(cached!.constraints, cached.textDirection);
+  }
 
   final List<CanvasItemState> _children = [];
   List<CanvasItemState> get children => List.unmodifiable(_children);
@@ -127,9 +249,7 @@ abstract class CanvasItemState implements Listenable {
   void dispose() {}
 
   void layout(BoxConstraints constraints, TextDirection textDirection) {
-    if (_layoutResult == null ||
-        _layoutResult!.constraints != constraints ||
-        _layoutResult!.textDirection != textDirection) {
+    if (!hasLayoutPerformedFor(constraints, textDirection)) {
       var size = forceLayout(constraints, textDirection);
       _layoutResult = _CachedLayout(
         size: size,
@@ -158,9 +278,35 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
     required this.item,
   });
 
+  set children(List<CanvasItemState> children) {
+    item.children = children.map((e) => e.item).toList();
+  }
+
+  @override
+  void requestRelayout() {
+    var parent = this.parent;
+    if (parent == null) {
+      markNeedsLayout();
+    } else {
+      parent.markNeedsLayout();
+      markNeedsLayout();
+    }
+  }
+
+  @override
+  void requestChildRelayout(CanvasItemState child) {
+    item.layout.visitRelayout(this, child);
+  }
+
   @override
   void markNeedsLayout() {
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    buildChildren(const []);
+    super.dispose();
   }
 
   void buildChildren(List<CanvasItem> newChildren) {
@@ -209,4 +355,41 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   Size forceLayout(BoxConstraints constraints, TextDirection textDirection) {
     return item.layout.performLayout(this, constraints, textDirection);
   }
+
+  @override
+  String toString() {
+    return 'CanvasObjectState{item: $item}';
+  }
+}
+
+class CanvasRoot extends CanvasObject {
+  CanvasRoot({
+    CanvasLayout layout = const FixedLayout(),
+    CanvasLayoutData layoutData = const AbsoluteLayoutData(),
+    List<CanvasItem> children = const [],
+    String? debugLabel,
+  }) : super(
+          layout: layout,
+          layoutData: layoutData,
+          children: children,
+          debugLabel: debugLabel,
+        );
+
+  @override
+  CanvasItemState createState({CanvasItemState? parent}) {
+    return RootCanvasItemState(
+      parent: parent,
+      item: this,
+    );
+  }
+}
+
+class RootCanvasItemState extends CanvasObjectState {
+  RootCanvasItemState({
+    CanvasItemState? parent,
+    required CanvasRoot item,
+  }) : super(
+          parent: parent,
+          item: item,
+        );
 }
