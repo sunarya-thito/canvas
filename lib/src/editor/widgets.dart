@@ -69,42 +69,43 @@ class _CanvasEditorState extends State<CanvasEditor> {
             context: context,
           ),
         },
-        child: ListenableBuilder(
-          listenable: widget.controller,
-          builder: (context, child) {
-            Matrix4 transform = Matrix4.identity();
-            transform.translate(
-              widget.controller.value.offset.dx,
-              widget.controller.value.offset.dy,
-            );
-            transform.scale(widget.controller.value.zoom);
-            return Transform(
-              transform: transform,
-              child: child,
-            );
-          },
-          child: widget.gestureHandler.wrap(
-            context,
-            GroupWidget(
-              size: Size.zero,
-              children: [
-                CanvasItemWidget(
-                  state: _rootState,
-                  key: _rootState.widgetKey,
+        child: widget.gestureHandler.wrap(
+          context,
+          ListenableBuilder(
+            listenable: widget.controller,
+            builder: (context, child) {
+              Matrix4 transform = Matrix4.identity();
+              transform.translate(
+                widget.controller.value.offset.dx,
+                widget.controller.value.offset.dy,
+              );
+              transform.scale(widget.controller.value.zoom);
+              return Transform(
+                transform: transform,
+                child: GroupWidget(
+                  size: Size.zero,
+                  children: [
+                    CanvasItemWidget(
+                      state: _rootState,
+                      key: _rootState.widgetKey,
+                    ),
+                    CanvasBoundingBoxWidget(
+                      state: _rootState,
+                      key: _rootState.boundingBoxKey,
+                    ),
+                    CanvasItemGizmo(
+                      state: _rootState,
+                      key: _rootState.gizmoKey,
+                      parentScale: Offset(widget.controller.value.zoom,
+                          widget.controller.value.zoom),
+                    ),
+                    CanvasBoundingBoxMetadataWidget(state: _rootState),
+                  ],
                 ),
-                CanvasBoundingBoxWidget(
-                  state: _rootState,
-                  key: _rootState.boundingBoxKey,
-                ),
-                CanvasItemGizmo(
-                  state: _rootState,
-                  key: _rootState.gizmoKey,
-                ),
-                CanvasBoundingBoxMetadataWidget(state: _rootState),
-              ],
-            ),
-            widget.controller,
+              );
+            },
           ),
+          widget.controller,
         ),
       ),
     );

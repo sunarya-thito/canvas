@@ -41,8 +41,7 @@ class CanvasBoundingBoxWidget extends StatelessWidget {
                     size: innerSize,
                     painter: BoundingBoxPainter(
                       transform: transform,
-                      // fillColor: Color.fromARGB(50, 255, 0, 0),
-                      borderColor: Color.fromARGB(255, 255, 0, 0),
+                      borderColor: Color.fromARGB(255, 0, 0, 0),
                       borderWidth: 1,
                     ),
                   ),
@@ -100,7 +99,6 @@ class CanvasBoundingBoxWidget extends StatelessWidget {
                             ),
                           );
                         },
-                        child: Container(color: Color.fromARGB(50, 0, 255, 0)),
                       ),
                     ),
                   ),
@@ -148,13 +146,6 @@ class CanvasBoundingBoxMetadataWidget extends StatelessWidget {
                   child: Container(
                     width: innerSize.width,
                     height: innerSize.height,
-                    decoration: BoxDecoration(
-                      color: Color.fromARGB(50, 255, 255, 0),
-                      border: Border.all(
-                        color: Color.fromARGB(255, 255, 0, 0),
-                        width: 3,
-                      ),
-                    ),
                   ),
                 ),
               ),

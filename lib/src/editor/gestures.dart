@@ -74,7 +74,7 @@ class _DesktopEditorGestureHandlerWidgetState
           Offset position = event.localPosition;
           widget.controller.value = widget.controller.value.zoomAt(
             position,
-            delta: event.scrollDelta.dy > 0 ? 0.1 : -0.1,
+            delta: event.scrollDelta.dy < 0 ? 0.1 : -0.1,
           );
         }
       },

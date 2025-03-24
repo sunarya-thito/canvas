@@ -34,3 +34,5 @@ class CanvasViewportThemeData {
     ),
   });
 }
+
+class CanvasGizmoThemeData {}

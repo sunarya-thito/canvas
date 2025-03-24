@@ -41,7 +41,7 @@ class CanvasEditorTransform {
       }
     }
     return copyWith(
-      offset: offset - position * delta,
+      offset: offset - (position - offset) * delta / zoom,
       zoom: zoom + delta,
     );
   }

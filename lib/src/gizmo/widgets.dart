@@ -4,13 +4,13 @@ import 'package:flutter/widgets.dart';
 class CanvasItemGizmo extends StatefulWidget {
   final CanvasItemState state;
   final Matrix4? parentTransform;
-  final double? parentRotation;
+  final Offset? parentScale;
 
   const CanvasItemGizmo({
     Key? key,
     required this.state,
     this.parentTransform,
-    this.parentRotation,
+    this.parentScale,
   }) : super(key: key);
 
   @override
@@ -59,14 +59,40 @@ class _CanvasItemGizmoState extends State<CanvasItemGizmo> {
       transform.translate(editorOffset.dx, editorOffset.dy);
     }
 
-    double rotation = widget.state.item.layoutData.rotation ?? 0;
+    Offset scale = widget.state.item.layoutData.scale ?? Offset(1, 1);
 
-    if (widget.parentRotation != null) {
-      rotation += widget.parentRotation!;
+    if (widget.parentScale != null) {
+      scale = Offset(
+        scale.dx * widget.parentScale!.dx,
+        scale.dy * widget.parentScale!.dy,
+      );
     }
 
     var innerSize =
         widget.state.item.layoutData.computeInnerSize(widget.state.size);
+
+    Widget _createHandle(
+        Alignment alignment, bool expandWidth, bool expandHeight) {
+      return GestureDetector(
+        onPanUpdate: (details) {},
+        child: CustomPaint(
+          painter: GizmoHandlePainter(
+            handleBorderColor: Color.fromARGB(255, 0, 0, 0),
+            handleFillColor: Color.fromARGB(255, 255, 255, 255),
+            handleBorderWidth: 1,
+            handleWidth: expandWidth ? innerSize.width : 10,
+            handleHeight: expandHeight ? innerSize.height : 10,
+            transform: transform,
+            scale: Offset(
+              expandWidth ? 1 : scale.dx,
+              expandHeight ? 1 : scale.dy,
+            ),
+            size: innerSize,
+            alignment: alignment,
+          ),
+        ),
+      );
+    }
 
     return GroupData(
       position: Offset.zero,
@@ -78,171 +104,128 @@ class _CanvasItemGizmoState extends State<CanvasItemGizmo> {
               key: child.gizmoKey,
               state: child,
               parentTransform: transform,
-              parentRotation: rotation,
+              parentScale: scale,
             ),
-          if (widget.state.item is! CanvasRoot)
-            IgnorePointer(
-              child: SizedBox.fromSize(
-                size: innerSize,
-                child: CustomPaint(
-                  painter: GizmoPainter(
-                    handleBorderColor: Color.fromARGB(255, 8, 255, 234),
-                    handleFillColor: Color.fromARGB(255, 52, 162, 212),
-                    handleBorderWidth: 1,
-                    handleSize: 10,
-                    transform: transform,
-                    rotation: rotation,
-                  ),
-                ),
-              ),
-            ),
+          if (widget.state.item is! CanvasRoot) ...[
+            // top
+            _createHandle(Alignment.topCenter, true, false),
+            // bottom
+            _createHandle(Alignment.bottomCenter, true, false),
+            // left
+            _createHandle(Alignment.centerLeft, false, true),
+            // right
+            _createHandle(Alignment.centerRight, false, true),
+            // top left
+            _createHandle(Alignment.topLeft, false, false),
+            // top right
+            _createHandle(Alignment.topRight, false, false),
+            // bottom left
+            _createHandle(Alignment.bottomLeft, false, false),
+            // bottom right
+            _createHandle(Alignment.bottomRight, false, false),
+          ],
         ],
       ),
     );
   }
 }
 
-class GizmoPainter extends CustomPainter {
-  final Color? borderColor;
-  final Color? fillColor;
-  final double? borderWidth;
+class GizmoHandlePainter extends CustomPainter {
   final Color? handleBorderColor;
   final Color? handleFillColor;
   final double? handleBorderWidth;
-  final double? handleSize;
+  final double handleWidth;
+  final double handleHeight;
   final Matrix4 transform;
-  final double rotation;
+  final Offset scale;
+  final Size size;
+  final Alignment alignment;
 
-  GizmoPainter({
-    this.borderColor,
-    this.fillColor,
-    this.borderWidth,
+  GizmoHandlePainter({
     this.handleBorderColor,
     this.handleFillColor,
     this.handleBorderWidth,
-    this.handleSize,
+    required this.handleWidth,
+    required this.handleHeight,
     required this.transform,
-    required this.rotation,
+    required this.scale,
+    required this.size,
+    required this.alignment,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final topLeft = Offset(0, 0);
-    final topRight = Offset(size.width, 0);
-    final bottomLeft = Offset(0, size.height);
-    final bottomRight = Offset(size.width, size.height);
-
-    final transformedTopLeft = transformOffset(topLeft, transform);
-    final transformedTopRight = transformOffset(topRight, transform);
-    final transformedBottomLeft = transformOffset(bottomLeft, transform);
-    final transformedBottomRight = transformOffset(bottomRight, transform);
-
-    final borderColor = this.borderColor;
-    final fillColor = this.fillColor;
-    final borderWidth = this.borderWidth;
-    final handleBorderColor = this.handleBorderColor;
     final handleFillColor = this.handleFillColor;
+    final handleBorderColor = this.handleBorderColor;
     final handleBorderWidth = this.handleBorderWidth;
-    final handleSize = this.handleSize;
-
-    Path? boundingBoxPath;
-
-    if (fillColor != null) {
-      boundingBoxPath ??= Path()
-        ..moveTo(transformedTopLeft.dx, transformedTopLeft.dy)
-        ..lineTo(transformedTopRight.dx, transformedTopRight.dy)
-        ..lineTo(transformedBottomRight.dx, transformedBottomRight.dy)
-        ..lineTo(transformedBottomLeft.dx, transformedBottomLeft.dy)
-        ..close();
-
-      final paint = Paint()
-        ..color = fillColor
-        ..style = PaintingStyle.fill;
-      canvas.drawPath(boundingBoxPath, paint);
+    if (handleFillColor == null &&
+        (handleBorderColor == null || handleBorderWidth == null)) {
+      return;
     }
+    final center = alignment.alongSize(this.size);
+    final polygon = Polygon.fromRect(
+      Rect.fromCenter(
+        center: center,
+        width: handleWidth,
+        height: handleHeight,
+      ),
+    );
+    final transform = this.transform.clone();
+    transform.translate(center.dx, center.dy);
+    transform.scale(1 / scale.dx, 1 / scale.dy);
+    transform.translate(-center.dx, -center.dy);
+    final transformedPolygon = polygon.transform(transform);
 
-    if (borderColor != null && borderWidth != null) {
-      boundingBoxPath ??= Path()
-        ..moveTo(transformedTopLeft.dx, transformedTopLeft.dy)
-        ..lineTo(transformedTopRight.dx, transformedTopRight.dy)
-        ..lineTo(transformedBottomRight.dx, transformedBottomRight.dy)
-        ..lineTo(transformedBottomLeft.dx, transformedBottomLeft.dy)
-        ..close();
-
-      final paint = Paint()
-        ..color = borderColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = borderWidth;
-      canvas.drawPath(boundingBoxPath, paint);
-    }
-
-    if (handleSize != null && handleSize > 0) {
-      Size handle = Size(handleSize, handleSize);
-
-      final handleTopLeft = Polygon.fromRect(Rect.fromCenter(
-        center: transformedTopLeft,
-        width: handle.width,
-        height: handle.height,
-      ));
-      final handleTopRight = Polygon.fromRect(Rect.fromCenter(
-        center: transformedTopRight,
-        width: handle.width,
-        height: handle.height,
-      ));
-      final handleBottomLeft = Polygon.fromRect(Rect.fromCenter(
-        center: transformedBottomLeft,
-        width: handle.width,
-        height: handle.height,
-      ));
-      final handleBottomRight = Polygon.fromRect(Rect.fromCenter(
-        center: transformedBottomRight,
-        width: handle.width,
-        height: handle.height,
-      ));
-
-      Matrix4 rotationMatrix = Matrix4.identity();
-      rotationMatrix.rotateZ(rotation);
-
-      final transformedHandleTopLeft =
-          handleTopLeft.transform(rotationMatrix, transformedTopLeft);
-      final transformedHandleTopRight =
-          handleTopRight.transform(rotationMatrix, transformedTopRight);
-      final transformedHandleBottomLeft =
-          handleBottomLeft.transform(rotationMatrix, transformedBottomLeft);
-      final transformedHandleBottomRight =
-          handleBottomRight.transform(rotationMatrix, transformedBottomRight);
-
-      if (handleFillColor != null) {
-        final paint = Paint()
+    final path = transformedPolygon.path;
+    if (handleFillColor != null) {
+      canvas.drawPath(
+        path,
+        Paint()
           ..color = handleFillColor
-          ..style = PaintingStyle.fill;
-        canvas.drawPath(transformedHandleTopLeft.path, paint);
-        canvas.drawPath(transformedHandleTopRight.path, paint);
-        canvas.drawPath(transformedHandleBottomLeft.path, paint);
-        canvas.drawPath(transformedHandleBottomRight.path, paint);
-      }
-
-      if (handleBorderColor != null && handleBorderWidth != null) {
-        final paint = Paint()
+          ..style = PaintingStyle.fill,
+      );
+    }
+    if (handleBorderColor != null && handleBorderWidth != null) {
+      canvas.drawPath(
+        path,
+        Paint()
           ..color = handleBorderColor
           ..style = PaintingStyle.stroke
-          ..strokeWidth = handleBorderWidth;
-        canvas.drawPath(transformedHandleTopLeft.path, paint);
-        canvas.drawPath(transformedHandleTopRight.path, paint);
-        canvas.drawPath(transformedHandleBottomLeft.path, paint);
-        canvas.drawPath(transformedHandleBottomRight.path, paint);
-      }
+          ..strokeWidth = handleBorderWidth / _averageScale(scale),
+      );
     }
   }
 
   @override
-  bool shouldRepaint(covariant GizmoPainter oldDelegate) {
-    return oldDelegate.borderColor != borderColor ||
-        oldDelegate.fillColor != fillColor ||
-        oldDelegate.borderWidth != borderWidth ||
-        oldDelegate.handleBorderColor != handleBorderColor ||
+  bool? hitTest(Offset position) {
+    final center = alignment.alongSize(size);
+    final polygon = Polygon.fromRect(
+      Rect.fromCenter(
+        center: center,
+        width: handleWidth,
+        height: handleHeight,
+      ),
+    );
+    final transform = this.transform.clone();
+    transform.translate(center.dx, center.dy);
+    transform.scale(1 / scale.dx, 1 / scale.dy);
+    transform.translate(-center.dx, -center.dy);
+    final transformedPolygon = polygon.transform(transform);
+    return transformedPolygon.contains(position);
+  }
+
+  static double _averageScale(Offset scale) {
+    return (scale.dx + scale.dy) / 2;
+  }
+
+  @override
+  bool shouldRepaint(covariant GizmoHandlePainter oldDelegate) {
+    return oldDelegate.handleBorderColor != handleBorderColor ||
         oldDelegate.handleFillColor != handleFillColor ||
         oldDelegate.handleBorderWidth != handleBorderWidth ||
-        oldDelegate.handleSize != handleSize;
+        oldDelegate.handleWidth != handleWidth ||
+        oldDelegate.handleHeight != handleHeight ||
+        oldDelegate.transform != transform ||
+        oldDelegate.scale != scale;
   }
 }

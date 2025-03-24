@@ -114,7 +114,7 @@ class CanvasObject extends CanvasItem {
     this.debugLabel,
   })  : _layout = layout,
         _layoutData = layoutData,
-        _children = children;
+        _children = List.of(children);
   @override
   CanvasItemState createState({CanvasItemState? parent}) {
     return CanvasObjectState(
@@ -206,6 +206,8 @@ abstract class CanvasItemState implements Listenable {
     assert(parentData != null, 'Parent data not set');
     return parentData!;
   }
+
+  Widget? render(BuildContext context) => null;
 
   bool isDescendantOf(CanvasItemState state) {
     var parent = this.parent;

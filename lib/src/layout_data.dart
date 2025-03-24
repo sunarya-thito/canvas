@@ -24,59 +24,31 @@ abstract class CanvasLayoutData {
     var scaledWidth = width / scale.dx;
     var scaledHeight = height / scale.dy;
 
-    return Size(scaledWidth, scaledHeight);
+    var rotation = this.rotation ?? 0; // (already in radians)
+
+    // based on the rotation, fit the inner size into the outer size
+    var cosTheta = cos(rotation);
+    var sinTheta = sin(rotation);
+
+    var rotatedWidth = scaledWidth * cosTheta + scaledHeight * sinTheta;
+    var rotatedHeight = scaledWidth * sinTheta + scaledHeight * cosTheta;
+
+    return Size(rotatedWidth, rotatedHeight);
   }
 
   Matrix4 computeMatrix(Size size,
       {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
-    Matrix4 matrix = Matrix4.identity();
-
     var scale = this.scale ?? const Offset(1, 1);
     var rotation = this.rotation ?? 0;
 
     Size innerSize = computeInnerSize(size, alignment);
     Offset origin = alignment.alongSize(innerSize);
-    matrix.translate(origin.dx, origin.dy);
-    matrix.rotateZ(rotation);
-    matrix.translate(-origin.dx, -origin.dy);
-    matrix.scale(scale.dx, scale.dy);
-
-    Offset topLeft = Offset(0, 0);
-    Offset topRight = Offset(innerSize.width, 0);
-    Offset bottomLeft = Offset(0, innerSize.height);
-    Offset bottomRight = Offset(innerSize.width, innerSize.height);
-
-    Offset rotatedTopLeft = transformOffset(topLeft, matrix, origin);
-    Offset rotatedTopRight = transformOffset(topRight, matrix, origin);
-    Offset rotatedBottomLeft = transformOffset(bottomLeft, matrix, origin);
-    Offset rotatedBottomRight = transformOffset(bottomRight, matrix, origin);
-
-    double minX = min(
-      min(rotatedTopLeft.dx, rotatedTopRight.dx),
-      min(rotatedBottomLeft.dx, rotatedBottomRight.dx),
-    );
-    double maxX = max(
-      max(rotatedTopLeft.dx, rotatedTopRight.dx),
-      max(rotatedBottomLeft.dx, rotatedBottomRight.dx),
-    );
-    double minY = min(
-      min(rotatedTopLeft.dy, rotatedTopRight.dy),
-      min(rotatedBottomLeft.dy, rotatedBottomRight.dy),
-    );
-    double maxY = max(
-      max(rotatedTopLeft.dy, rotatedTopRight.dy),
-      max(rotatedBottomLeft.dy, rotatedBottomRight.dy),
-    );
-
-    double scaleX = size.width / (maxX - minX);
-    double scaleY = size.height / (maxY - minY);
 
     Matrix4 newMatrix = parentMatrix?.clone() ?? Matrix4.identity();
 
     origin = alignment.alongSize(size);
 
     newMatrix.translate(origin.dx, origin.dy);
-    newMatrix.scale(scaleX, scaleY);
     newMatrix.rotateZ(rotation);
     newMatrix.translate(-origin.dx, -origin.dy);
     newMatrix.scale(scale.dx, scale.dy);
@@ -95,68 +67,20 @@ abstract class CanvasLayoutData {
 
   CanvasLayoutData rotate(double delta) => this;
 
-  CanvasLayoutData resizeUp(double delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
+  CanvasLayoutData resize(double delta,
+          {bool symmetric = false,
+          bool preserveAspectRatio = false,
+          required Alignment alignment}) =>
       this;
 
-  CanvasLayoutData resizeDown(double delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
+  CanvasLayoutData rescale(Offset delta,
+          {bool symmetric = false,
+          bool preserveAspectRatio = false,
+          required Alignment alignment}) =>
       this;
 
-  CanvasLayoutData resizeLeft(double delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData resizeRight(double delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData resizeUpLeft(Offset delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData resizeUpRight(Offset delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData resizeDownLeft(Offset delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData resizeDownRight(Offset delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData rescaleUp(double delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData rescaleDown(double delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData rescaleLeft(double delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData rescaleRight(double delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData rescaleUpLeft(Offset delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData rescaleUpRight(Offset delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData rescaleDownLeft(Offset delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
-      this;
-
-  CanvasLayoutData rescaleDownRight(Offset delta,
-          {bool symmetric = false, bool preserveAspectRatio = false}) =>
+  CanvasLayoutData handleResize(Offset positionDelta, Offset sizeDelta) => this;
+  CanvasLayoutData handleRescale(Offset positionDelta, Offset sizeDelta) =>
       this;
 }
 

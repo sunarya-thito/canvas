@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/foundation.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
@@ -99,37 +100,46 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
             Transform(
               transform: widget.state.item.layoutData
                   .computeBoundingBoxMatrix(widget.state.size),
-              child: MetaData(
-                behavior: HitTestBehavior.translucent,
-                metaData: BoundingBoxData(widget.state),
-                child: Container(
-                  width: innerSize.width,
-                  height: innerSize.height,
-                  decoration: BoxDecoration(
-                    color: Color.fromARGB(50, 255, 255, 0),
-                    border: Border.all(
-                      color: Color.fromARGB(255, 255, 0, 0),
-                      width: 3,
-                    ),
-                  ),
+              child: SizedBox(
+                width: innerSize.width,
+                height: innerSize.height,
+                child: MetaData(
+                  behavior: HitTestBehavior.translucent,
+                  metaData: BoundingBoxData(widget.state),
                 ),
               ),
             ),
-            Transform(
-              transform: transform,
-              child: GroupWidget(size: innerSize, children: [
-                ...widget.state.children.map((child) {
-                  return CanvasItemWidget(
-                    key: child.widgetKey,
-                    state: child,
-                  );
-                }),
-              ]),
+            ListenableBuilder(
+              listenable: Listenable.merge(widget.state.children),
+              builder: (context, child) {
+                return Transform(
+                  transform: transform,
+                  child: GroupWidget(size: innerSize, children: [
+                    ...widget.state.children.sorted(_sortChildren).map((child) {
+                      return CanvasItemWidget(
+                        key: child.widgetKey,
+                        state: child,
+                      );
+                    }),
+                  ]),
+                );
+              },
             ),
           ],
         ),
       ),
     );
+  }
+
+  int _sortChildren(CanvasItemState a, CanvasItemState b) {
+    // if it has editorOffset, it should be on top
+    if (a.item.editorOffset != null && b.item.editorOffset == null) {
+      return 1;
+    }
+    if (a.item.editorOffset == null && b.item.editorOffset != null) {
+      return -1;
+    }
+    return 0;
   }
 }
 
@@ -185,7 +195,38 @@ class GroupData extends ParentDataWidget<GroupParentData> {
   Type get debugTypicalAncestorWidgetClass => GroupWidget;
 }
 
-class GroupParentData extends ContainerBoxParentData<RenderBox> {}
+class GroupParentData extends ContainerBoxParentData<RenderBox> {
+  Alignment? alignment;
+}
+
+class AlignedGroupData extends ParentDataWidget<GroupParentData> {
+  final Alignment alignment;
+  const AlignedGroupData({
+    super.key,
+    required this.alignment,
+    required super.child,
+  });
+
+  @override
+  void applyParentData(RenderObject renderObject) {
+    final GroupParentData parentData =
+        renderObject.parentData as GroupParentData;
+    bool needsLayout = false;
+    if (parentData.alignment != alignment) {
+      parentData.alignment = alignment;
+      needsLayout = true;
+    }
+    if (needsLayout) {
+      var targetParent = renderObject.parent;
+      if (targetParent is RenderObject) {
+        targetParent.markNeedsLayout();
+      }
+    }
+  }
+
+  @override
+  Type get debugTypicalAncestorWidgetClass => GroupWidget;
+}
 
 class GroupRenderObject extends RenderBox
     with
@@ -205,12 +246,18 @@ class GroupRenderObject extends RenderBox
   @override
   void performLayout() {
     var child = firstChild;
+    var size = constraints.constrain(groupSize);
     while (child != null) {
       var childParentData = child.parentData as GroupParentData;
       child.layout(const BoxConstraints());
+      if (childParentData.alignment != null) {
+        childParentData.offset = childParentData.alignment!.alongSize(
+          size,
+        );
+      }
       child = childParentData.nextSibling;
     }
-    size = constraints.constrain(groupSize);
+    this.size = size;
   }
 
   @override

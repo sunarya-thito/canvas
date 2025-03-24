@@ -5,6 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Dart",
+            "type": "dart",
+            "request": "launch",
+            "program": "example/lib/test.dart"
+        },
+        {
             "name": "canvas",
             "request": "launch",
             "type": "dart"

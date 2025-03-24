@@ -49,7 +49,7 @@ class _SampleState extends State<Sample> with SingleTickerProviderStateMixin {
       layoutData: AbsoluteLayoutData(
         top: 50,
         left: 50,
-        width: 500,
+        width: 800,
         height: 500,
         rotation: _rotation * pi / 180,
         // rotation: _elapsed * pi * 0.1,
