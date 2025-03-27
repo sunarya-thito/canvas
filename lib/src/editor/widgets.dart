@@ -1,7 +1,5 @@
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/actions.dart';
-import 'package:canvas/src/boundingbox/widgets.dart';
-import 'package:canvas/src/gizmo/widgets.dart';
 import 'package:flutter/widgets.dart';
 
 class CanvasEditor extends StatefulWidget {
@@ -41,7 +39,9 @@ class _CanvasEditorState extends State<CanvasEditor> {
   }
 
   void _performFullLayout() {
+    print('Performing full layout');
     _rootState.layout(rootConstraints, widget.textDirection);
+    print('Root size: ${_rootState.size}');
   }
 
   @override
@@ -68,6 +68,10 @@ class _CanvasEditorState extends State<CanvasEditor> {
             defaultAction: CanvasUpdateLayoutDataAction(),
             context: context,
           ),
+          CanvasUpdateChildrenIntent: Action.overridable(
+            defaultAction: CanvasUpdateChildrenAction(),
+            context: context,
+          ),
         },
         child: widget.gestureHandler.wrap(
           context,
@@ -87,17 +91,11 @@ class _CanvasEditorState extends State<CanvasEditor> {
                   children: [
                     CanvasItemWidget(
                       state: _rootState,
-                      key: _rootState.widgetKey,
+                      // key: _rootState.widgetKey,
                     ),
                     CanvasBoundingBoxWidget(
                       state: _rootState,
-                      key: _rootState.boundingBoxKey,
-                    ),
-                    CanvasItemGizmo(
-                      state: _rootState,
-                      key: _rootState.gizmoKey,
-                      parentScale: Offset(widget.controller.value.zoom,
-                          widget.controller.value.zoom),
+                      key: ValueKey(_rootState),
                     ),
                     CanvasBoundingBoxMetadataWidget(state: _rootState),
                   ],

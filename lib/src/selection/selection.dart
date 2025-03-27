@@ -5,7 +5,7 @@ import 'package:flutter/widgets.dart';
 
 class SelectionClient {
   final BoxDecoration? decoration;
-  final Rect selectionRect;
+  final ValueNotifier<Rect> selectionRect;
 
   const SelectionClient({
     this.decoration,
@@ -16,20 +16,24 @@ class SelectionClient {
 // selection group groups a list of selected items
 // together, so that they can be manipulated as a group.
 class SelectionGroup {
+  final CanvasItemState parent;
   final List<CanvasItemState> selectedItems;
 
   const SelectionGroup({
+    required this.parent,
     required this.selectedItems,
   });
 
   GizmoBox getGizmoBox() {
     if (selectedItems.length == 1) {
       CanvasItemState? current = selectedItems.first;
-      var transform = current.item.layoutData.computeMatrix(current.size);
+      var transform =
+          current.item.layoutData.computeMatrix(current, current.size);
       while (current != null) {
         current = current.parent;
         if (current != null) {
-          transform = current.item.layoutData.computeMatrix(current.size)
+          transform = current.item.layoutData
+              .computeMatrix(current, current.size)
             ..multiply(transform);
         }
       }
@@ -44,7 +48,7 @@ class SelectionGroup {
     double bottom = double.negativeInfinity;
     for (var item in selectedItems) {
       var layoutData = item.item.layoutData;
-      var matrix = layoutData.computeMatrix(item.size);
+      var matrix = layoutData.computeMatrix(item, item.size);
       var topLeft = transformOffset(Offset(0, 0), matrix);
       var topRight = transformOffset(Offset(item.size.width, 0), matrix);
       var bottomLeft = transformOffset(Offset(0, item.size.height), matrix);
@@ -98,4 +102,43 @@ class Selection {
     required this.groups,
     required this.client,
   });
+
+  int? _findPossibleGroup(CanvasItemState item) {
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].parent == item.parent) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  Selection addSelection(CanvasItemState item) {
+    int? possibleGroup = _findPossibleGroup(item);
+    if (possibleGroup != null) {
+      var group = groups[possibleGroup];
+      return Selection(
+        groups: [
+          ...groups.sublist(0, possibleGroup),
+          SelectionGroup(
+            parent: group.parent,
+            selectedItems: [...group.selectedItems, item],
+          ),
+          ...groups.sublist(possibleGroup + 1),
+        ],
+        client: client,
+      );
+    }
+    return Selection(
+      groups: [
+        ...groups,
+        SelectionGroup(
+          parent: item.parent!,
+          // if parent is null, then it is RootObject
+          // RootObject is not selectable so its safe here!
+          selectedItems: [item],
+        ),
+      ],
+      client: client,
+    );
+  }
 }

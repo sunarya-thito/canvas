@@ -1,16 +1,24 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/foundation.dart';
+import 'package:cassowary/cassowary.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart';
 
 class CanvasParentData {
   Offset position = Offset.zero;
+  CanvasItemState? nextSibling;
+  CanvasItemState? previousSibling;
 
-  // Used by the FlexLayout to store temporaily the size of the flex child.
-  // Which can later be adjusted by the FlexLayout to fit the constraints.
-  double? _flexSize;
+  // used by absolute children to handle
+  // scale mode when anchored both left and right or top and bottom
+  Offset scaleAdjustment = const Offset(1, 1);
+}
+
+class CanvasFlexParentData extends CanvasParentData {
+  Param mainSize = Param(0);
+  double cachedMainSize = 0;
+  double cachedCrossSize = 0;
 }
 
 abstract class SizeConstraint {
@@ -19,6 +27,7 @@ abstract class SizeConstraint {
     double min,
     double max,
   }) = IntrinsicSizeConstraint;
+  const factory SizeConstraint.unconstrained() = UnconstrainedSizeConstraint;
   double computeSize(
       CanvasItemState state, double crossSize, Axis axisDirection, bool min);
 }
@@ -32,6 +41,16 @@ class FixedSizeConstraint implements SizeConstraint {
   double computeSize(
       CanvasItemState state, double crossSize, Axis axisDirection, bool min) {
     return size;
+  }
+}
+
+class UnconstrainedSizeConstraint implements SizeConstraint {
+  const UnconstrainedSizeConstraint();
+
+  @override
+  double computeSize(
+      CanvasItemState state, double crossSize, Axis axisDirection, bool min) {
+    return double.infinity;
   }
 }
 
@@ -66,24 +85,40 @@ class IntrinsicSizeConstraint implements SizeConstraint {
   }
 }
 
+abstract class DragResult {
+  static const DragResult doNothing = DoNothingDragResult();
+  const DragResult();
+}
+
+class DoNothingDragResult extends DragResult {
+  const DoNothingDragResult();
+}
+
+class ReInsertDragResult extends DragResult {
+  final CanvasItemState? beforeThis; // if null, then insert at the end
+  final Axis direction;
+
+  const ReInsertDragResult(this.beforeThis, this.direction);
+}
+
 abstract class CanvasLayout {
   const CanvasLayout();
-  CanvasParentData setupParentData(
-      CanvasItemState state, CanvasParentData? parentData);
-  Size performLayout(CanvasItemState state, BoxConstraints constraints,
+  CanvasParentData setupParentData(CanvasObjectState state,
+      CanvasItemState child, CanvasParentData? parentData);
+  Size performLayout(CanvasObjectState state, BoxConstraints constraints,
       TextDirection textDirection);
-  double computeMinIntrinsicWidth(CanvasItemState state, double height);
-  double computeMaxIntrinsicWidth(CanvasItemState state, double height);
-  double computeMinIntrinsicHeight(CanvasItemState state, double width);
-  double computeMaxIntrinsicHeight(CanvasItemState state, double width);
+  double computeMinIntrinsicWidth(CanvasObjectState state, double height);
+  double computeMaxIntrinsicWidth(CanvasObjectState state, double height);
+  double computeMinIntrinsicHeight(CanvasObjectState state, double width);
+  double computeMaxIntrinsicHeight(CanvasObjectState state, double width);
 
-  void visitRelayout(CanvasItemState item, CanvasItemState child) {
+  void visitRelayout(CanvasObjectState item, CanvasItemState child) {
     child.markNeedsLayout();
   }
 
-  Offset handleDragAttempt(CanvasObjectState item, CanvasItemState dragged,
+  DragResult handleDragAttempt(CanvasObjectState item, CanvasItemState dragged,
       CanvasItemState target, Offset localPosition) {
-    return Offset.zero;
+    return DragResult.doNothing;
   }
 }
 
@@ -93,15 +128,27 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
   double left;
   double width;
   double height;
+  double adjustmentScaleX = 1;
+  double adjustmentScaleY = 1;
   if (layoutData.width != null) {
-    width = layoutData.width!;
+    if (layoutData.left != null && layoutData.right != null) {
+      width = parentSize.width - layoutData.left! - layoutData.right!;
+      adjustmentScaleX = width / layoutData.width!;
+    } else {
+      width = layoutData.width!;
+    }
   } else if (layoutData.left != null && layoutData.right != null) {
     width = parentSize.width - layoutData.left! - layoutData.right!;
   } else {
     width = child.computeMaxIntrinsicWidth(parentSize.height);
   }
   if (layoutData.height != null) {
-    height = layoutData.height!;
+    if (layoutData.top != null && layoutData.bottom != null) {
+      height = parentSize.height - layoutData.top! - layoutData.bottom!;
+      adjustmentScaleY = height / layoutData.height!;
+    } else {
+      height = layoutData.height!;
+    }
   } else if (layoutData.top != null && layoutData.bottom != null) {
     height = parentSize.height - layoutData.top! - layoutData.bottom!;
   } else {
@@ -130,14 +177,16 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
       ),
       textDirection);
   child.parentData.position = offset + Offset(left, top);
+  child.parentData.scaleAdjustment = Offset(adjustmentScaleX, adjustmentScaleY);
 }
 
 class FixedLayout extends CanvasLayout {
   const FixedLayout();
   @override
-  Size performLayout(CanvasItemState state, BoxConstraints constraints,
+  Size performLayout(CanvasObjectState state, BoxConstraints constraints,
       TextDirection textDirection) {
-    for (var child in state.children) {
+    var child = state.firstChild;
+    while (child != null) {
       var layoutData = child.item.layoutData;
       if (layoutData is AbsoluteLayoutData) {
         layoutAbsolutePositioning(
@@ -147,6 +196,7 @@ class FixedLayout extends CanvasLayout {
         assert(false, 'FixedLayout can only be used with AbsoluteLayoutData');
         child.parentData.position = Offset.zero;
       }
+      child = child.parentData.nextSibling;
     }
     return constraints.biggest;
   }
@@ -157,14 +207,15 @@ class FixedLayout extends CanvasLayout {
   }
 
   double _computeIntrinsicSize(
-      CanvasItemState state,
+      CanvasObjectState state,
       double size,
       double? Function(AbsoluteLayoutData) getStart,
       double? Function(AbsoluteLayoutData) getEnd,
       double Function(CanvasItemState, double) computeIntrinsicSize) {
     var start = 0.0;
     var end = 0.0;
-    for (var child in state.children) {
+    var child = state.firstChild;
+    while (child != null) {
       var layoutData = child.item.layoutData;
       if (layoutData is AbsoluteLayoutData) {
         var childStart = getStart(layoutData) ?? 0;
@@ -180,18 +231,19 @@ class FixedLayout extends CanvasLayout {
       } else {
         end = max(end, computeIntrinsicSize(child, size));
       }
+      child = child.parentData.nextSibling;
     }
     return end - start;
   }
 
   @override
-  CanvasParentData setupParentData(
-      CanvasItemState state, CanvasParentData? parentData) {
+  CanvasParentData setupParentData(CanvasObjectState state,
+      CanvasItemState child, CanvasParentData? parentData) {
     return parentData ?? CanvasParentData();
   }
 
   @override
-  double computeMinIntrinsicHeight(CanvasItemState state, double width) {
+  double computeMinIntrinsicHeight(CanvasObjectState state, double width) {
     return _computeIntrinsicSize(
       state,
       width,
@@ -202,7 +254,7 @@ class FixedLayout extends CanvasLayout {
   }
 
   @override
-  double computeMaxIntrinsicHeight(CanvasItemState state, double width) {
+  double computeMaxIntrinsicHeight(CanvasObjectState state, double width) {
     return _computeIntrinsicSize(
       state,
       width,
@@ -213,7 +265,7 @@ class FixedLayout extends CanvasLayout {
   }
 
   @override
-  double computeMaxIntrinsicWidth(CanvasItemState state, double height) {
+  double computeMaxIntrinsicWidth(CanvasObjectState state, double height) {
     return _computeIntrinsicSize(
       state,
       height,
@@ -224,7 +276,7 @@ class FixedLayout extends CanvasLayout {
   }
 
   @override
-  double computeMinIntrinsicWidth(CanvasItemState state, double height) {
+  double computeMinIntrinsicWidth(CanvasObjectState state, double height) {
     return _computeIntrinsicSize(
       state,
       height,
@@ -238,7 +290,32 @@ class FixedLayout extends CanvasLayout {
 enum FlexAlignment {
   start,
   center,
-  end,
+  end;
+}
+
+FlexAlignment _resolveFlexAlignment(
+    FlexAlignment alignment, TextDirection direction) {
+  switch (alignment) {
+    case FlexAlignment.start:
+      return direction == TextDirection.ltr
+          ? FlexAlignment.start
+          : FlexAlignment.end;
+    case FlexAlignment.center:
+      return FlexAlignment.center;
+    case FlexAlignment.end:
+      return direction == TextDirection.ltr
+          ? FlexAlignment.end
+          : FlexAlignment.start;
+  }
+}
+
+class _ConstraintNode extends LinkedNode<_ConstraintNode> {
+  Constraint constraint;
+
+  _ConstraintNode(this.constraint);
+
+  @override
+  _ConstraintNode? next;
 }
 
 class FlexLayout extends CanvasLayout {
@@ -256,83 +333,38 @@ class FlexLayout extends CanvasLayout {
     this.padding = EdgeInsets.zero,
   });
 
-  bool _flexLayoutData(CanvasItemState child) {
+  bool _nonAbsoluteChild(CanvasItemState child) {
     return child.item.layoutData is FlexLayoutData ||
         child.item.layoutData is FixedLayoutData;
   }
 
   @override
-  Offset handleDragAttempt(CanvasObjectState item, CanvasItemState dragged,
+  DragResult handleDragAttempt(CanvasObjectState item, CanvasItemState dragged,
       CanvasItemState target, Offset localPosition) {
-    // newOrder: 0 (before) 1 (after)
-
+    print(
+        'handleDragAttempt: ${dragged.item.debugLabel} -> ${target.item.debugLabel}');
     if (dragged == target ||
         target == item ||
-        !(_flexLayoutData(dragged) && _flexLayoutData(target))) {
-      return Offset.zero;
+        !(_nonAbsoluteChild(dragged) && _nonAbsoluteChild(target))) {
+      return DragResult.doNothing;
     }
 
-    int newOrder;
-    Size size = target.item.layoutData.computeInnerSize(target.size);
+    CanvasItemState? beforeThis;
+    var size = target.item.layoutData.computeInnerSize(target, target.size);
     switch (direction) {
       case Axis.horizontal:
-        newOrder = localPosition.dx < size.width / 2 ? 0 : 1;
+        beforeThis = localPosition.dx < size.width / 2
+            ? target
+            : target.parentData.nextSibling;
         break;
       case Axis.vertical:
-        newOrder = localPosition.dy < size.height / 2 ? 0 : 1;
+        beforeThis = localPosition.dy < size.height / 2
+            ? target
+            : target.parentData.nextSibling;
         break;
     }
-    int draggedIndex = item.children.indexOf(dragged);
-    int targetIndex = item.children.indexOf(target);
-    if (draggedIndex < targetIndex) {
-      targetIndex += newOrder == 0 ? -1 : 0;
-    } else {
-      targetIndex += newOrder == 0 ? 0 : 1;
-    }
-    if (draggedIndex == targetIndex) {
-      return Offset.zero;
-    }
-    List<CanvasItemState> children = List.of(item.children);
-    children.removeAt(draggedIndex);
-    children.insert(targetIndex, dragged);
-    item.children = children;
 
-    double adjustment = 0;
-    if (draggedIndex < targetIndex) {
-      print('DRAGGED INDEX < TARGET INDEX');
-      for (int i = draggedIndex; i < targetIndex; i++) {
-        var size = item.children[i].size;
-        switch (direction) {
-          case Axis.horizontal:
-            adjustment -= size.width + spacing;
-            break;
-          case Axis.vertical:
-            adjustment -= size.height + spacing;
-            break;
-        }
-      }
-    } else {
-      print('--------');
-      for (int i = targetIndex; i < draggedIndex; i++) {
-        var size = item.children[i].size;
-        print('$i: $size');
-        switch (direction) {
-          case Axis.horizontal:
-            adjustment += size.width + spacing;
-            break;
-          case Axis.vertical:
-            adjustment += size.height + spacing;
-            break;
-        }
-      }
-    }
-    print('ADJUSTMENT: $adjustment');
-    switch (direction) {
-      case Axis.horizontal:
-        return Offset(adjustment, 0);
-      case Axis.vertical:
-        return Offset(0, adjustment);
-    }
+    return ReInsertDragResult(beforeThis, direction);
   }
 
   @override
@@ -384,140 +416,231 @@ class FlexLayout extends CanvasLayout {
       direction == Axis.horizontal ? Axis.vertical : Axis.horizontal;
 
   @override
-  Size performLayout(CanvasItemState state, BoxConstraints constraints,
+  Size performLayout(CanvasObjectState state, BoxConstraints constraints,
       TextDirection textDirection) {
+    final watch = Stopwatch();
+    watch.start();
     var padding = this.padding.resolve(textDirection);
-    var mainPadding = _getMainPadding(padding);
-    var totalSpacing = 0;
-    for (var child in state.children) {
-      var layoutData = child.item.layoutData;
-      if (layoutData is FixedLayoutData || layoutData is FlexLayoutData) {
-        totalSpacing++;
-      }
-    }
-    var spacing = this.spacing * (totalSpacing - 1);
-    var totalFlex = 0.0;
-    var totalSize = 0.0;
-    var totalFlexChild = 0;
-    // First iteration
-    // 1. Layout the Fixed Children because they have fixed size
-    // 2. Compute the total size of the fixed children to get the remaining size for flex children
-    // 3. Compute the total flex to compute the sizePerFlex
-    // 4. For unknown children, layout them with the same constraints as the parent, make it act like a stack container
-    for (var child in state.children) {
-      var layoutData = child.item.layoutData;
-      if (layoutData is FixedLayoutData) {
-        var mainSize = _getMainSizeConstraint(layoutData)?.computeSize(
-                child, _getMain(constraints.biggest), direction, true) ??
-            0;
-        var crossSize = _getCrossSizeConstraint(layoutData)?.computeSize(
-                child, _getCross(constraints.biggest), crossDirection, true) ??
-            0;
-        child.layout(_createConstraints(mainSize, crossSize), textDirection);
-        totalSize += mainSize;
-      } else if (layoutData is FlexLayoutData) {
-        totalFlex += layoutData.flex;
-        child.parentData._flexSize = 0;
-        totalFlexChild++;
-      } else if (layoutData is AbsoluteLayoutData) {
-        var offsetX = _getMainStart(padding);
-        var offsetY = _getCrossStart(padding);
-        var offset = Offset(offsetX, offsetY);
-        var parentSize = constraints.biggest;
-        var paddingMain = _getMainPadding(padding);
-        var paddingCross = _getCrossPadding(padding);
-        parentSize = Size(
-          parentSize.width - paddingMain,
-          parentSize.height - paddingCross,
-        );
-        layoutAbsolutePositioning(
-            child, parentSize, offset, layoutData, textDirection);
-      } else {
-        child.layout(constraints, textDirection);
-        assert(
-            false,
-            'FlexLayout can only be used with FixedLayoutData, '
-            'FlexLayoutData or AbsoluteLayoutData');
-      }
-    }
-    var remainingSize =
-        _getMain(constraints.biggest) - totalSize - spacing - mainPadding;
+    var mainAlignment = _resolveFlexAlignment(mainAxisAlignment, textDirection);
+    var startPadding = _getMainStart(padding);
+    var endPadding = _getMainEnd(padding);
+    var crossStartPadding = _getCrossStart(padding);
+    var crossEndPadding = _getCrossEnd(padding);
+    var gap = spacing;
+    var totalWidth = _getMain(constraints.biggest);
+    var crossSize = _getCross(constraints.biggest);
 
-    // Second iteration
-    // The goal is to compute initial flex size for each flex child
-    // and compute the residual size that will be distributed to the flex children
-    // if the flex child has a min or max constraint, it will be clamped to the min or max
-    double residualSize = 0;
-    int totalNonClampedChildren = 0;
-    int index = 0;
-    List<CanvasItemState> children = state.children;
-    for (var i = 0; i < children.length; i++) {
-      var child = children[i];
+    var offset = _createOffset(startPadding, crossStartPadding);
+    var totalMainPadding = _getMainPadding(padding);
+    var totalCrossPadding = _getCrossPadding(padding);
+    var paddedSize = _createSize(
+        totalWidth - totalMainPadding, crossSize - totalCrossPadding);
+
+    var solver = Solver();
+
+    // first phase: count flex and remainingSpace, also layout non-flexible child
+    var child = _resolveFirstChild(state, textDirection);
+    var totalFlex = 0.0;
+    var totalFixedSize = 0.0;
+    var totalAffectedChildren = 0.0;
+    while (child != null) {
       var layoutData = child.item.layoutData;
+      var parentData = child.parentData as CanvasFlexParentData;
       if (layoutData is FlexLayoutData) {
-        var computedSize = totalFlex == 0
-            ? 0.0
-            : remainingSize * (layoutData.flex / totalFlex);
-        child.parentData._flexSize = computedSize;
-        index++;
+        totalFlex += layoutData.flex;
+        totalAffectedChildren++;
+      } else if (layoutData is FixedLayoutData) {
+        var mainChildSize = _getMainSizeConstraint(layoutData)
+                ?.computeSize(child, _getCross(paddedSize), direction, false) ??
+            0;
+        parentData.cachedMainSize = mainChildSize;
+        if (mainChildSize.isInfinite) {
+          // the child main size asks for infinite space (fill the main axis)
+          // we consider this as a flex child (with flex 1)
+          totalFlex += 1;
+          totalAffectedChildren++;
+          child = _resolveNextChild(child, textDirection);
+          continue;
+        }
+        var crossChildSize = _getCrossSizeConstraint(layoutData)?.computeSize(
+                child, _getMain(paddedSize), crossDirection, false) ??
+            0;
+        if (crossChildSize.isInfinite) {
+          crossChildSize = _getCross(paddedSize);
+        }
+        parentData.cachedCrossSize = crossChildSize;
+        var childSize = _createConstraints(mainChildSize, crossChildSize);
+        child.layout(childSize, textDirection);
+        totalFixedSize += _getMain(child.size);
+        totalAffectedChildren++;
+      } else if (layoutData is AbsoluteLayoutData) {
+        layoutAbsolutePositioning(
+            child, paddedSize, offset, layoutData, textDirection);
       }
+      child = _resolveNextChild(child, textDirection);
     }
-    for (var child in state.children) {
+
+    var totalGap =
+        totalAffectedChildren > 0 ? gap * (totalAffectedChildren - 1) : 0.0;
+    var autoGap = false;
+    if (totalGap.isInfinite) {
+      gap = 0;
+      totalGap = 0;
+      autoGap = true;
+      // autoGap priority is less important than flex children
+      // so if there is a flex children, autoGap will be ignored
+      // and the gap set to 0, flex children will take all the remaining space
+    }
+    var totalUsedMainSize = totalFixedSize + totalGap;
+    var remainingSpace = totalWidth - totalUsedMainSize;
+    var flexUnit = remainingSpace / totalFlex;
+
+    // second phase: solve constraint
+    child = _resolveFirstChild(state, textDirection);
+    Expression constraint =
+        cm(totalFixedSize + totalGap + totalMainPadding).asExpression();
+
+    _ConstraintNode? first;
+    _ConstraintNode? last;
+
+    void appendConstraint(Constraint constraint) {
+      var node = _ConstraintNode(constraint);
+      if (first == null) {
+        first = node;
+      } else {
+        last!.next = node;
+      }
+      last = node;
+    }
+
+    while (child != null) {
       var layoutData = child.item.layoutData;
+      var parentData = child.parentData as CanvasFlexParentData;
       if (layoutData is FlexLayoutData) {
-        var flexSize = child.parentData._flexSize!;
-        flexSize = flexSize.clamp(layoutData.min, layoutData.max);
-        var crossSize = layoutData.cross.computeSize(
-            child, _getCross(constraints.biggest), crossDirection, true);
-        child.layout(
-          _createConstraints(flexSize, crossSize),
-          textDirection,
-        );
-        child.parentData._flexSize = null;
+        appendConstraint(
+            parentData.mainSize.equals(cm(flexUnit * layoutData.flex))
+              ..priority = Priority.weak);
+        appendConstraint(parentData.mainSize >= cm(layoutData.min));
+        appendConstraint(parentData.mainSize <= cm(layoutData.max));
+        constraint += parentData.mainSize;
+      } else if (layoutData is FixedLayoutData) {
+        var mainChildSize = parentData.cachedMainSize;
+        if (mainChildSize.isInfinite) {
+          appendConstraint(parentData.mainSize.equals(cm(flexUnit))
+            ..priority = Priority.weak);
+          constraint += parentData.mainSize;
+        }
       }
+      child = _resolveNextChild(child, textDirection);
     }
-    double mainContentSize = totalSize + spacing;
-    double mainPosition;
-    switch (mainAxisAlignment) {
+    appendConstraint(
+        constraint.equals(cm(totalWidth))..priority = Priority.strong);
+    solver.addConstraints(
+        LinkedNodeIterable(first).map((e) => e.constraint).toList());
+    solver.flushUpdates();
+    var usedMainSize = constraint.value;
+    remainingSpace = totalWidth - usedMainSize;
+    if (remainingSpace > 0 && autoGap) {
+      usedMainSize = totalWidth; // left no space, eat all for gap
+      gap = remainingSpace / (totalAffectedChildren - 1);
+    }
+
+    // third phase, lay out the cross filling children
+    child = _resolveFirstChild(state, textDirection);
+    while (child != null) {
+      var layoutData = child.item.layoutData;
+      var parentData = child.parentData as CanvasFlexParentData;
+      if (layoutData is FixedLayoutData) {
+        var mainChildSize = parentData.cachedMainSize;
+        if (mainChildSize.isInfinite) {
+          // cross was never cached before, so compute it here
+          var crossChildSize = _getCrossSizeConstraint(layoutData)?.computeSize(
+                  child, _getMain(paddedSize), crossDirection, false) ??
+              0;
+          if (crossChildSize.isInfinite) {
+            crossChildSize = _getCross(paddedSize);
+          }
+          parentData.cachedCrossSize = crossChildSize;
+          mainChildSize = parentData.mainSize.value;
+          var childSize = _createConstraints(mainChildSize, crossChildSize);
+          child.layout(childSize, textDirection);
+        }
+      } else if (layoutData is FlexLayoutData) {
+        var mainChildSize = parentData.mainSize.value;
+        var crossChildSize = layoutData.cross
+            .computeSize(child, _getMain(paddedSize), crossDirection, false);
+        if (crossChildSize.isInfinite) {
+          crossChildSize = _getCross(paddedSize);
+        }
+        var childSize = _createConstraints(mainChildSize, crossChildSize);
+        child.layout(childSize, textDirection);
+      }
+      child = _resolveNextChild(child, textDirection);
+    }
+
+    // final phase, position the children (only flex and fixed)
+    child = _resolveFirstChild(state, textDirection);
+    double mainOffset;
+    switch (mainAlignment) {
+      case FlexAlignment.start:
+        mainOffset = startPadding;
+        break;
       case FlexAlignment.center:
-        mainPosition = _getMain(constraints.biggest) / 2 -
-            mainContentSize / 2 +
-            _getMainStart(padding);
+        mainOffset = startPadding + (totalWidth - usedMainSize) / 2;
         break;
       case FlexAlignment.end:
-        mainPosition = _getMain(constraints.biggest) -
-            mainContentSize -
-            _getMainEnd(padding);
+        mainOffset = totalWidth - usedMainSize - endPadding;
         break;
-      default:
-        mainPosition = _getMainStart(padding);
     }
-    for (var child in state.children) {
+    while (child != null) {
       var layoutData = child.item.layoutData;
       if (layoutData is FixedLayoutData || layoutData is FlexLayoutData) {
-        var size = child.size;
-        var crossSize = _getCross(size);
-        double crossPosition;
+        var childSize = child.size;
+        double childCrossOffset;
         switch (crossAxisAlignment) {
+          case FlexAlignment.start:
+            childCrossOffset = crossStartPadding;
+            break;
           case FlexAlignment.center:
-            crossPosition = _getCross(constraints.biggest) / 2 -
-                crossSize / 2 +
-                _getCrossStart(padding);
+            childCrossOffset =
+                crossStartPadding + (crossSize - childSize.height) / 2;
             break;
           case FlexAlignment.end:
-            crossPosition = _getCross(constraints.biggest) -
-                crossSize -
-                _getCrossEnd(padding);
+            childCrossOffset = crossSize - childSize.height - crossEndPadding;
             break;
-          default:
-            crossPosition = _getCrossStart(padding);
         }
-        var position = _createOffset(mainPosition, crossPosition);
-        child.parentData.position = position;
-        mainPosition += _getMain(size) + this.spacing;
+        child.parentData.position = _createOffset(mainOffset, childCrossOffset);
+        child.parentData.scaleAdjustment = const Offset(1, 1);
+        mainOffset += childSize.width + gap;
       }
+      child = _resolveNextChild(child, textDirection);
     }
+
+    watch.stop();
+    print('Layout took ${watch.elapsedMicroseconds} microseconds or '
+        '${watch.elapsedMilliseconds} milliseconds');
+
     return constraints.biggest;
+  }
+
+  CanvasItemState? _resolveFirstChild(
+      CanvasObjectState parent, TextDirection direction) {
+    switch (direction) {
+      case TextDirection.ltr:
+        return parent.firstChild;
+      case TextDirection.rtl:
+        return parent.lastChild;
+    }
+  }
+
+  CanvasItemState? _resolveNextChild(
+      CanvasItemState previousChild, TextDirection direction) {
+    switch (direction) {
+      case TextDirection.ltr:
+        return previousChild.parentData.nextSibling;
+      case TextDirection.rtl:
+        return previousChild.parentData.previousSibling;
+    }
   }
 
   Offset _createOffset(double main, double cross) {
@@ -544,61 +667,81 @@ class FlexLayout extends CanvasLayout {
           );
   }
 
+  Size _createSize(double main, double cross) {
+    return direction == Axis.horizontal ? Size(main, cross) : Size(cross, main);
+  }
+
   @override
-  CanvasParentData setupParentData(
-      CanvasItemState state, CanvasParentData? parentData) {
-    return parentData ?? CanvasParentData();
+  CanvasParentData setupParentData(CanvasObjectState state,
+      CanvasItemState child, CanvasParentData? parentData) {
+    if (parentData is! CanvasFlexParentData) {
+      return CanvasFlexParentData();
+    }
+    return parentData;
   }
 
   double _computeIntrinsicSize(
-    CanvasItemState state,
+    CanvasObjectState state,
     double size,
     bool min,
   ) {
     var totalSpacing = 0;
-    for (var child in state.children) {
-      var layoutData = child.item.layoutData;
-      if (layoutData is FixedLayoutData || layoutData is FlexLayoutData) {
-        totalSpacing++;
-      }
-    }
-    var spacing = this.spacing * (totalSpacing - 1);
+    var child = state.firstChild;
     var totalSize = 0.0;
-    for (var child in state.children) {
+    while (child != null) {
       var layoutData = child.item.layoutData;
       if (layoutData is FixedLayoutData) {
         var mainSize = _getMainSizeConstraint(layoutData)
                 ?.computeSize(child, size, direction, min) ??
             0;
-        totalSize += mainSize;
+        if (!mainSize.isInfinite) {
+          totalSize += mainSize;
+        }
+        totalSpacing++;
       } else if (layoutData is FlexLayoutData) {
         totalSize += layoutData.min;
+        totalSpacing++;
       }
+      child = child.parentData.nextSibling;
+    }
+    var spacing = this.spacing * (totalSpacing - 1);
+    if (spacing.isInfinite) {
+      spacing = 0;
     }
     return totalSize + spacing + _getMainPadding(padding);
   }
 
   double _computeCrossIntrinsicSize(
-      CanvasItemState state, double size, bool min) {
+      CanvasObjectState state, double size, bool min) {
     var totalSize = 0.0;
-    for (var child in state.children) {
+    var child = state.firstChild;
+    while (child != null) {
       var layoutData = child.item.layoutData;
       if (layoutData is FixedLayoutData) {
         var crossSize = _getCrossSizeConstraint(layoutData)
                 ?.computeSize(child, size, crossDirection, min) ??
             0;
+        if (crossSize.isInfinite) {
+          child = child.parentData.nextSibling;
+          continue;
+        }
         totalSize = max(totalSize, crossSize);
       } else if (layoutData is FlexLayoutData) {
         var crossSize =
             layoutData.cross.computeSize(child, size, crossDirection, min);
+        if (crossSize.isInfinite) {
+          child = child.parentData.nextSibling;
+          continue;
+        }
         totalSize = max(totalSize, crossSize);
       }
+      child = child.parentData.nextSibling;
     }
     return totalSize + _getCrossPadding(padding);
   }
 
   @override
-  double computeMinIntrinsicHeight(CanvasItemState state, double width) {
+  double computeMinIntrinsicHeight(CanvasObjectState state, double width) {
     if (direction == Axis.vertical) {
       return _computeIntrinsicSize(
         state,
@@ -611,7 +754,7 @@ class FlexLayout extends CanvasLayout {
   }
 
   @override
-  double computeMaxIntrinsicHeight(CanvasItemState state, double width) {
+  double computeMaxIntrinsicHeight(CanvasObjectState state, double width) {
     if (direction == Axis.vertical) {
       return _computeIntrinsicSize(
         state,
@@ -624,7 +767,7 @@ class FlexLayout extends CanvasLayout {
   }
 
   @override
-  double computeMaxIntrinsicWidth(CanvasItemState state, double height) {
+  double computeMaxIntrinsicWidth(CanvasObjectState state, double height) {
     if (direction == Axis.horizontal) {
       return _computeIntrinsicSize(
         state,
@@ -637,7 +780,7 @@ class FlexLayout extends CanvasLayout {
   }
 
   @override
-  double computeMinIntrinsicWidth(CanvasItemState state, double height) {
+  double computeMinIntrinsicWidth(CanvasObjectState state, double height) {
     if (direction == Axis.horizontal) {
       return _computeIntrinsicSize(
         state,

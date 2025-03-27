@@ -8,6 +8,7 @@ environment:
   flutter: ">=1.17.0"
 
 dependencies:
+  cassowary: ^0.4.3
   collection: ^1.19.1
   data_widget: ^0.0.2
   flutter:

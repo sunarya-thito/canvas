@@ -1,7 +1,6 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/foundation.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
@@ -10,9 +9,9 @@ class CanvasItemWidget extends StatefulWidget {
   final CanvasItemState state;
 
   const CanvasItemWidget({
-    Key? key,
+    super.key,
     required this.state,
-  }) : super(key: key);
+  });
 
   @override
   State<CanvasItemWidget> createState() => _CanvasItemWidgetState();
@@ -20,7 +19,8 @@ class CanvasItemWidget extends StatefulWidget {
 
 int count = 0;
 
-class _CanvasItemWidgetState extends State<CanvasItemWidget> {
+class _CanvasItemWidgetState extends State<CanvasItemWidget>
+    with AutomaticKeepAliveClientMixin {
   int _count = 0;
   @override
   void initState() {
@@ -61,13 +61,18 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   }
 
   @override
+  bool get wantKeepAlive =>
+      widget.state.parent != null || widget.state is RootCanvasItemState;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     assert(
         widget.state.hasSize, 'CanvasItem ${widget.state} not been laid out');
-    var innerSize =
-        widget.state.item.layoutData.computeInnerSize(widget.state.size);
-    Matrix4 transform =
-        widget.state.item.layoutData.computeMatrix(widget.state.size);
+    var innerSize = widget.state.item.layoutData
+        .computeInnerSize(widget.state, widget.state.size);
+    Matrix4 transform = widget.state.item.layoutData
+        .computeMatrix(widget.state, widget.state.size);
     Offset position = widget.state.parentData.position;
     Offset? editorOffset = widget.state.item.editorOffset;
     if (editorOffset != null) {
@@ -80,7 +85,6 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
         child: GroupWidget(
           size: widget.state.size,
           children: [
-            // should this be wrapped with SizedBox (state size)?
             Transform(
               transform: transform,
               child: Container(
@@ -94,7 +98,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
                   ),
                 ),
                 child: Text(
-                    '(${widget.state.size.width}, ${widget.state.size.height}) (rot: ${(widget.state.item.layoutData.rotation ?? 0) * 180 / pi})'),
+                    '(${widget.state.size.width}, ${widget.state.size.height}) (rot: ${((widget.state.item.layoutData.rotation ?? 0) * 180 / pi).toStringAsFixed(2)})'),
               ),
             ),
             Transform(
@@ -109,22 +113,30 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
                 ),
               ),
             ),
-            ListenableBuilder(
-              listenable: Listenable.merge(widget.state.children),
-              builder: (context, child) {
-                return Transform(
-                  transform: transform,
-                  child: GroupWidget(size: innerSize, children: [
-                    ...widget.state.children.sorted(_sortChildren).map((child) {
-                      return CanvasItemWidget(
-                        key: child.widgetKey,
-                        state: child,
-                      );
-                    }),
-                  ]),
-                );
-              },
-            ),
+            if (widget.state is CanvasObjectState)
+              ListenableBuilder(
+                listenable: Listenable.merge(
+                    (widget.state as CanvasObjectState).children),
+                builder: (context, child) {
+                  return Transform(
+                    transform: transform,
+                    child: GroupWidget(
+                        size: innerSize,
+                        debugLabel: '${widget.state.item} children',
+                        children: [
+                          ...(widget.state as CanvasObjectState)
+                              .children
+                              .sorted(_sortChildren)
+                              .map((child) {
+                            return CanvasItemWidget(
+                              key: ValueKey(child),
+                              state: child,
+                            );
+                          }),
+                        ]),
+                  );
+                },
+              ),
           ],
         ),
       ),
@@ -145,10 +157,12 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
 
 class GroupWidget extends MultiChildRenderObjectWidget {
   final Size size;
+  final String? debugLabel;
   const GroupWidget({
     super.key,
     required this.size,
     required super.children,
+    this.debugLabel,
   });
 
   @override
@@ -159,6 +173,7 @@ class GroupWidget extends MultiChildRenderObjectWidget {
   @override
   void updateRenderObject(
       BuildContext context, GroupRenderObject renderObject) {
+    renderObject.debugLabel = debugLabel;
     if (renderObject.groupSize != size) {
       renderObject.groupSize = size;
       renderObject.markNeedsLayout();
@@ -234,13 +249,20 @@ class GroupRenderObject extends RenderBox
         RenderBoxContainerDefaultsMixin<RenderBox, GroupParentData> {
   Size groupSize;
 
-  GroupRenderObject(Size size) : groupSize = size;
+  String? debugLabel;
+
+  GroupRenderObject(Size size, [this.debugLabel]) : groupSize = size;
 
   @override
   void setupParentData(RenderBox child) {
     if (child.parentData is! GroupParentData) {
       child.parentData = GroupParentData();
     }
+  }
+
+  @override
+  String toString({DiagnosticLevel minLevel = DiagnosticLevel.info}) {
+    return 'GroupRenderObject($debugLabel)';
   }
 
   @override

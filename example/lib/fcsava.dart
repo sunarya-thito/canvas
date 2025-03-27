@@ -1,6 +1,6 @@
 import 'package:cassowary/cassowary.dart';
 
-main() {
+maina() {
   var solver = Solver();
   var aW = cm(150); // fixed: 150
   var bW = Param(0); // flex: 1
@@ -29,6 +29,7 @@ main() {
   var result = solver.addConstraints([
     actualWidth.equals(totalWidth - paddingLeft - paddingRight),
     remainingSpace.equals(actualWidth - aW - cW - (gap * cm(3))),
+    flexUnit.equals(remainingSpace / cm(1 + 2)),
     bW.equals(flexUnit),
     dW.equals(flexUnit * cm(2)),
     bW >= cm(150),

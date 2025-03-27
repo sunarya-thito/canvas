@@ -1,7 +1,35 @@
 import 'dart:ui';
 
+import 'package:canvas/canvas.dart';
+import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
+
+mixin CanvasEditorHandler {
+  EditorMouseGestureHandler? get activeMouseGesture;
+  EditorMouseGestureHandler createMouseGesture(
+      Offset localPosition, CanvasItemState parent);
+  void stopMouseGesture(EditorMouseGestureHandler gesture);
+  // returns the active selections and it is shared with other editors.
+  List<Selection> get activeSelections;
+  // avoid using this method for local selection, use localSelection instead.
+  // this will use selectionClient as the key, so that the selection can be
+  // updated instead of adding a new selection.
+  void addSelection(Selection selection);
+  void removeSelection(Selection selection);
+  // local selection is the selection that is only available to the current
+  // editor, it is not shared with other editors.
+  Selection get localSelection;
+  set localSelection(Selection selection);
+  List<SelectionClient> get activeSelectionClients;
+  void addSelectionClient(SelectionClient client);
+  void removeSelectionClient(SelectionClient client);
+  void finalizeSelection(SelectionClient client);
+  CanvasEditorTransform get transform;
+  set transform(CanvasEditorTransform value);
+  void addToLocalSelection(CanvasItemState item);
+  void setToLocalSelection(CanvasItemState item);
+}
 
 class CanvasEditorTransform {
   final Offset offset;

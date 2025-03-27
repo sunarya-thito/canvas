@@ -41,34 +41,35 @@ class _SampleState extends State<Sample> with SingleTickerProviderStateMixin {
       debugLabel: 'parent',
       layout: FlexLayout(
         // direction: Axis.vertical,
-        // padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        // spacing: 5,
-        mainAxisAlignment: FlexAlignment.start,
-        crossAxisAlignment: FlexAlignment.end,
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+        // spacing: double.infinity,
+        mainAxisAlignment: FlexAlignment.center,
+        crossAxisAlignment: FlexAlignment.start,
       ),
       layoutData: AbsoluteLayoutData(
         top: 50,
         left: 50,
-        width: 800,
+        width: 1200,
         height: 500,
-        rotation: _rotation * pi / 180,
+        // rotation: _rotation * pi / 180,
         // rotation: _elapsed * pi * 0.1,
-        scale: Offset(2, 1),
+        // scale: Offset(2, 1),
       ),
     );
     CanvasObject ch1 = CanvasObject(
       debugLabel: 'child1',
       layoutData: FixedLayoutData(
-        width: SizeConstraint.fixed(100),
-        height: SizeConstraint.fixed(100),
+        // width: SizeConstraint.fixed(100),
+        width: SizeConstraint.unconstrained(),
+        height: SizeConstraint.unconstrained(),
       ),
     );
     CanvasObject ch2 = CanvasObject(
       debugLabel: 'child2',
       layoutData: FlexLayoutData(
         flex: 3,
-        // min: 150,
-        // max: 300,
+        min: 150,
+        max: 200,
         cross: SizeConstraint.fixed(150),
       ),
     );
@@ -76,11 +77,11 @@ class _SampleState extends State<Sample> with SingleTickerProviderStateMixin {
       debugLabel: 'child3',
       layoutData: FlexLayoutData(
         flex: 1,
-        // min: 150,
-        // max: 300,
-        cross: SizeConstraint.fixed(150),
-        scale: Offset(2, 1),
-        rotation: 35 * pi / 180,
+        min: 150,
+        max: 200,
+        cross: SizeConstraint.unconstrained(),
+        // scale: Offset(2, 1),
+        // rotation: 35 * pi / 180,
         // rotation: _elapsed * pi * 0.1,
       ),
     );
@@ -98,6 +99,8 @@ class _SampleState extends State<Sample> with SingleTickerProviderStateMixin {
         left: 50,
         width: 100,
         height: 100,
+        bottom: 50,
+        right: 50,
       ),
     );
     CanvasObject ch6 = CanvasObject(
@@ -110,11 +113,11 @@ class _SampleState extends State<Sample> with SingleTickerProviderStateMixin {
       ),
     );
     par.children = [
+      ch5,
       ch1,
-      ch2,
+      // ch2,
       ch3,
       ch4,
-      ch5,
       ch6,
     ];
 
@@ -135,9 +138,12 @@ class _SampleState extends State<Sample> with SingleTickerProviderStateMixin {
           Positioned.fill(
             child: Container(
               color: Colors.white,
-              child: CanvasEditor(controller: _controller, items: [
-                parent,
-              ]),
+              child: CanvasEditor(
+                controller: _controller,
+                items: [
+                  parent,
+                ],
+              ),
             ),
           ),
           Positioned(

@@ -1,80 +1,18 @@
+import 'dart:collection';
+
 import 'package:canvas/canvas.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
-class WidgetKey {
-  final CanvasItem item;
-
-  const WidgetKey(this.item);
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-
-    return other is WidgetKey && other.item == item;
-  }
-
-  @override
-  int get hashCode => item.hashCode;
-
-  @override
-  String toString() {
-    return 'WidgetKey{item: $item}';
-  }
-}
-
-class GizmoKey {
-  final CanvasItem item;
-
-  const GizmoKey(this.item);
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-
-    return other is GizmoKey && other.item == item;
-  }
-
-  @override
-  int get hashCode => item.hashCode;
-
-  @override
-  String toString() {
-    return 'GizmoKey{item: $item}';
-  }
-}
-
-class BoundingBoxKey {
-  final CanvasItem item;
-
-  const BoundingBoxKey(this.item);
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-
-    return other is BoundingBoxKey && other.item == item;
-  }
-
-  @override
-  int get hashCode => item.hashCode;
-
-  @override
-  String toString() {
-    return 'BoundingBoxKey{item: $item}';
-  }
-}
-
 abstract class CanvasItem {
-  final GlobalKey widgetKey = GlobalKey();
-  final GlobalKey gizmoKey = GlobalKey();
-  final GlobalKey boundingBoxKey = GlobalKey();
+  final String? debugLabel;
+
+  CanvasItem({this.debugLabel});
+
   final List<CanvasItemState> _attachedStates = [];
   CanvasLayoutData get layoutData;
   set layoutData(CanvasLayoutData value);
-
-  String? get debugLabel;
 
   void attach(CanvasItemState state) {
     _attachedStates.add(state);
@@ -91,27 +29,41 @@ abstract class CanvasItem {
   List<CanvasItemState> get activeStates => List.unmodifiable(_attachedStates);
 
   // Editor specific properties
-  Offset? get editorOffset;
-  set editorOffset(Offset? value);
+  Offset? _editorOffset;
+  Offset? get editorOffset => _editorOffset;
+  set editorOffset(Offset? value) {
+    if (value != _editorOffset) {
+      _editorOffset = value;
+      for (var state in _attachedStates) {
+        state.markNeedsLayout();
+      }
+    }
+  }
   //
+}
+
+CanvasParentData _migrateParentData(
+    CanvasParentData? oldParentData, CanvasParentData newParentData) {
+  if (oldParentData == null) return newParentData;
+  newParentData.nextSibling = oldParentData.nextSibling;
+  newParentData.previousSibling = oldParentData.previousSibling;
+  newParentData.position = oldParentData.position;
+  return newParentData;
 }
 
 class CanvasObject extends CanvasItem {
   CanvasLayout _layout;
   CanvasLayoutData _layoutData;
   List<CanvasItem> _children = [];
-  Offset? _editorOffset;
   @override
   List<CanvasObjectState> get _attachedStates =>
       super._attachedStates.cast<CanvasObjectState>();
-
-  final String? debugLabel;
 
   CanvasObject({
     CanvasLayout layout = const FixedLayout(),
     CanvasLayoutData layoutData = const AbsoluteLayoutData(),
     List<CanvasItem> children = const [],
-    this.debugLabel,
+    super.debugLabel,
   })  : _layout = layout,
         _layoutData = layoutData,
         _children = List.of(children);
@@ -123,21 +75,20 @@ class CanvasObject extends CanvasItem {
     );
   }
 
-  Offset? get editorOffset => _editorOffset;
-  set editorOffset(Offset? value) {
-    if (value != _editorOffset) {
-      _editorOffset = value;
-      for (var state in _attachedStates) {
-        state.markNeedsLayout();
-      }
-    }
-  }
-
   @override
   void attach(CanvasItemState state) {
     super.attach(state);
+    var parent = state.parent;
+    if (parent is CanvasObjectState) {
+      // ask parent to setup parent data for this new attached state
+      var layout = parent.item.layout;
+      var oldParentData = state._parentData;
+      var newParentData = layout.setupParentData(parent, state, oldParentData);
+      state._parentData = _migrateParentData(oldParentData, newParentData);
+    } else {
+      state._parentData = CanvasParentData();
+    }
     (state as CanvasObjectState).buildChildren(_children);
-    state._parentData = layout.setupParentData(state, state._parentData);
   }
 
   CanvasLayout get layout => _layout;
@@ -145,8 +96,13 @@ class CanvasObject extends CanvasItem {
     if (value != _layout) {
       _layout = value;
       for (var state in _attachedStates) {
+        for (var child in state.children) {
+          var oldParentData = child._parentData;
+          var newParentData =
+              value.setupParentData(state, child, oldParentData);
+          child._parentData = _migrateParentData(oldParentData, newParentData);
+        }
         state.requestRelayout();
-        state._parentData = layout.setupParentData(state, state._parentData);
       }
     }
   }
@@ -194,9 +150,6 @@ class _CachedLayout {
 }
 
 abstract class CanvasItemState implements Listenable {
-  GlobalKey get widgetKey => item.widgetKey;
-  GlobalKey get gizmoKey => item.gizmoKey;
-  GlobalKey get boundingBoxKey => item.boundingBoxKey;
   CanvasItemState? get parent;
   CanvasItem get item;
   CanvasParentData? _parentData;
@@ -245,9 +198,6 @@ abstract class CanvasItemState implements Listenable {
     forceLayout(cached!.constraints, cached.textDirection);
   }
 
-  final List<CanvasItemState> _children = [];
-  List<CanvasItemState> get children => List.unmodifiable(_children);
-
   void dispose() {}
 
   void layout(BoxConstraints constraints, TextDirection textDirection) {
@@ -269,6 +219,48 @@ abstract class CanvasItemState implements Listenable {
   double computeMaxIntrinsicHeight(double width);
 }
 
+class CanvasItemChildrenIterator implements Iterator<CanvasItemState> {
+  CanvasObjectState parent;
+  CanvasItemState? _current;
+  bool _first = true;
+
+  CanvasItemChildrenIterator(this.parent) : _current = parent.firstChild;
+
+  @override
+  CanvasItemState get current {
+    assert(_current != null, 'No current item');
+    return _current!;
+  }
+
+  @override
+  bool moveNext() {
+    if (_first) {
+      _first = false;
+      return _current != null;
+    }
+    if (_current == null) return false;
+    _current = _current!.parentData.nextSibling;
+    return _current != null;
+  }
+}
+
+class CanvasItemChildrenIterable extends Iterable<CanvasItemState> {
+  final CanvasObjectState parent;
+
+  CanvasItemChildrenIterable(this.parent);
+
+  @override
+  Iterator<CanvasItemState> get iterator => CanvasItemChildrenIterator(parent);
+}
+
+class CanvasItemNode extends LinkedNode<CanvasItemNode> {
+  final CanvasItemState item;
+  @override
+  CanvasItemNode? next;
+
+  CanvasItemNode(this.item, this.next);
+}
+
 class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   @override
   final CanvasItemState? parent;
@@ -280,19 +272,47 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
     required this.item,
   });
 
-  set children(List<CanvasItemState> children) {
+  set children(Iterable<CanvasItemState> children) {
     item.children = children.map((e) => e.item).toList();
+  }
+
+  Iterable<CanvasItemState> get children => CanvasItemChildrenIterable(this);
+
+  CanvasItemState? _firstChild;
+  CanvasItemState? _lastChild;
+  CanvasItemState? get firstChild => _firstChild;
+  CanvasItemState? get lastChild => _lastChild;
+
+  // Create a copy of the linked list of children
+  CanvasItemNode? get firstChildNode {
+    var child = _firstChild;
+    CanvasItemNode? first;
+    CanvasItemNode? last;
+
+    void append(CanvasItemState item) {
+      if (last != null) {
+        last!.next = CanvasItemNode(item, null);
+        last = last!.next;
+      } else {
+        first = last = CanvasItemNode(item, null);
+      }
+    }
+
+    while (child != null) {
+      append(child);
+      child = child.parentData.nextSibling;
+    }
+
+    return first;
   }
 
   @override
   void requestRelayout() {
     var parent = this.parent;
-    if (parent == null) {
-      markNeedsLayout();
-    } else {
+    if (parent != null) {
       parent.markNeedsLayout();
-      markNeedsLayout();
     }
+    markNeedsLayout();
   }
 
   @override
@@ -312,25 +332,53 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   }
 
   void buildChildren(List<CanvasItem> newChildren) {
-    Map<CanvasItem, CanvasItemState> oldChildren = {};
-    for (var child in _children) {
-      oldChildren[child.item] = child;
+    CanvasItemState? findExistingChild(CanvasItem item) {
+      var child = firstChild;
+      while (child != null) {
+        if (child.item == item) {
+          return child;
+        }
+        child = child.parentData.nextSibling;
+      }
+      return null;
     }
-    _children.clear();
+
+    var oldNode = firstChildNode;
+    for (var oldChild in LinkedNodeIterable(oldNode)) {
+      oldChild.item.parentData.previousSibling = null;
+    }
+
+    CanvasItemState? newFirstChild;
+    CanvasItemState? newLastChild;
+    void append(CanvasItemState itemState) {
+      newFirstChild ??= itemState;
+      if (newLastChild != null) {
+        newLastChild!.parentData.nextSibling = itemState;
+      }
+      itemState.parentData.previousSibling = newLastChild;
+      newLastChild = itemState;
+    }
+
     for (var child in newChildren) {
-      CanvasItemState? oldState = oldChildren.remove(child);
-      if (oldState != null) {
-        _children.add(oldState);
+      var existing = findExistingChild(child);
+      if (existing != null) {
+        append(existing);
       } else {
-        CanvasItemState newState = child.createState(parent: this);
-        _children.add(newState);
+        var newState = child.createState(parent: this);
         child.attach(newState);
+        append(newState);
       }
     }
-    for (var state in oldChildren.entries) {
-      state.key.detach(state.value);
-      state.value.dispose();
+
+    for (var oldChild in LinkedNodeIterable(oldNode)) {
+      if (oldChild.item.parentData.previousSibling == null) {
+        oldChild.item.item.detach(oldChild.item);
+        oldChild.item.dispose();
+      }
     }
+
+    _firstChild = newFirstChild;
+    _lastChild = newLastChild;
   }
 
   @override
@@ -366,16 +414,11 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
 class CanvasRoot extends CanvasObject {
   CanvasRoot({
-    CanvasLayout layout = const FixedLayout(),
-    CanvasLayoutData layoutData = const AbsoluteLayoutData(),
-    List<CanvasItem> children = const [],
-    String? debugLabel,
-  }) : super(
-          layout: layout,
-          layoutData: layoutData,
-          children: children,
-          debugLabel: debugLabel,
-        );
+    super.layout,
+    super.layoutData,
+    super.children,
+    super.debugLabel,
+  });
 
   @override
   CanvasItemState createState({CanvasItemState? parent}) {
@@ -388,10 +431,45 @@ class CanvasRoot extends CanvasObject {
 
 class RootCanvasItemState extends CanvasObjectState {
   RootCanvasItemState({
-    CanvasItemState? parent,
-    required CanvasRoot item,
-  }) : super(
-          parent: parent,
-          item: item,
-        );
+    super.parent,
+    required CanvasRoot super.item,
+  });
+}
+
+abstract class LinkedNode<T extends LinkedNode<T>> {
+  T? get next;
+}
+
+class LinkedNodeIterator<T extends LinkedNode<T>> implements Iterator<T> {
+  final T? _firstNode;
+  bool _first = true;
+  T? _current;
+
+  LinkedNodeIterator(this._firstNode) : _current = _firstNode;
+
+  @override
+  T get current {
+    assert(_current != null, 'No current node');
+    return _current!;
+  }
+
+  @override
+  bool moveNext() {
+    if (_first) {
+      _first = false;
+      return _firstNode != null;
+    }
+    if (_current == null) return false;
+    _current = _current!.next;
+    return _current != null;
+  }
+}
+
+class LinkedNodeIterable<T extends LinkedNode<T>> extends Iterable<T> {
+  final T? _firstNode;
+
+  LinkedNodeIterable(this._firstNode);
+
+  @override
+  Iterator<T> get iterator => LinkedNodeIterator(_firstNode);
 }

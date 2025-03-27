@@ -4,6 +4,42 @@ import 'package:canvas/src/external/widgets.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+Offset _handleDragAttempt(BuildContext context, CanvasObjectState parent,
+    CanvasItemState dragged, CanvasItemState dragTarget, Offset localPosition) {
+  var result = parent.item.layout
+      .handleDragAttempt(parent, dragged, dragTarget, localPosition);
+  print('result: $result');
+  if (result is ReInsertDragResult) {
+    var beforeThis = result.beforeThis;
+    var direction = result.direction;
+    print('target: ${beforeThis?.item.debugLabel}');
+    double adjustment = 0;
+    List<CanvasItem> children = List.of(parent.item.children);
+    if (beforeThis == null) {
+      // insert at the end
+      children.remove(dragged.item);
+      children.add(dragged.item);
+    } else {
+      children.insert(
+        children.indexOf(beforeThis.item),
+        dragged.item,
+      );
+      children.remove(dragged.item);
+    }
+    print('newChildren: ${children.map((e) => e.debugLabel)}');
+    var actionResult = Actions.invoke(context,
+        CanvasUpdateChildrenIntent(parent: parent.item, children: children));
+    print('invoke result: $actionResult');
+    if (actionResult == true) {
+      Offset adjustmentOffset = direction == Axis.horizontal
+          ? Offset(adjustment, 0)
+          : Offset(0, adjustment);
+      return adjustmentOffset;
+    }
+  }
+  return Offset.zero;
+}
+
 class CanvasBoundingBoxWidget extends StatelessWidget {
   final CanvasItemState state;
   final Matrix4? parentTransform;
@@ -23,13 +59,14 @@ class CanvasBoundingBoxWidget extends StatelessWidget {
 
         parentTransform.translate(position.dx, position.dy);
         Matrix4 transform = state.item.layoutData
-            .computeMatrix(state.size, parentMatrix: parentTransform);
+            .computeMatrix(state, state.size, parentMatrix: parentTransform);
 
         if (editorOffset != null) {
           transform.translate(editorOffset.dx, editorOffset.dy);
         }
 
-        var innerSize = state.item.layoutData.computeInnerSize(state.size);
+        var innerSize =
+            state.item.layoutData.computeInnerSize(state, state.size);
         return GroupData(
           position: Offset.zero,
           child: GroupWidget(
@@ -62,17 +99,26 @@ class CanvasBoundingBoxWidget extends StatelessWidget {
                             var boxData = BoundingBoxData.findInLocation(
                                 context, details.globalPosition);
                             if (boxData != null) {
-                              var adjustment = parent.item.layout
-                                  .handleDragAttempt(parent, state,
-                                      boxData.state, boxData.localPosition);
-                              adjustment = transformOffset(
-                                adjustment,
-                                Matrix4.inverted(
-                                    state.item.layoutData.computeMatrix(
-                                  state.size,
-                                  alignment: Alignment.topLeft,
-                                )),
-                              );
+                              // var result = parent.item.layout.handleDragAttempt(
+                              //     parent,
+                              //     state,
+                              //     boxData.state,
+                              //     boxData.localPosition);
+                              // adjustment = transformOffset(
+                              //   adjustment,
+                              //   Matrix4.inverted(
+                              //       state.item.layoutData.computeMatrix(
+                              //     state.size,
+                              //     alignment: Alignment.topLeft,
+                              //   )),
+                              // );
+                              // delta += adjustment;
+                              var adjustment = _handleDragAttempt(
+                                  context,
+                                  parent,
+                                  state,
+                                  boxData.state,
+                                  boxData.localPosition);
                               delta += adjustment;
                             }
                           }
@@ -86,7 +132,7 @@ class CanvasBoundingBoxWidget extends StatelessWidget {
                           // set the alignment to topLeft because
                           // delta does not have size to be aligned to
                           Matrix4 selfMatrix = state.item.layoutData
-                              .computeMatrix(state.size,
+                              .computeMatrix(state, state.size,
                                   alignment: Alignment.topLeft);
                           delta = transformOffset(delta, selfMatrix);
                           // state.item.layoutData =
@@ -103,12 +149,13 @@ class CanvasBoundingBoxWidget extends StatelessWidget {
                     ),
                   ),
                 ),
-              for (var child in state.children)
-                CanvasBoundingBoxWidget(
-                  key: child.boundingBoxKey,
-                  state: child,
-                  parentTransform: transform,
-                ),
+              if (state is CanvasObjectState)
+                for (var child in (state as CanvasObjectState).children)
+                  CanvasBoundingBoxWidget(
+                    key: ValueKey(child),
+                    state: child,
+                    parentTransform: transform,
+                  ),
             ],
           ),
         );
@@ -128,8 +175,10 @@ class CanvasBoundingBoxMetadataWidget extends StatelessWidget {
       listenable: state,
       builder: (context, child) {
         assert(state.hasSize, 'CanvasItem $state not been laid out');
-        var innerSize = state.item.layoutData.computeInnerSize(state.size);
-        Matrix4 transform = state.item.layoutData.computeMatrix(state.size);
+        var innerSize =
+            state.item.layoutData.computeInnerSize(state, state.size);
+        Matrix4 transform =
+            state.item.layoutData.computeMatrix(state, state.size);
         Offset position = state.parentData.position;
         return GroupData(
           position: position,
@@ -139,26 +188,27 @@ class CanvasBoundingBoxMetadataWidget extends StatelessWidget {
               Transform(
                 transform:
                     state.item.layoutData.computeBoundingBoxMatrix(state.size),
-                child: NonOpaqueMetaData(
-                  opaque: false,
-                  behavior: HitTestBehavior.translucent,
-                  metaData: BoundingBoxData(state),
-                  child: Container(
-                    width: innerSize.width,
-                    height: innerSize.height,
+                child: SizedBox(
+                  width: innerSize.width,
+                  height: innerSize.height,
+                  child: NonOpaqueMetaData(
+                    opaque: false,
+                    behavior: HitTestBehavior.translucent,
+                    metaData: BoundingBoxData(state),
                   ),
                 ),
               ),
-              Transform(
-                transform: transform,
-                child: GroupWidget(size: innerSize, children: [
-                  ...state.children.map((child) {
-                    return CanvasBoundingBoxMetadataWidget(
-                      state: child,
-                    );
-                  }),
-                ]),
-              ),
+              if (state is CanvasObjectState)
+                Transform(
+                  transform: transform,
+                  child: GroupWidget(size: innerSize, children: [
+                    ...(state as CanvasObjectState).children.map((child) {
+                      return CanvasBoundingBoxMetadataWidget(
+                        state: child,
+                      );
+                    }),
+                  ]),
+                ),
             ],
           ),
         );
@@ -367,7 +417,7 @@ class _BoundingBoxDebuggerState extends State<BoundingBoxDebugger> {
                 child: Container(
                   color: Color.fromARGB(50, 0, 0, 255),
                   constraints: BoxConstraints(
-                    maxWidth: 300,
+                    maxWidth: 400,
                   ),
                   child: Text(
                     buildDebugText(),

@@ -2,6 +2,34 @@ import 'package:canvas/canvas.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 
+abstract class EditorMouseGesture {
+  EditorMouseGestureHandler createSession(
+      {required Offset localPosition,
+      required CanvasItemState parent,
+      required CanvasEditorHandler editor});
+}
+
+abstract class EditorMouseGestureHandler {
+  final CanvasItemState parent;
+  final CanvasEditorHandler editor;
+  final Offset startPosition;
+
+  EditorMouseGestureHandler({
+    required this.parent,
+    required this.editor,
+    required this.startPosition,
+  });
+
+  void onPressed(PointerDownEvent event) {}
+  void onMoved(PointerMoveEvent event) {}
+  void onReleased(PointerUpEvent event) {}
+  void onCanceled(PointerCancelEvent event) {}
+
+  void dispose() {
+    editor.stopMouseGesture(this);
+  }
+}
+
 abstract class EditorGestureHandler {
   const EditorGestureHandler();
 

@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:canvas/canvas.dart';
 import 'package:flutter/widgets.dart';
 
@@ -14,34 +12,26 @@ abstract class CanvasLayoutData {
     this.scale,
   });
 
-  Size computeInnerSize(Size outerSize,
+  Size computeInnerSize(CanvasItemState item, Size outerSize,
       [Alignment alignment = Alignment.center]) {
     var width = outerSize.width;
     var height = outerSize.height;
     var scale = this.scale ?? const Offset(1, 1);
+    var adjustmentScale = item.parentData.scaleAdjustment;
 
     // Apply scaling
-    var scaledWidth = width / scale.dx;
-    var scaledHeight = height / scale.dy;
+    var scaledWidth = width / scale.dx / adjustmentScale.dx;
+    var scaledHeight = height / scale.dy / adjustmentScale.dy;
 
-    var rotation = this.rotation ?? 0; // (already in radians)
-
-    // based on the rotation, fit the inner size into the outer size
-    var cosTheta = cos(rotation);
-    var sinTheta = sin(rotation);
-
-    var rotatedWidth = scaledWidth * cosTheta + scaledHeight * sinTheta;
-    var rotatedHeight = scaledWidth * sinTheta + scaledHeight * cosTheta;
-
-    return Size(rotatedWidth, rotatedHeight);
+    return Size(scaledWidth, scaledHeight);
   }
 
-  Matrix4 computeMatrix(Size size,
+  Matrix4 computeMatrix(CanvasItemState item, Size size,
       {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
     var scale = this.scale ?? const Offset(1, 1);
     var rotation = this.rotation ?? 0;
 
-    Size innerSize = computeInnerSize(size, alignment);
+    Size innerSize = computeInnerSize(item, size, alignment);
     Offset origin = alignment.alongSize(innerSize);
 
     Matrix4 newMatrix = parentMatrix?.clone() ?? Matrix4.identity();
@@ -52,6 +42,9 @@ abstract class CanvasLayoutData {
     newMatrix.rotateZ(rotation);
     newMatrix.translate(-origin.dx, -origin.dy);
     newMatrix.scale(scale.dx, scale.dy);
+
+    Offset adjustmentScale = item.parentData.scaleAdjustment;
+    newMatrix.scale(adjustmentScale.dx, adjustmentScale.dy);
 
     return newMatrix;
   }

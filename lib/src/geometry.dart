@@ -43,6 +43,26 @@ class Polygon {
     ]);
   }
 
+  factory Polygon.fromLTRB(
+      double left, double top, double right, double bottom) {
+    return Polygon([
+      Offset(left, top),
+      Offset(right, top),
+      Offset(right, bottom),
+      Offset(left, bottom),
+    ]);
+  }
+
+  factory Polygon.fromLTWH(
+      double left, double top, double width, double height) {
+    return Polygon([
+      Offset(left, top),
+      Offset(left + width, top),
+      Offset(left + width, top + height),
+      Offset(left, top + height),
+    ]);
+  }
+
   Path get path {
     final path = Path();
     if (points.isNotEmpty) {
@@ -53,6 +73,11 @@ class Polygon {
       path.close();
     }
     return path;
+  }
+
+  Size get boundingBoxSize {
+    final box = boundingBox;
+    return Size(box.width, box.height);
   }
 
   Rect get boundingBox {
