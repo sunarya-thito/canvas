@@ -91,11 +91,9 @@ class _CanvasEditorState extends State<CanvasEditor> {
                   children: [
                     CanvasItemWidget(
                       state: _rootState,
-                      // key: _rootState.widgetKey,
                     ),
                     CanvasBoundingBoxWidget(
                       state: _rootState,
-                      key: ValueKey(_rootState),
                     ),
                     CanvasBoundingBoxMetadataWidget(state: _rootState),
                   ],

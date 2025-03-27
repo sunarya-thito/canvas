@@ -150,10 +150,13 @@ class _CachedLayout {
 }
 
 abstract class CanvasItemState implements Listenable {
-  CanvasItemState? get parent;
+  CanvasItemState? parent;
   CanvasItem get item;
   CanvasParentData? _parentData;
   _CachedLayout? _layoutResult;
+
+  CanvasItemState({this.parent});
+
   CanvasParentData get parentData {
     var parentData = _parentData;
     assert(parentData != null, 'Parent data not set');
@@ -263,12 +266,10 @@ class CanvasItemNode extends LinkedNode<CanvasItemNode> {
 
 class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   @override
-  final CanvasItemState? parent;
-  @override
   final CanvasObject item;
 
   CanvasObjectState({
-    this.parent,
+    super.parent,
     required this.item,
   });
 
@@ -332,20 +333,19 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   }
 
   void buildChildren(List<CanvasItem> newChildren) {
+    print('building children for ${item.debugLabel}');
+    var oldNode = firstChildNode;
     CanvasItemState? findExistingChild(CanvasItem item) {
-      var child = firstChild;
-      while (child != null) {
-        if (child.item == item) {
-          return child;
+      for (var child in LinkedNodeIterable(oldNode)) {
+        if (child.item.item == item) {
+          return child.item;
         }
-        child = child.parentData.nextSibling;
       }
       return null;
     }
 
-    var oldNode = firstChildNode;
     for (var oldChild in LinkedNodeIterable(oldNode)) {
-      oldChild.item.parentData.previousSibling = null;
+      oldChild.item.parent = null;
     }
 
     CanvasItemState? newFirstChild;
@@ -357,21 +357,25 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
       }
       itemState.parentData.previousSibling = newLastChild;
       newLastChild = itemState;
+      itemState.parent = this;
     }
 
     for (var child in newChildren) {
       var existing = findExistingChild(child);
       if (existing != null) {
         append(existing);
+        print('append existing child ${existing.item.debugLabel}');
       } else {
         var newState = child.createState(parent: this);
+        print('append new child ${newState.item.debugLabel}');
         child.attach(newState);
         append(newState);
       }
     }
 
     for (var oldChild in LinkedNodeIterable(oldNode)) {
-      if (oldChild.item.parentData.previousSibling == null) {
+      if (oldChild.item.parent == null) {
+        print('detach child ${oldChild.item.item.debugLabel}');
         oldChild.item.item.detach(oldChild.item);
         oldChild.item.dispose();
       }

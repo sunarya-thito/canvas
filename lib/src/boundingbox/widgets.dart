@@ -40,7 +40,7 @@ Offset _handleDragAttempt(BuildContext context, CanvasObjectState parent,
   return Offset.zero;
 }
 
-class CanvasBoundingBoxWidget extends StatelessWidget {
+class CanvasBoundingBoxWidget extends StatefulWidget {
   final CanvasItemState state;
   final Matrix4? parentTransform;
 
@@ -48,31 +48,51 @@ class CanvasBoundingBoxWidget extends StatelessWidget {
       {super.key, required this.state, this.parentTransform});
 
   @override
+  State<CanvasBoundingBoxWidget> createState() =>
+      _CanvasBoundingBoxWidgetState();
+}
+
+class _CanvasBoundingBoxWidgetState extends State<CanvasBoundingBoxWidget> {
+  @override
+  void dispose() {
+    print('boundingbox disposed: ${widget.state.item.debugLabel}');
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (widget.state is CanvasObjectState) {
+      // for (var child in (widget.state as CanvasObjectState).children) {
+
+      // }
+      print(
+          '${widget.state.item.debugLabel}: ${(widget.state as CanvasObjectState).children.map((e) => e.item.debugLabel)}');
+    }
     return ListenableBuilder(
-      listenable: state,
+      listenable: widget.state,
       builder: (context, child) {
-        Offset position = state.parentData.position;
-        Offset? editorOffset = state.item.editorOffset;
+        Offset position = widget.state.parentData.position;
+        Offset? editorOffset = widget.state.item.editorOffset;
         Matrix4 parentTransform =
-            this.parentTransform?.clone() ?? Matrix4.identity();
+            widget.parentTransform?.clone() ?? Matrix4.identity();
 
         parentTransform.translate(position.dx, position.dy);
-        Matrix4 transform = state.item.layoutData
-            .computeMatrix(state, state.size, parentMatrix: parentTransform);
+        Matrix4 transform = widget.state.item.layoutData.computeMatrix(
+            widget.state, widget.state.size,
+            parentMatrix: parentTransform);
 
         if (editorOffset != null) {
           transform.translate(editorOffset.dx, editorOffset.dy);
         }
 
-        var innerSize =
-            state.item.layoutData.computeInnerSize(state, state.size);
+        var innerSize = widget.state.item.layoutData
+            .computeInnerSize(widget.state, widget.state.size);
         return GroupData(
           position: Offset.zero,
           child: GroupWidget(
-            size: state.size,
+            size: widget.state.size,
             children: [
-              if (state.item is! CanvasRoot)
+              if (widget.state.item is! CanvasRoot)
                 IgnorePointer(
                   child: CustomPaint(
                     size: innerSize,
@@ -83,65 +103,53 @@ class CanvasBoundingBoxWidget extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (state.item is! CanvasRoot)
+              if (widget.state.item is! CanvasRoot)
                 Transform(
                   transform: transform,
                   child: SizedBox.fromSize(
                     size: innerSize,
                     child: MetaData(
-                      metaData: state,
+                      metaData: widget.state,
                       child: GestureDetector(
                         behavior: HitTestBehavior.translucent,
                         onPanUpdate: (details) {
                           Offset delta = details.delta;
-                          var parent = state.parent;
+                          var parent = widget.state.parent;
                           if (parent is CanvasObjectState) {
                             var boxData = BoundingBoxData.findInLocation(
                                 context, details.globalPosition);
                             if (boxData != null) {
-                              // var result = parent.item.layout.handleDragAttempt(
-                              //     parent,
-                              //     state,
-                              //     boxData.state,
-                              //     boxData.localPosition);
-                              // adjustment = transformOffset(
-                              //   adjustment,
-                              //   Matrix4.inverted(
-                              //       state.item.layoutData.computeMatrix(
-                              //     state.size,
-                              //     alignment: Alignment.topLeft,
-                              //   )),
-                              // );
-                              // delta += adjustment;
                               var adjustment = _handleDragAttempt(
                                   context,
                                   parent,
-                                  state,
+                                  widget.state,
                                   boxData.state,
                                   boxData.localPosition);
                               delta += adjustment;
                             }
                           }
-                          state.item.editorOffset =
-                              (state.item.editorOffset ?? Offset.zero) + delta;
+                          widget.state.item.editorOffset =
+                              (widget.state.item.editorOffset ?? Offset.zero) +
+                                  delta;
                         },
-                        onPanCancel: () => state.item.editorOffset = null,
+                        onPanCancel: () =>
+                            widget.state.item.editorOffset = null,
                         onPanEnd: (details) {
-                          Offset delta = state.item.editorOffset ?? Offset.zero;
-                          state.item.editorOffset = null;
+                          Offset delta =
+                              widget.state.item.editorOffset ?? Offset.zero;
+                          widget.state.item.editorOffset = null;
                           // set the alignment to topLeft because
                           // delta does not have size to be aligned to
-                          Matrix4 selfMatrix = state.item.layoutData
-                              .computeMatrix(state, state.size,
+                          Matrix4 selfMatrix = widget.state.item.layoutData
+                              .computeMatrix(widget.state, widget.state.size,
                                   alignment: Alignment.topLeft);
                           delta = transformOffset(delta, selfMatrix);
-                          // state.item.layoutData =
-                          //     state.item.layoutData.drag(delta);
                           Actions.invoke(
                             context,
                             CanvasUpdateLayoutDataIntent(
-                              item: state.item,
-                              layoutData: state.item.layoutData.drag(delta),
+                              item: widget.state.item,
+                              layoutData:
+                                  widget.state.item.layoutData.drag(delta),
                             ),
                           );
                         },
@@ -149,8 +157,8 @@ class CanvasBoundingBoxWidget extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (state is CanvasObjectState)
-                for (var child in (state as CanvasObjectState).children)
+              if (widget.state is CanvasObjectState)
+                for (var child in (widget.state as CanvasObjectState).children)
                   CanvasBoundingBoxWidget(
                     key: ValueKey(child),
                     state: child,
