@@ -318,6 +318,23 @@ class _ConstraintNode extends LinkedNode<_ConstraintNode> {
   _ConstraintNode? next;
 }
 
+bool nonAbsoluteChild(CanvasItemState child) {
+  return child.item.layoutData is FlexLayoutData ||
+      child.item.layoutData is FixedLayoutData;
+}
+
+CanvasItemState? nextNonAbsoluteChild(CanvasItemState child) {
+  CanvasItemState? current = child;
+  while (current != null) {
+    var next = current.parentData.nextSibling;
+    if (next != null && nonAbsoluteChild(next)) {
+      return next;
+    }
+    current = next;
+  }
+  return null;
+}
+
 class FlexLayout extends CanvasLayout {
   final Axis direction;
   final FlexAlignment mainAxisAlignment;
@@ -333,19 +350,12 @@ class FlexLayout extends CanvasLayout {
     this.padding = EdgeInsets.zero,
   });
 
-  bool _nonAbsoluteChild(CanvasItemState child) {
-    return child.item.layoutData is FlexLayoutData ||
-        child.item.layoutData is FixedLayoutData;
-  }
-
   @override
   DragResult handleDragAttempt(CanvasObjectState item, CanvasItemState dragged,
       CanvasItemState target, Offset localPosition) {
-    print(
-        'handleDragAttempt: ${dragged.item.debugLabel} -> ${target.item.debugLabel}');
     if (dragged == target ||
         target == item ||
-        !(_nonAbsoluteChild(dragged) && _nonAbsoluteChild(target))) {
+        !(nonAbsoluteChild(dragged) && nonAbsoluteChild(target))) {
       return DragResult.doNothing;
     }
 
@@ -355,12 +365,12 @@ class FlexLayout extends CanvasLayout {
       case Axis.horizontal:
         beforeThis = localPosition.dx < size.width / 2
             ? target
-            : target.parentData.nextSibling;
+            : nextNonAbsoluteChild(target);
         break;
       case Axis.vertical:
         beforeThis = localPosition.dy < size.height / 2
             ? target
-            : target.parentData.nextSibling;
+            : nextNonAbsoluteChild(target);
         break;
     }
 
@@ -617,8 +627,6 @@ class FlexLayout extends CanvasLayout {
     }
 
     watch.stop();
-    print('Layout took ${watch.elapsedMicroseconds} microseconds or '
-        '${watch.elapsedMilliseconds} milliseconds');
 
     return constraints.biggest;
   }

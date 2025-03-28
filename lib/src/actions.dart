@@ -2,6 +2,26 @@ import 'package:canvas/canvas.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
 
+class CanvasDeleteItemsIntent extends Intent {
+  final List<CanvasItemState> items;
+
+  const CanvasDeleteItemsIntent({
+    required this.items,
+  });
+}
+
+class CanvasDeleteItemsAction extends Action<CanvasDeleteItemsIntent> {
+  @override
+  void invoke(covariant CanvasDeleteItemsIntent intent) {
+    for (var item in intent.items) {
+      var parent = item.parent;
+      if (parent is CanvasObjectState) {
+        parent.item.removeChild(item.item);
+      }
+    }
+  }
+}
+
 class CanvasUpdateLayoutDataIntent extends Intent {
   final CanvasItem item;
   final CanvasLayoutData layoutData;

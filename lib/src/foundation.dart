@@ -1,7 +1,6 @@
-import 'dart:collection';
-
 import 'package:canvas/canvas.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
@@ -131,6 +130,28 @@ class CanvasObject extends CanvasItem {
     }
   }
 
+  // helper methods with children
+  void addChild(CanvasItem child) {
+    children = [..._children, child];
+  }
+
+  void insertChild(int index, CanvasItem child) {
+    var newChildren = List.of(_children);
+    newChildren.insert(index, child);
+    children = newChildren;
+  }
+
+  void removeChild(CanvasItem child) {
+    children = _children.where((e) => e != child).toList();
+  }
+
+  void removeChildAt(int index) {
+    var newChildren = List.of(_children);
+    newChildren.removeAt(index);
+    children = newChildren;
+  }
+  // end
+
   @override
   String toString() {
     return 'CanvasObject{debugLabel: $debugLabel}';
@@ -149,7 +170,7 @@ class _CachedLayout {
   });
 }
 
-abstract class CanvasItemState implements Listenable {
+abstract class CanvasItemState implements Listenable, HitTestTarget {
   CanvasItemState? parent;
   CanvasItem get item;
   CanvasParentData? _parentData;
@@ -163,6 +184,34 @@ abstract class CanvasItemState implements Listenable {
     return parentData!;
   }
 
+  bool hitTest(CanvasHitTestResult result, Offset position) {
+    if (hitTestSelf(result, position)) {
+      result.add(CanvasHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
+
+  bool hitTestSelf(CanvasHitTestResult result, Offset position) {
+    return item.layoutData.computeInnerSize(this, size).contains(position);
+  }
+
+  void selectTest(CanvasHitTestResult result, Polygon polygon) {
+    selectTestSelf(result, polygon);
+  }
+
+  void selectTestSelf(CanvasHitTestResult result, Polygon polygon) {
+    Polygon self = Polygon.fromRect(
+        Offset.zero & item.layoutData.computeInnerSize(this, size));
+    PolygonOverlapResult hit = polygon.overlap(self);
+    if (hit != PolygonOverlapResult.none) {
+      result.add(CanvasPolygonHitTestEntry(this, hit));
+    }
+  }
+
+  @override
+  void handleEvent(PointerEvent event, HitTestEntry<HitTestTarget> entry) {}
+
   Widget? render(BuildContext context) => null;
 
   bool isDescendantOf(CanvasItemState state) {
@@ -172,6 +221,17 @@ abstract class CanvasItemState implements Listenable {
         return true;
       }
       parent = parent.parent;
+    }
+    return false;
+  }
+
+  bool isAfterThis(CanvasItemState state) {
+    CanvasItemState? next = state.parentData.nextSibling;
+    while (next != null) {
+      if (next == this) {
+        return true;
+      }
+      next = next.parentData.nextSibling;
     }
     return false;
   }
@@ -308,6 +368,61 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   }
 
   @override
+  bool hitTest(CanvasHitTestResult result, Offset position) {
+    if (hitTestChildren(result, position) || hitTestSelf(result, position)) {
+      result.add(CanvasHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
+
+  bool hitTestChildren(CanvasHitTestResult result, Offset position) {
+    var child = lastChild;
+    while (child != null) {
+      var childTransform = child.item.layoutData.computeTranslatedMatrix(
+        child,
+        child.size,
+      );
+      final isHit = result.addWithPaintTransform(
+        transform: childTransform,
+        position: position,
+        hitTest: (result, position) {
+          return child!.hitTest(result, position);
+        },
+      );
+      if (isHit) {
+        return true;
+      }
+      child = child.parentData.previousSibling;
+    }
+    return false;
+  }
+
+  @override
+  void selectTest(CanvasHitTestResult result, Polygon polygon) {
+    selectTestSelf(result, polygon);
+    selectTestChildren(result, polygon);
+  }
+
+  void selectTestChildren(CanvasHitTestResult result, Polygon polygon) {
+    var child = lastChild;
+    while (child != null) {
+      var childTransform = child.item.layoutData.computeTranslatedMatrix(
+        child,
+        child.size,
+      );
+      result.addWithPaintTransformPolygon(
+        transform: childTransform,
+        polygon: polygon,
+        hitTest: (result, polygon) {
+          child!.selectTest(result, polygon);
+        },
+      );
+      child = child.parentData.previousSibling;
+    }
+  }
+
+  @override
   void requestRelayout() {
     var parent = this.parent;
     if (parent != null) {
@@ -332,8 +447,26 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
     super.dispose();
   }
 
+  void _validateNonCircularSiblings(CanvasItemState child) {
+    List<CanvasItemState> visited = [];
+    CanvasItemState? next = child;
+    while (next != null) {
+      if (visited.contains(next)) {
+        throw StateError(
+            'Circular sibling detected for ${child.item.debugLabel} (visited: $visited)');
+      }
+      visited.add(next);
+      next = next.parentData.nextSibling;
+    }
+  }
+
+  void _validateNonCircularChildren() {
+    for (var child in children) {
+      _validateNonCircularSiblings(child);
+    }
+  }
+
   void buildChildren(List<CanvasItem> newChildren) {
-    print('building children for ${item.debugLabel}');
     var oldNode = firstChildNode;
     CanvasItemState? findExistingChild(CanvasItem item) {
       for (var child in LinkedNodeIterable(oldNode)) {
@@ -351,11 +484,15 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
     CanvasItemState? newFirstChild;
     CanvasItemState? newLastChild;
     void append(CanvasItemState itemState) {
+      // clean
+      itemState.parentData.nextSibling = null;
+      itemState.parentData.previousSibling = null;
+      //
       newFirstChild ??= itemState;
       if (newLastChild != null) {
         newLastChild!.parentData.nextSibling = itemState;
+        itemState.parentData.previousSibling = newLastChild;
       }
-      itemState.parentData.previousSibling = newLastChild;
       newLastChild = itemState;
       itemState.parent = this;
     }
@@ -364,10 +501,8 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
       var existing = findExistingChild(child);
       if (existing != null) {
         append(existing);
-        print('append existing child ${existing.item.debugLabel}');
       } else {
         var newState = child.createState(parent: this);
-        print('append new child ${newState.item.debugLabel}');
         child.attach(newState);
         append(newState);
       }
@@ -375,7 +510,6 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
     for (var oldChild in LinkedNodeIterable(oldNode)) {
       if (oldChild.item.parent == null) {
-        print('detach child ${oldChild.item.item.debugLabel}');
         oldChild.item.item.detach(oldChild.item);
         oldChild.item.dispose();
       }
@@ -383,6 +517,11 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
     _firstChild = newFirstChild;
     _lastChild = newLastChild;
+
+    assert(() {
+      _validateNonCircularChildren();
+      return true;
+    }());
   }
 
   @override
@@ -425,19 +564,29 @@ class CanvasRoot extends CanvasObject {
   });
 
   @override
-  CanvasItemState createState({CanvasItemState? parent}) {
-    return RootCanvasItemState(
+  CanvasRootState createState({CanvasItemState? parent}) {
+    return CanvasRootState(
       parent: parent,
       item: this,
     );
   }
 }
 
-class RootCanvasItemState extends CanvasObjectState {
-  RootCanvasItemState({
+class CanvasRootState extends CanvasObjectState {
+  CanvasRootState({
     super.parent,
     required CanvasRoot super.item,
   });
+
+  @override
+  bool hitTestSelf(CanvasHitTestResult result, Offset position) {
+    return false;
+  }
+
+  @override
+  bool selectTestSelf(CanvasHitTestResult result, Polygon polygon) {
+    return false;
+  }
 }
 
 abstract class LinkedNode<T extends LinkedNode<T>> {
@@ -476,4 +625,138 @@ class LinkedNodeIterable<T extends LinkedNode<T>> extends Iterable<T> {
 
   @override
   Iterator<T> get iterator => LinkedNodeIterator(_firstNode);
+}
+
+typedef CanvasHitTest = bool Function(
+    CanvasHitTestResult result, Offset position);
+
+typedef CanvasHitTestPolygon = void Function(
+    CanvasHitTestResult result, Polygon polygon);
+
+class CanvasHitTestResult extends HitTestResult {
+  CanvasHitTestResult() : super();
+
+  @override
+  Iterable<HitTestEntry<CanvasItemState>> get path =>
+      super.path.cast<HitTestEntry<CanvasItemState>>();
+
+  bool addWithRawTransform({
+    required Matrix4? transform,
+    required Offset position,
+    required CanvasHitTest hitTest,
+  }) {
+    final Offset transformedPosition = transform == null
+        ? position
+        : MatrixUtils.transformPoint(transform, position);
+    if (transform != null) {
+      pushTransform(transform);
+    }
+    final bool isHit = hitTest(this, transformedPosition);
+    if (transform != null) {
+      popTransform();
+    }
+    return isHit;
+  }
+
+  bool addWithPaintTransform({
+    required Matrix4? transform,
+    required Offset position,
+    required CanvasHitTest hitTest,
+  }) {
+    if (transform != null) {
+      transform =
+          Matrix4.tryInvert(PointerEvent.removePerspectiveTransform(transform));
+      if (transform == null) {
+        // Objects are not visible on screen and cannot be hit-tested.
+        return false;
+      }
+    }
+    return addWithRawTransform(
+        transform: transform, position: position, hitTest: hitTest);
+  }
+
+  void addWithRawTransformPolygon({
+    required Matrix4? transform,
+    required Polygon polygon,
+    required CanvasHitTestPolygon hitTest,
+  }) {
+    final Polygon transformedPolygon =
+        transform == null ? polygon : polygon.transform(transform);
+    if (transform != null) {
+      pushTransform(transform);
+    }
+    hitTest(this, transformedPolygon);
+    if (transform != null) {
+      popTransform();
+    }
+  }
+
+  void addWithPaintTransformPolygon({
+    required Matrix4? transform,
+    required Polygon polygon,
+    required CanvasHitTestPolygon hitTest,
+  }) {
+    if (transform != null) {
+      transform =
+          Matrix4.tryInvert(PointerEvent.removePerspectiveTransform(transform));
+      if (transform == null) {
+        // Objects are not visible on screen and cannot be hit-tested.
+        return;
+      }
+    }
+    addWithRawTransformPolygon(
+        transform: transform, polygon: polygon, hitTest: hitTest);
+  }
+
+  bool addWithPaintOffset({
+    required Offset? offset,
+    required Offset position,
+    required CanvasHitTest hitTest,
+  }) {
+    final Offset transformedPosition =
+        offset == null ? position : position - offset;
+    if (offset != null) {
+      pushOffset(-offset);
+    }
+    final bool isHit = hitTest(this, transformedPosition);
+    if (offset != null) {
+      popTransform();
+    }
+    return isHit;
+  }
+
+  void addWithPaintOffsetPolygon({
+    required Offset? offset,
+    required Polygon polygon,
+    required CanvasHitTestPolygon hitTest,
+  }) {
+    final Polygon transformedPolygon =
+        offset == null ? polygon : polygon.translate(-offset);
+    if (offset != null) {
+      pushOffset(-offset);
+    }
+    hitTest(this, transformedPolygon);
+    if (offset != null) {
+      popTransform();
+    }
+  }
+}
+
+class CanvasHitTestEntry extends HitTestEntry<CanvasItemState> {
+  final Offset localPosition;
+  CanvasHitTestEntry(super.target, this.localPosition);
+  @override
+  String toString() {
+    return 'CanvasHitTestEntry(target: $target, localPosition: $localPosition)';
+  }
+}
+
+class CanvasPolygonHitTestEntry extends HitTestEntry<CanvasItemState> {
+  final PolygonOverlapResult overlap;
+  CanvasPolygonHitTestEntry(super.target, this.overlap);
+
+  @override
+  String toString() {
+    return 'CanvasPolygonHitTestEntry(target: $target, overlap: $overlap)';
+  }
 }

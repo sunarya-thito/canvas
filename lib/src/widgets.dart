@@ -62,7 +62,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
 
   @override
   bool get wantKeepAlive =>
-      widget.state.parent != null || widget.state is RootCanvasItemState;
+      widget.state.parent != null || widget.state is CanvasRootState;
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +98,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
                   ),
                 ),
                 child: Text(
-                    '${widget.state.item.debugLabel}(${widget.state.size.width}, ${widget.state.size.height}) (rot: ${((widget.state.item.layoutData.rotation ?? 0) * 180 / pi).toStringAsFixed(2)})'),
+                    '${widget.state.item.debugLabel}(${widget.state.size.width}, ${widget.state.size.height}))'),
               ),
             ),
             Transform(

@@ -4,12 +4,19 @@ import 'package:canvas/canvas.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
+
+enum CanvasSelectionMode {
+  none,
+  single,
+  multiple,
+}
 
 mixin CanvasEditorHandler {
-  EditorMouseGestureHandler? get activeMouseGesture;
-  EditorMouseGestureHandler createMouseGesture(
-      Offset localPosition, CanvasItemState parent);
-  void stopMouseGesture(EditorMouseGestureHandler gesture);
+  Ticker createTicker(TickerCallback onTick);
+  EditorGestureHandler? get activeMouseGesture;
+  EditorGestureHandler createMouseGesture(Offset localPosition);
+  void stopMouseGesture(EditorGestureHandler gesture);
   // returns the active selections and it is shared with other editors.
   List<Selection> get activeSelections;
   // avoid using this method for local selection, use localSelection instead.
@@ -19,16 +26,33 @@ mixin CanvasEditorHandler {
   void removeSelection(Selection selection);
   // local selection is the selection that is only available to the current
   // editor, it is not shared with other editors.
-  Selection get localSelection;
-  set localSelection(Selection selection);
-  List<SelectionClient> get activeSelectionClients;
-  void addSelectionClient(SelectionClient client);
-  void removeSelectionClient(SelectionClient client);
-  void finalizeSelection(SelectionClient client);
+  Selection? get localSelection;
+  set localSelection(Selection? selection);
+  List<SelectionBox> get activeSelectionClients;
+  void addSelectionRect(SelectionBox rect);
+  void removeSelectionRect(SelectionBox rect);
+  void selectFromRect(SelectionBox rect);
   CanvasEditorTransform get transform;
   set transform(CanvasEditorTransform value);
   void addToLocalSelection(CanvasItemState item);
   void setToLocalSelection(CanvasItemState item);
+  void hitTest(CanvasHitTestResult result, Offset position);
+  void hitTestPolygon(CanvasHitTestResult result, Polygon polygon);
+  // converts from widget local position to editor local position
+  Offset globalToLocal(Offset position);
+  Offset localToGlobal(Offset position);
+  Matrix4 getLocalToGlobalTransform();
+  Matrix4 getGlobalToLocalTransform();
+
+  // position is in editor local coordinates
+  CanvasItemState? findItemAtPosition(Offset position) {
+    CanvasHitTestResult result = CanvasHitTestResult();
+    hitTest(result, position);
+    if (result.path.isNotEmpty) {
+      return result.path.first.target;
+    }
+    return null;
+  }
 }
 
 class CanvasEditorTransform {

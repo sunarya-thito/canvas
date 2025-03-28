@@ -3,12 +3,12 @@ import 'package:flutter/widgets.dart';
 
 abstract class CanvasLayoutData {
   final TextDirection? textDirection;
-  final double? rotation;
+  final Offset? shear;
   final Offset? scale;
 
   const CanvasLayoutData({
     this.textDirection,
-    this.rotation,
+    this.shear,
     this.scale,
   });
 
@@ -29,7 +29,6 @@ abstract class CanvasLayoutData {
   Matrix4 computeMatrix(CanvasItemState item, Size size,
       {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
     var scale = this.scale ?? const Offset(1, 1);
-    var rotation = this.rotation ?? 0;
 
     Size innerSize = computeInnerSize(item, size, alignment);
     Offset origin = alignment.alongSize(innerSize);
@@ -37,9 +36,12 @@ abstract class CanvasLayoutData {
     Matrix4 newMatrix = parentMatrix?.clone() ?? Matrix4.identity();
 
     origin = alignment.alongSize(size);
-
+    // Offset position = item.parentData.position;
+    // newMatrix.translate(position.dx, position.dy);
     newMatrix.translate(origin.dx, origin.dy);
-    newMatrix.rotateZ(rotation);
+    if (shear != null) {
+      newMatrix *= computeShearMatrix(shear!.dx, shear!.dy);
+    }
     newMatrix.translate(-origin.dx, -origin.dy);
     newMatrix.scale(scale.dx, scale.dy);
 
@@ -47,6 +49,15 @@ abstract class CanvasLayoutData {
     newMatrix.scale(adjustmentScale.dx, adjustmentScale.dy);
 
     return newMatrix;
+  }
+
+  Matrix4 computeTranslatedMatrix(CanvasItemState item, Size size,
+      {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
+    Matrix4 translateMatrix = Matrix4.identity();
+    translateMatrix.translate(
+        item.parentData.position.dx, item.parentData.position.dy);
+    return computeMatrix(item, size,
+        alignment: alignment, parentMatrix: translateMatrix);
   }
 
   Matrix4 computeBoundingBoxMatrix(Size size) {
@@ -93,7 +104,7 @@ class AbsoluteLayoutData extends CanvasLayoutData {
     this.width,
     this.height,
     super.textDirection,
-    super.rotation,
+    super.shear,
     super.scale,
   });
 
@@ -104,7 +115,7 @@ class AbsoluteLayoutData extends CanvasLayoutData {
     double? bottom,
     double? width,
     double? height,
-    double? rotation,
+    Offset? shear,
     Offset? scale,
   }) {
     return AbsoluteLayoutData(
@@ -114,7 +125,7 @@ class AbsoluteLayoutData extends CanvasLayoutData {
       bottom: bottom ?? this.bottom,
       width: width ?? this.width,
       height: height ?? this.height,
-      rotation: rotation ?? this.rotation,
+      shear: shear ?? this.shear,
       scale: scale ?? this.scale,
     );
   }
@@ -163,7 +174,7 @@ class FixedLayoutData extends CanvasLayoutData {
     this.width = const FixedSizeConstraint(0),
     this.height = const FixedSizeConstraint(0),
     super.textDirection,
-    super.rotation,
+    super.shear,
     super.scale,
   });
 }
@@ -180,7 +191,7 @@ class FlexLayoutData extends CanvasLayoutData {
     this.max = double.infinity,
     this.cross = const IntrinsicSizeConstraint(),
     super.textDirection,
-    super.rotation,
+    super.shear,
     super.scale,
   });
 }

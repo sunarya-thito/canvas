@@ -5,6 +5,32 @@ import 'package:vector_math/vector_math_64.dart';
 
 const kDeg90 = 90.0 * pi / 180;
 
+class Rotation extends Offset {
+  const Rotation(double angle) : super(angle, -angle);
+}
+
+Matrix4 computeShearMatrix(double shearX, double shearY,
+    {Matrix4? parent, Offset? origin}) {
+  var result = Matrix4.identity();
+  if (origin != null) {
+    result.translate(origin.dx, origin.dy);
+  }
+  var shearXMatrix = Matrix4.identity()
+    ..setEntry(0, 1, tan(shearX))
+    ..setEntry(1, 0, tan(shearY));
+  var shearYMatrix = Matrix4.identity()
+    ..setEntry(1, 1, cos(shearX))
+    ..setEntry(0, 0, cos(shearY));
+  result = shearXMatrix * shearYMatrix * result;
+  if (origin != null) {
+    result.translate(-origin.dx, -origin.dy);
+  }
+  if (parent != null) {
+    result = parent * result;
+  }
+  return result;
+}
+
 Offset rotatePoint(Offset point, double angle, [Offset origin = Offset.zero]) {
   final cosAngle = cos(angle);
   final sinAngle = sin(angle);
@@ -26,6 +52,12 @@ Offset transformOffset(Offset point, Matrix4 transform,
   final vector = Vector3(point.dx - origin.dx, point.dy - origin.dy, 0);
   final transformed = transform.perspectiveTransform(vector);
   return Offset(transformed.x + origin.dx, transformed.y + origin.dy);
+}
+
+enum PolygonOverlapResult {
+  none,
+  partial,
+  full,
 }
 
 class Polygon {
@@ -199,6 +231,16 @@ class Polygon {
     }
 
     return Polygon(subjectPoints);
+  }
+
+  PolygonOverlapResult overlap(Polygon other) {
+    if (containsPolygon(other)) {
+      return PolygonOverlapResult.full;
+    }
+    if (overlaps(other)) {
+      return PolygonOverlapResult.partial;
+    }
+    return PolygonOverlapResult.none;
   }
 
   @override

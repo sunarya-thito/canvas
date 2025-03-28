@@ -1,3 +1,4 @@
+import 'package:canvas/canvas.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
@@ -43,5 +44,78 @@ class RenderNonOpaqueMetaData extends RenderMetaData {
       return false;
     }
     return super.hitTest(result, position: position);
+  }
+}
+
+class DecoratedPolygon extends StatelessWidget {
+  final Color? fillColor;
+  final Color? strokeColor;
+  final double strokeWidth;
+  final Polygon polygon;
+
+  const DecoratedPolygon({
+    super.key,
+    required this.polygon,
+    this.fillColor,
+    this.strokeColor,
+    this.strokeWidth = 1.0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: PolygonPainter(
+        polygon: polygon,
+        fillColor: fillColor,
+        strokeColor: strokeColor,
+        strokeWidth: strokeWidth,
+      ),
+    );
+  }
+}
+
+class PolygonPainter extends CustomPainter {
+  final Polygon polygon;
+  final Color? fillColor;
+  final Color? strokeColor;
+  final double strokeWidth;
+
+  const PolygonPainter({
+    required this.polygon,
+    this.fillColor,
+    this.strokeColor,
+    this.strokeWidth = 1.0,
+  });
+
+  @override
+  bool? hitTest(Offset position) {
+    return polygon.contains(position);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    Path? path;
+    if (fillColor != null) {
+      path ??= polygon.path;
+      canvas.drawPath(path, Paint()..color = fillColor!);
+    }
+    if (strokeColor != null) {
+      path ??= polygon.path;
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = strokeColor!
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant PolygonPainter oldDelegate) {
+    return oldDelegate.polygon != polygon ||
+        oldDelegate.fillColor != fillColor ||
+        oldDelegate.strokeColor != strokeColor ||
+        oldDelegate.strokeWidth != strokeWidth;
   }
 }
