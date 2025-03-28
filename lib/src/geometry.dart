@@ -9,6 +9,31 @@ class Rotation extends Offset {
   const Rotation(double angle) : super(angle, -angle);
 }
 
+double rotationFromShear(Offset shear) {
+  // (rotation - (-rotation)) / 2
+  // (rotation + rotation) / 2
+  return -(shear.dx - shear.dy) / 2;
+}
+
+Offset resizeShear(Size newOuterSize, Offset shear) {
+  // anjirlah pusing pala gw cok
+  double newWidth = newOuterSize.width;
+  double newHeight = newOuterSize.height;
+  //    tan(newShearX) =   nW
+  //                     ------- * tan(shearX)
+  //                       nH
+  //    tan(newShearX) =   nH
+  //                     ------- * tan(shearY)
+  //                       nW
+  double tanShearXNew = (newWidth / newHeight) * tan(shear.dx);
+  double tanShearYNew = (newHeight / newWidth) * tan(shear.dy);
+  //   newShearX = tan-1(tanShearXNew)
+  //   newShearY = tan-1(tanShearYNew)
+  double newShearX = atan(tanShearXNew); // atan -> tan-1 or arc tangent
+  double newShearY = atan(tanShearYNew);
+  return Offset(newShearX, newShearY);
+}
+
 Matrix4 computeShearMatrix(double shearX, double shearY,
     {Matrix4? parent, Offset? origin}) {
   var result = Matrix4.identity();

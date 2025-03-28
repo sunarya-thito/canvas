@@ -9,10 +9,6 @@ class CanvasParentData {
   Offset position = Offset.zero;
   CanvasItemState? nextSibling;
   CanvasItemState? previousSibling;
-
-  // used by absolute children to handle
-  // scale mode when anchored both left and right or top and bottom
-  Offset scaleAdjustment = const Offset(1, 1);
 }
 
 class CanvasFlexParentData extends CanvasParentData {
@@ -128,41 +124,49 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
   double left;
   double width;
   double height;
-  double adjustmentScaleX = 1;
-  double adjustmentScaleY = 1;
   if (layoutData.width != null) {
-    if (layoutData.left != null && layoutData.right != null) {
-      width = parentSize.width - layoutData.left! - layoutData.right!;
-      adjustmentScaleX = width / layoutData.width!;
-    } else {
-      width = layoutData.width!;
-    }
+    width = layoutData.width!;
   } else if (layoutData.left != null && layoutData.right != null) {
-    width = parentSize.width - layoutData.left! - layoutData.right!;
+    if (layoutData.scaleHorizontal) {
+      double scaledLeft = parentSize.width * layoutData.left!;
+      double scaledRight = parentSize.width * layoutData.right!;
+      width = parentSize.width - scaledLeft - scaledRight;
+    } else {
+      width = parentSize.width - layoutData.left! - layoutData.right!;
+    }
   } else {
     width = child.computeMaxIntrinsicWidth(parentSize.height);
   }
   if (layoutData.height != null) {
-    if (layoutData.top != null && layoutData.bottom != null) {
-      height = parentSize.height - layoutData.top! - layoutData.bottom!;
-      adjustmentScaleY = height / layoutData.height!;
-    } else {
-      height = layoutData.height!;
-    }
+    height = layoutData.height!;
   } else if (layoutData.top != null && layoutData.bottom != null) {
-    height = parentSize.height - layoutData.top! - layoutData.bottom!;
+    if (layoutData.scaleVertical) {
+      double scaledTop = parentSize.height * layoutData.top!;
+      double scaledBottom = parentSize.height * layoutData.bottom!;
+      height = parentSize.height - scaledTop - scaledBottom;
+    } else {
+      height = parentSize.height - layoutData.top! - layoutData.bottom!;
+    }
   } else {
     height = child.computeMaxIntrinsicHeight(parentSize.width);
   }
   if (layoutData.top != null) {
-    top = layoutData.top!;
+    if (layoutData.scaleVertical && layoutData.bottom != null) {
+      top = parentSize.height * layoutData.top!;
+    } else {
+      top = layoutData.top!;
+    }
   } else if (layoutData.bottom != null) {
     top = parentSize.height - layoutData.bottom! - height;
   } else {
     top = 0;
   }
   if (layoutData.left != null) {
-    left = layoutData.left!;
+    if (layoutData.scaleHorizontal && layoutData.right != null) {
+      left = parentSize.width * layoutData.left!;
+    } else {
+      left = layoutData.left!;
+    }
   } else if (layoutData.right != null) {
     left = parentSize.width - layoutData.right! - width;
   } else {
@@ -177,7 +181,6 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
       ),
       textDirection);
   child.parentData.position = offset + Offset(left, top);
-  child.parentData.scaleAdjustment = Offset(adjustmentScaleX, adjustmentScaleY);
 }
 
 class FixedLayout extends CanvasLayout {

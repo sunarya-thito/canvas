@@ -119,3 +119,19 @@ class PolygonPainter extends CustomPainter {
         oldDelegate.strokeWidth != strokeWidth;
   }
 }
+
+class PathClipper extends CustomClipper<Path> {
+  final Path path;
+
+  const PathClipper(this.path);
+
+  @override
+  Path getClip(Size size) {
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant PathClipper oldClipper) {
+    return oldClipper.path != path;
+  }
+}

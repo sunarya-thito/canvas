@@ -10,5 +10,3 @@ export 'src/layout_data.dart';
 export 'src/editor/widgets.dart';
 export 'src/editor/foundation.dart';
 export 'src/editor/gestures.dart';
-
-export 'src/boundingbox/widgets.dart';

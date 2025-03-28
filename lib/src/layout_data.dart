@@ -4,6 +4,12 @@ import 'package:flutter/widgets.dart';
 abstract class CanvasLayoutData {
   final TextDirection? textDirection;
   final Offset? shear;
+
+  // i don't think there should be a scale
+  // even though there is something called
+  // scale tool, it is used to scale the entire thing
+  // including the size, the font size, the border width,
+  // etc. Also, scale tool uses uniform scale.
   final Offset? scale;
 
   const CanvasLayoutData({
@@ -17,11 +23,10 @@ abstract class CanvasLayoutData {
     var width = outerSize.width;
     var height = outerSize.height;
     var scale = this.scale ?? const Offset(1, 1);
-    var adjustmentScale = item.parentData.scaleAdjustment;
 
     // Apply scaling
-    var scaledWidth = width / scale.dx / adjustmentScale.dx;
-    var scaledHeight = height / scale.dy / adjustmentScale.dy;
+    var scaledWidth = width / scale.dx;
+    var scaledHeight = height / scale.dy;
 
     return Size(scaledWidth, scaledHeight);
   }
@@ -44,9 +49,6 @@ abstract class CanvasLayoutData {
     }
     newMatrix.translate(-origin.dx, -origin.dy);
     newMatrix.scale(scale.dx, scale.dy);
-
-    Offset adjustmentScale = item.parentData.scaleAdjustment;
-    newMatrix.scale(adjustmentScale.dx, adjustmentScale.dy);
 
     return newMatrix;
   }
@@ -95,6 +97,10 @@ class AbsoluteLayoutData extends CanvasLayoutData {
   final double? bottom;
   final double? width;
   final double? height;
+  // if true, the width is scaled by the scale factor when left and right are set
+  final bool scaleHorizontal;
+  // same as above, but for height
+  final bool scaleVertical;
 
   const AbsoluteLayoutData({
     this.top,
@@ -106,6 +112,8 @@ class AbsoluteLayoutData extends CanvasLayoutData {
     super.textDirection,
     super.shear,
     super.scale,
+    this.scaleHorizontal = false,
+    this.scaleVertical = false,
   });
 
   AbsoluteLayoutData copyWith({

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:canvas/canvas.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -54,6 +56,7 @@ class CanvasObject extends CanvasItem {
   CanvasLayout _layout;
   CanvasLayoutData _layoutData;
   List<CanvasItem> _children = [];
+  bool _clipContent;
   @override
   List<CanvasObjectState> get _attachedStates =>
       super._attachedStates.cast<CanvasObjectState>();
@@ -63,9 +66,22 @@ class CanvasObject extends CanvasItem {
     CanvasLayoutData layoutData = const AbsoluteLayoutData(),
     List<CanvasItem> children = const [],
     super.debugLabel,
+    bool clipContent = true,
   })  : _layout = layout,
         _layoutData = layoutData,
-        _children = List.of(children);
+        _children = List.of(children),
+        _clipContent = clipContent;
+
+  bool get clipContent => _clipContent;
+  set clipContent(bool value) {
+    if (value != _clipContent) {
+      _clipContent = value;
+      for (var state in _attachedStates) {
+        state.markNeedsLayout();
+      }
+    }
+  }
+
   @override
   CanvasItemState createState({CanvasItemState? parent}) {
     return CanvasObjectState(
@@ -182,6 +198,19 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     var parentData = _parentData;
     assert(parentData != null, 'Parent data not set');
     return parentData!;
+  }
+
+  Offset get globalShear {
+    Offset currentShear = item.layoutData.shear ?? Offset.zero;
+    CanvasItemState? current = this;
+    while (current != null) {
+      var parent = current.parent;
+      if (parent != null) {
+        currentShear += parent.item.layoutData.shear ?? Offset.zero;
+      }
+      current = parent;
+    }
+    return currentShear;
   }
 
   bool hitTest(CanvasHitTestResult result, Offset position) {
@@ -377,6 +406,11 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   }
 
   bool hitTestChildren(CanvasHitTestResult result, Offset position) {
+    if (item.clipContent) {
+      if (!item.layoutData.computeInnerSize(this, size).contains(position)) {
+        return false;
+      }
+    }
     var child = lastChild;
     while (child != null) {
       var childTransform = child.item.layoutData.computeTranslatedMatrix(
@@ -405,6 +439,11 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   }
 
   void selectTestChildren(CanvasHitTestResult result, Polygon polygon) {
+    if (item.clipContent) {
+      Polygon self = Polygon.fromRect(
+          Offset.zero & item.layoutData.computeInnerSize(this, size));
+      polygon = polygon.intersect(self);
+    }
     var child = lastChild;
     while (child != null) {
       var childTransform = child.item.layoutData.computeTranslatedMatrix(
@@ -561,7 +600,9 @@ class CanvasRoot extends CanvasObject {
     super.layoutData,
     super.children,
     super.debugLabel,
-  });
+  }) : super(
+            clipContent:
+                false); // NEVER clip content root because root has always zero size
 
   @override
   CanvasRootState createState({CanvasItemState? parent}) {
@@ -758,5 +799,33 @@ class CanvasPolygonHitTestEntry extends HitTestEntry<CanvasItemState> {
   @override
   String toString() {
     return 'CanvasPolygonHitTestEntry(target: $target, overlap: $overlap)';
+  }
+}
+
+enum DirectionalCursor {
+  top(SystemMouseCursors.resizeUpDown), // 0
+  topRight(SystemMouseCursors.resizeUpRight), // 45
+  right(SystemMouseCursors.resizeLeftRight), // 90
+  bottomRight(SystemMouseCursors.resizeDownRight), // 135
+  bottom(SystemMouseCursors.resizeUpDown), // 180
+  bottomLeft(SystemMouseCursors.resizeDownLeft), // 225
+  left(SystemMouseCursors.resizeLeftRight), // 270
+  topLeft(SystemMouseCursors.resizeUpLeft); // 315
+
+  static const length = 8; // number of directions
+  static const double angleStep = 2 * pi / length; // = 45 degrees
+
+  final MouseCursor cursor;
+
+  const DirectionalCursor(this.cursor);
+
+  DirectionalCursor rotate(int count) {
+    int index = (this.index + count) % length;
+    return DirectionalCursor.values[index];
+  }
+
+  DirectionalCursor rotateByAngle(double angle) {
+    int index = ((this.index + (angle / angleStep).round()) % length).toInt();
+    return DirectionalCursor.values[index];
   }
 }

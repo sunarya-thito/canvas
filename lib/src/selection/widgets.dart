@@ -14,24 +14,26 @@ class SelectionWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canvasTheme = CanvasTheme.of(context);
-    return ListenableBuilder(
-      listenable: Listenable.merge([selectionBox.start, selectionBox.end]),
-      builder: (context, child) {
-        Rect rect = selectionBox.rect;
-        return Transform.translate(
-          offset: rect.topLeft,
-          child: Container(
-            width: rect.width,
-            height: rect.height,
-            decoration: canvasTheme.viewport.selectionDecoration,
-          ),
-        );
-      },
+    return IgnorePointer(
+      child: ListenableBuilder(
+        listenable: Listenable.merge([selectionBox.start, selectionBox.end]),
+        builder: (context, child) {
+          Rect rect = selectionBox.rect;
+          return Transform.translate(
+            offset: rect.topLeft,
+            child: Container(
+              width: rect.width,
+              height: rect.height,
+              decoration: canvasTheme.viewport.selectionDecoration,
+            ),
+          );
+        },
+      ),
     );
   }
 }
 
-class SelectionTransformControlWidget extends StatelessWidget {
+class SelectionTransformControlWidget extends StatefulWidget {
   final Matrix4 parentTransform;
   final SelectionGroup selectionGroup;
 
@@ -41,6 +43,13 @@ class SelectionTransformControlWidget extends StatelessWidget {
     required this.selectionGroup,
   });
 
+  @override
+  State<SelectionTransformControlWidget> createState() =>
+      _SelectionTransformControlWidgetState();
+}
+
+class _SelectionTransformControlWidgetState
+    extends State<SelectionTransformControlWidget> {
   Polygon _createHandlePolygon(Offset center, Size size, Offset shear) {
     Matrix4 matrix = Matrix4.identity();
     Offset origin = size.center(Offset.zero);
@@ -52,10 +61,31 @@ class SelectionTransformControlWidget extends StatelessWidget {
     return polygon;
   }
 
+  Widget _buildHandle(CanvasThemeData theme, Offset center, Size size,
+      Offset shear, DirectionalCursor cursor) {
+    Polygon polygon = _createHandlePolygon(center, size, shear);
+    return MouseRegion(
+      cursor: cursor.rotateByAngle(rotationFromShear(shear)).cursor,
+      hitTestBehavior: HitTestBehavior.deferToChild,
+      child: GestureDetector(
+        behavior: HitTestBehavior.deferToChild,
+        onTap: () {
+          print('onTap: ${widget.selectionGroup}');
+        },
+        child: DecoratedPolygon(
+          polygon: polygon,
+          fillColor: theme.transformControl.controlColor,
+          strokeColor: theme.transformControl.controlBorderColor,
+          strokeWidth: theme.transformControl.controlBorderWidth,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    var box =
-        selectionGroup.getTransformControlBox(parentTransform: parentTransform);
+    var box = widget.selectionGroup
+        .getTransformControlBox(parentTransform: widget.parentTransform);
     Size size = box.size;
     Matrix4 transform = box.transform;
     Polygon polygon = Polygon.fromRect(Offset.zero & size);
@@ -69,61 +99,29 @@ class SelectionTransformControlWidget extends StatelessWidget {
     final bottomLeftHandleCenter = polygon.points[3];
     final shear = box.shear;
 
-    final topLeftHandlePolygon = _createHandlePolygon(
-      topLeftHandleCenter,
-      handleSize,
-      shear,
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        IgnorePointer(
+          child: DecoratedPolygon(
+            polygon: polygon,
+            strokeColor: theme.transformControl.controlBoundaryBorderColor,
+            strokeWidth: theme.transformControl.controlBoundaryBorderWidth,
+          ),
+        ),
+        // topLeft
+        _buildHandle(theme, topLeftHandleCenter, handleSize, shear,
+            DirectionalCursor.topLeft),
+        // topRight
+        _buildHandle(theme, topRightHandleCenter, handleSize, shear,
+            DirectionalCursor.topRight),
+        // bottomLeft
+        _buildHandle(theme, bottomLeftHandleCenter, handleSize, shear,
+            DirectionalCursor.bottomLeft),
+        // bottomRight
+        _buildHandle(theme, bottomRightHandleCenter, handleSize, shear,
+            DirectionalCursor.bottomRight),
+      ],
     );
-    final topRightHandlePolygon = _createHandlePolygon(
-      topRightHandleCenter,
-      handleSize,
-      shear,
-    );
-    final bottomLeftHandlePolygon = _createHandlePolygon(
-      bottomLeftHandleCenter,
-      handleSize,
-      shear,
-    );
-    final bottomRightHandlePolygon = _createHandlePolygon(
-      bottomRightHandleCenter,
-      handleSize,
-      shear,
-    );
-
-    return GroupWidget(size: Size.zero, children: [
-      DecoratedPolygon(
-        polygon: polygon,
-        strokeColor: theme.transformControl.controlBoundaryBorderColor,
-        strokeWidth: theme.transformControl.controlBoundaryBorderWidth,
-      ),
-      // topLeft
-      DecoratedPolygon(
-        polygon: topLeftHandlePolygon,
-        fillColor: theme.transformControl.controlColor,
-        strokeColor: theme.transformControl.controlBorderColor,
-        strokeWidth: theme.transformControl.controlBorderWidth,
-      ),
-      // topRight
-      DecoratedPolygon(
-        polygon: topRightHandlePolygon,
-        fillColor: theme.transformControl.controlColor,
-        strokeColor: theme.transformControl.controlBorderColor,
-        strokeWidth: theme.transformControl.controlBorderWidth,
-      ),
-      // bottomLeft
-      DecoratedPolygon(
-        polygon: bottomLeftHandlePolygon,
-        fillColor: theme.transformControl.controlColor,
-        strokeColor: theme.transformControl.controlBorderColor,
-        strokeWidth: theme.transformControl.controlBorderWidth,
-      ),
-      // bottomRight
-      DecoratedPolygon(
-        polygon: bottomRightHandlePolygon,
-        fillColor: theme.transformControl.controlColor,
-        strokeColor: theme.transformControl.controlBorderColor,
-        strokeWidth: theme.transformControl.controlBorderWidth,
-      ),
-    ]);
   }
 }

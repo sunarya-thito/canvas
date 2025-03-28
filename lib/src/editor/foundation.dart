@@ -14,9 +14,9 @@ enum CanvasSelectionMode {
 
 mixin CanvasEditorHandler {
   Ticker createTicker(TickerCallback onTick);
-  EditorGestureHandler? get activeMouseGesture;
-  EditorGestureHandler createMouseGesture(Offset localPosition);
-  void stopMouseGesture(EditorGestureHandler gesture);
+  EditorGestureState? get activeMouseGesture;
+  EditorGestureState createMouseGesture(Offset localPosition);
+  void stopMouseGesture(EditorGestureState gesture);
   // returns the active selections and it is shared with other editors.
   List<Selection> get activeSelections;
   // avoid using this method for local selection, use localSelection instead.

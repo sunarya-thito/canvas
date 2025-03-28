@@ -1,12 +1,13 @@
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/selection/selection.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 
 abstract class EditorGesture {
   const EditorGesture();
-  EditorGestureHandler createSession(
-      {required Offset localPosition, required CanvasEditorHandler editor});
+  EditorGestureState createState(
+      {required CanvasEditorHandler editor});
 
   void onPointerScroll(PointerScrollEvent event, CanvasEditorHandler editor) {
     var zoomDelta = event.scrollDelta.dy < 0 ? 0.1 : -0.1;
@@ -17,11 +18,11 @@ abstract class EditorGesture {
   }
 }
 
-abstract class EditorGestureHandler {
+abstract class EditorGestureState {
   final CanvasEditorHandler editor;
   final Offset startPosition;
 
-  EditorGestureHandler({
+  EditorGestureState({
     required this.editor,
     required this.startPosition,
   });
@@ -44,10 +45,34 @@ abstract class EditorGestureHandler {
 
   void onTick(Duration elapsed) {}
 
-  void onPressed(PointerDownEvent event) {}
-  void onMoved(PointerMoveEvent event) {}
-  void onReleased(PointerUpEvent event) {}
-  void onCanceled(PointerCancelEvent event) {}
+  Map<Type, GestureRecognizerFactory> get gestures {
+    Map<Type, GestureRecognizerFactory> map = {};
+    final tapGestureRecognizer = this.tapGestureRecognizer;
+    if (tapGestureRecognizer != null) {
+      map[TapGestureRecognizer] = GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+        () => TapGestureRecognizer(),
+        tapGestureRecognizer,
+      );
+    }
+    final panGestureRecognizer = this.panGestureRecognizer;
+    if (panGestureRecognizer != null) {
+      map[PanGestureRecognizer] = GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+        () => PanGestureRecognizer(),
+        panGestureRecognizer,
+      );
+    }
+    final scaleGestureRecognizer = this.scaleGestureRecognizer;
+    if (scaleGestureRecognizer != null) {
+      map[ScaleGestureRecognizer] = GestureRecognizerFactoryWithHandlers<ScaleGestureRecognizer>(
+        () => ScaleGestureRecognizer(),
+        scaleGestureRecognizer,
+      );
+    }
+  }
+
+  GestureRecognizerFactoryInitializer<TapGestureRecognizer>? get tapGestureRecognizer => null;
+  GestureRecognizerFactoryInitializer<PanGestureRecognizer>? get panGestureRecognizer => null;
+  GestureRecognizerFactoryInitializer<ScaleGestureRecognizer>? get scaleGestureRecognizer => null;
 
   void dispose() {
     editor.stopMouseGesture(this);
@@ -58,7 +83,7 @@ abstract class EditorGestureHandler {
 class EditorMoveGesture extends EditorGesture {
   const EditorMoveGesture();
   @override
-  EditorGestureHandler createSession(
+  EditorGestureState createState(
       {required Offset localPosition, required CanvasEditorHandler editor}) {
     return EditorMoveGestureHandler(
       editor: editor,
@@ -67,7 +92,7 @@ class EditorMoveGesture extends EditorGesture {
   }
 }
 
-class EditorMoveGestureHandler extends EditorGestureHandler {
+class EditorMoveGestureHandler extends EditorGestureState {
   EditorMoveGestureHandler({
     required super.editor,
     required super.startPosition,
@@ -77,37 +102,58 @@ class EditorMoveGestureHandler extends EditorGestureHandler {
   SelectionBox? _selectionRect;
 
   @override
-  void onPressed(PointerDownEvent event) {
+  void onPointerDown(PointerDownEvent event) {
+  
+    GestureDetector(
+      onPanStart: (details) {
+      },
+      onTertiaryTapUp: ,
+    )
     if (event.buttons == kTertiaryButton) {
       _dragging = true;
-    } else if (event.buttons == kPrimaryButton) {
-      _selectionRect = SelectionBox.local(start: event.localPosition);
-      editor.addSelectionRect(_selectionRect!);
     }
   }
 
-  @override
-  void onMoved(PointerMoveEvent event) {
-    if (_dragging) {
-      editor.transform = editor.transform.drag(event.localDelta);
-    } else if (_selectionRect != null) {
-      _selectionRect!.update(end: event.localPosition);
+  void onPanStart(DragStartDetails details) {
+    _selectionRect = SelectionBox.local(start: details.localPosition);
+    editor.addSelectionRect(_selectionRect!);
+  }
+
+  void onPanUpdate(DragUpdateDetails details) {
+    if (_selectionRect != null) {
+      _selectionRect!.update(end: details.localPosition);
     }
   }
 
-  @override
-  void onCanceled(PointerCancelEvent event) {
-    _dragging = false;
-  }
-
-  @override
-  void onReleased(PointerUpEvent event) {
-    _dragging = false;
+  void onPanEnd(DragEndDetails details) {
     if (_selectionRect != null) {
       editor.removeSelectionRect(_selectionRect!);
       editor.selectFromRect(_selectionRect!);
       _selectionRect = null;
     }
+  }
+
+  void onPanCancel() {
+    if (_selectionRect != null) {
+      editor.removeSelectionRect(_selectionRect!);
+      _selectionRect = null;
+    }
+  }
+
+  @override
+  void onPointerMove(PointerMoveEvent event) {
+    if (_dragging) {
+      editor.transform = editor.transform.drag(event.localDelta);
+    }
+  }
+
+  @override
+  void onPointerCancel(PointerCancelEvent event) {
+    dispose();
+  }
+
+  @override
+  void onPointerUp(PointerUpEvent event) {
     dispose();
   }
 }

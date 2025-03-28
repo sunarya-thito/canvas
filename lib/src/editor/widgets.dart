@@ -91,90 +91,103 @@ class CanvasEditorState extends State<CanvasEditor>
     assert(_rootState.hasSize, 'Root object has not been laid out');
     return Focus(
       focusNode: _focusNode,
-      child: Listener(
+      child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onPointerCancel: (event) {
-          _activeMouseGesture?.onCanceled(event);
+          _activeMouseGesture?.onPointerCancel(event);
         },
         onPointerUp: (event) {
-          _activeMouseGesture?.onReleased(event);
+          _activeMouseGesture?.onPointerUp(event);
         },
         onPointerMove: (event) {
-          _activeMouseGesture?.onMoved(event);
+          _activeMouseGesture?.onPointerMove(event);
         },
         onPointerDown: (event) {
           _focusNode.requestFocus();
+          if (event.buttons == kPrimaryButton ||
+              event.buttons == kSecondaryButton) {
+            CanvasItemState? targetClick =
+                findItemAtPosition(MatrixUtils.transformPoint(
+              getGlobalToLocalTransform(),
+              event.localPosition,
+            ));
+            if (targetClick != null) {
+              switch (widget.selectionMode) {
+                case CanvasSelectionMode.single:
+                  setToLocalSelection(targetClick);
+                  break;
+                case CanvasSelectionMode.multiple:
+                  addToLocalSelection(targetClick);
+                  break;
+                case CanvasSelectionMode.none:
+                  break;
+              }
+              return;
+            }
+          }
           _activeMouseGesture ??= createMouseGesture(event.localPosition);
-          _activeMouseGesture?.onPressed(event);
-          CanvasItemState? targetClick =
-              findItemAtPosition(MatrixUtils.transformPoint(
-            getGlobalToLocalTransform(),
-            event.localPosition,
-          ));
+          _activeMouseGesture?.onPointerDown(event);
         },
         onPointerSignal: (event) {
           if (event is PointerScrollEvent) {
             widget.gesture.onPointerScroll(event, this);
           }
         },
-        child: BoundingBoxDebugger(
-          child: Actions(
-            actions: {
-              CanvasUpdateLayoutDataIntent: Action.overridable(
-                defaultAction: CanvasUpdateLayoutDataAction(),
-                context: context,
-              ),
-              CanvasUpdateChildrenIntent: Action.overridable(
-                defaultAction: CanvasUpdateChildrenAction(),
-                context: context,
-              ),
-            },
-            child: LayoutBuilder(builder: (context, constraints) {
-              _editorSize = constraints.biggest;
-              return ListenableBuilder(
-                listenable: widget.controller,
-                builder: (context, child) {
-                  Matrix4 transform = getLocalToGlobalTransform();
-                  return GroupWidget(
-                    size: Size.zero,
-                    children: [
-                      Transform(
-                        transform: transform,
-                        child: GroupWidget(
-                          size: Size.zero,
-                          children: [
-                            CanvasItemWidget(
-                              state: _rootState,
-                            ),
-                          ],
-                        ),
+        child: Actions(
+          actions: {
+            CanvasUpdateLayoutDataIntent: Action.overridable(
+              defaultAction: CanvasUpdateLayoutDataAction(),
+              context: context,
+            ),
+            CanvasUpdateChildrenIntent: Action.overridable(
+              defaultAction: CanvasUpdateChildrenAction(),
+              context: context,
+            ),
+          },
+          child: LayoutBuilder(builder: (context, constraints) {
+            _editorSize = constraints.biggest;
+            return ListenableBuilder(
+              listenable: widget.controller,
+              builder: (context, child) {
+                Matrix4 transform = getLocalToGlobalTransform();
+                return Stack(
+                  fit: StackFit.passthrough,
+                  children: [
+                    Transform(
+                      transform: transform,
+                      child: CanvasItemWidget(
+                        state: _rootState,
                       ),
-                      for (var selected in _selections)
-                        ListenableBuilder(
-                          listenable: selected.groups,
-                          builder: (context, child) {
-                            return GroupWidget(
-                              size: Size.zero,
-                              children: selected.groups.value.map(
-                                (e) {
-                                  return SelectionTransformControlWidget(
-                                      parentTransform: transform,
-                                      selectionGroup: e);
-                                },
-                              ).toList(),
-                            );
-                          },
-                        ),
-                      for (var selection in _selectionBoxes)
-                        SelectionWidget(
+                    ),
+                    for (var selected in _selections)
+                      ListenableBuilder(
+                        listenable: selected.groups,
+                        builder: (context, child) {
+                          return Stack(
+                            fit: StackFit.passthrough,
+                            children: selected.groups.value.map(
+                              (e) {
+                                return SelectionTransformControlWidget(
+                                    parentTransform: transform,
+                                    selectionGroup: e);
+                              },
+                            ).toList(),
+                          );
+                        },
+                      ),
+                    for (var selection in _selectionBoxes)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: SelectionWidget(
                           selectionBox: selection,
                         ),
-                    ],
-                  );
-                },
-              );
-            }),
-          ),
+                      ),
+                  ],
+                );
+              },
+            );
+          }),
         ),
       ),
     );
@@ -183,7 +196,7 @@ class CanvasEditorState extends State<CanvasEditor>
   // CanvasHandler
   final List<Selection> _selections = [];
   final List<SelectionBox> _selectionBoxes = [];
-  EditorGestureHandler? _activeMouseGesture;
+  EditorGestureState? _activeMouseGesture;
 
   @override
   Selection? get localSelection {
@@ -213,7 +226,7 @@ class CanvasEditorState extends State<CanvasEditor>
   }
 
   @override
-  EditorGestureHandler? get activeMouseGesture => _activeMouseGesture;
+  EditorGestureState? get activeMouseGesture => _activeMouseGesture;
 
   @override
   List<SelectionBox> get activeSelectionClients =>
@@ -263,12 +276,12 @@ class CanvasEditorState extends State<CanvasEditor>
   }
 
   @override
-  EditorGestureHandler createMouseGesture(Offset localPosition) {
+  EditorGestureState createMouseGesture(Offset localPosition) {
     if (_activeMouseGesture != null) {
       _activeMouseGesture!.dispose();
     }
-    var handler = widget.gesture
-        .createSession(localPosition: localPosition, editor: this);
+    var handler =
+        widget.gesture.createState(localPosition: localPosition, editor: this);
     _activeMouseGesture = handler;
     return handler;
   }
@@ -351,9 +364,11 @@ class CanvasEditorState extends State<CanvasEditor>
   }
 
   @override
-  void stopMouseGesture(EditorGestureHandler gesture) {
+  void stopMouseGesture(EditorGestureState gesture) {
     if (_activeMouseGesture == gesture) {
-      _activeMouseGesture = null;
+      setState(() {
+        _activeMouseGesture = null;
+      });
     }
   }
 

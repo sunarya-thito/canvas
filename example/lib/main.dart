@@ -66,6 +66,7 @@ class _SampleState extends State<Sample> {
         min: 150,
         max: 200,
         cross: SizeConstraint.fixed(150),
+        scale: Offset(3, 1),
         shear: Offset(30 * pi / 180, -60 * pi / 180),
       ),
     );
@@ -93,10 +94,9 @@ class _SampleState extends State<Sample> {
       layoutData: AbsoluteLayoutData(
         top: 150,
         left: 150,
-        width: 100,
-        height: 100,
         bottom: 150,
         right: 150,
+        scaleHorizontal: true,
       ),
     );
     CanvasObject ch6 = CanvasObject(
