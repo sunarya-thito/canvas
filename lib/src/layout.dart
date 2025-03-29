@@ -189,6 +189,8 @@ class FixedLayout extends CanvasLayout {
   @override
   Size performLayout(CanvasObjectState state, BoxConstraints constraints,
       TextDirection textDirection) {
+    constraints =
+        state.item.layoutData.computeInnerConstraints(state, constraints);
     var child = state.firstChild;
     while (child != null) {
       var layoutData = child.item.layoutData;
@@ -432,6 +434,8 @@ class FlexLayout extends CanvasLayout {
   @override
   Size performLayout(CanvasObjectState state, BoxConstraints constraints,
       TextDirection textDirection) {
+    constraints =
+        state.item.layoutData.computeInnerConstraints(state, constraints);
     final watch = Stopwatch();
     watch.start();
     var padding = this.padding.resolve(textDirection);

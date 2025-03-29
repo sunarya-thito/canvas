@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/external/widgets.dart';
 import 'package:flutter/widgets.dart';
 
 abstract class CanvasLayoutData {
@@ -10,37 +13,103 @@ abstract class CanvasLayoutData {
   // scale tool, it is used to scale the entire thing
   // including the size, the font size, the border width,
   // etc. Also, scale tool uses uniform scale.
-  // final Offset? scale;
+
+  // HOWEVER, scale is needed to flip the item horizontally and/or vertically
+  final Offset? scale;
 
   const CanvasLayoutData({
     this.textDirection,
     this.shear,
+    this.scale,
   });
 
   // dropTarget is local to the target
   CanvasLayoutData transferTo(
       CanvasItemState item, CanvasLayout targetLayout, Offset dropTarget);
 
-  // Matrix4 computeMatrix(CanvasItemState item, Size size,
-  //     {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
-  //   Offset origin = alignment.alongSize(size);
-  //   Matrix4 newMatrix = parentMatrix?.clone() ?? Matrix4.identity();
-  //   origin = alignment.alongSize(size);
-  //   // Offset position = item.parentData.position;
-  //   // newMatrix.translate(position.dx, position.dy);
-  //   newMatrix.translate(origin.dx, origin.dy);
-  //   if (shear != null) {
-  //     newMatrix *= computeShearMatrix(shear!.dx, shear!.dy);
-  //   }
-  //   newMatrix.translate(-origin.dx, -origin.dy);
+  BoxConstraints computeInnerConstraints(
+      CanvasItemState item, BoxConstraints constraints) {
+    Size smallest = constraints.smallestAllowNegative;
+    Size bigest = constraints.biggestAllowNegative;
+    if (smallest == bigest) {
+      return BoxConstraints.tight(computeInnerSize(item, size: smallest));
+    }
+    smallest = computeInnerSize(item, size: smallest);
+    bigest = computeInnerSize(item, size: bigest);
+    return BoxConstraints(
+      minWidth: smallest.width,
+      minHeight: smallest.height,
+      maxWidth: bigest.width,
+      maxHeight: bigest.height,
+    );
+  }
 
-  //   return newMatrix;
-  // }
+  Size computeInnerSize(CanvasItemState item, {Size? size}) {
+    size ??= item.size;
+    double width = size.width;
+    double height = size.height;
+    Matrix4 localMatrix = computeLocalMatrix(item, size: size);
+    Offset topLeft = transformOffset(Offset.zero, localMatrix);
+    Offset topRight = transformOffset(
+      Offset(width, 0),
+      localMatrix,
+    );
+    Offset bottomLeft = transformOffset(
+      Offset(0, height),
+      localMatrix,
+    );
+    Offset bottomRight = transformOffset(
+      Offset(width, height),
+      localMatrix,
+    );
+    double minX = min(
+      min(topLeft.dx, topRight.dx),
+      min(bottomLeft.dx, bottomRight.dx),
+    );
+    double minY = min(
+      min(topLeft.dy, topRight.dy),
+      min(bottomLeft.dy, bottomRight.dy),
+    );
+    double maxX = max(
+      max(topLeft.dx, topRight.dx),
+      max(bottomLeft.dx, bottomRight.dx),
+    );
+    double maxY = max(
+      max(topLeft.dy, topRight.dy),
+      max(bottomLeft.dy, bottomRight.dy),
+    );
+    return Size(
+      maxX - minX,
+      maxY - minY,
+    );
+  }
 
-  Matrix4 computeTranslatedMatrix(CanvasItemState item, Size size,
+  Matrix4 computeLocalMatrix(CanvasItemState item,
+      {Alignment alignment = Alignment.center,
+      Matrix4? parentMatrix,
+      Size? size}) {
+    size ??= item.size;
+    Matrix4 transform = (parentMatrix ?? Matrix4.identity());
+    Offset origin = alignment.alongSize(size);
+    transform.translate(origin.dx, origin.dy);
+    if (shear != null) {
+      transform *= computeShearMatrix(
+        shear!.dx,
+        shear!.dy,
+      );
+    }
+    transform.translate(-origin.dx, -origin.dy);
+    if (scale != null) {
+      transform.scale(scale!.dx, scale!.dy);
+    }
+
+    return transform;
+  }
+
+  Matrix4 computeTranslatedMatrix(CanvasItemState item,
       {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
     Matrix4 transform = Matrix4.identity();
-    Offset origin = alignment.alongSize(size);
+    Offset origin = alignment.alongSize(item.size);
     transform.translate(
         item.parentData.position.dx, item.parentData.position.dy);
     transform.translate(origin.dx, origin.dy);
@@ -51,6 +120,33 @@ abstract class CanvasLayoutData {
       );
     }
     transform.translate(-origin.dx, -origin.dy);
+    var size = item.size;
+    Offset topLeft = transformOffset(Offset.zero, transform);
+    Offset topRight = transformOffset(Offset(size.width, 0), transform);
+    Offset bottomLeft = transformOffset(Offset(0, size.height), transform);
+    Offset bottomRight =
+        transformOffset(Offset(size.width, size.height), transform);
+    double minX = min(
+      min(topLeft.dx, topRight.dx),
+      min(bottomLeft.dx, bottomRight.dx),
+    );
+    double minY = min(
+      min(topLeft.dy, topRight.dy),
+      min(bottomLeft.dy, bottomRight.dy),
+    );
+    double maxX = max(
+      max(topLeft.dx, topRight.dx),
+      max(bottomLeft.dx, bottomRight.dx),
+    );
+    double maxY = max(
+      max(topLeft.dy, topRight.dy),
+      max(bottomLeft.dy, bottomRight.dy),
+    );
+    double newWidth = maxX - minX;
+    double newHeight = maxY - minY;
+    double diffWidth = newWidth - size.width;
+    double diffHeight = newHeight - size.height;
+    transform.translate(-diffWidth / 2, -diffHeight / 2);
     if (parentMatrix != null) {
       transform = parentMatrix * transform;
     }

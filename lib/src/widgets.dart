@@ -71,9 +71,9 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
     super.build(context);
     assert(
         widget.state.hasSize, 'CanvasItem ${widget.state} not been laid out');
-    var innerSize = widget.state.size;
-    Matrix4 transform = widget.state.item.layoutData
-        .computeTranslatedMatrix(widget.state, innerSize);
+    var innerSize = widget.state.innerSize;
+    Matrix4 transform =
+        widget.state.item.layoutData.computeTranslatedMatrix(widget.state);
     if (widget.parentTransform != null) {
       transform = widget.parentTransform! * transform;
     }

@@ -49,6 +49,16 @@ extension BoxConstraintsExtension on BoxConstraints {
     return Size(width, height);
   }
 
+  Size get smallestAllowNegative {
+    double absMinWidth = minWidth.abs();
+    double absMinHeight = minHeight.abs();
+    double absMaxWidth = maxWidth.abs();
+    double absMaxHeight = maxHeight.abs();
+    double width = absMinWidth < absMaxWidth ? minWidth : maxWidth;
+    double height = absMinHeight < absMaxHeight ? minHeight : maxHeight;
+    return Size(width, height);
+  }
+
   bool equalsIgnoreSign(BoxConstraints other) {
     return minWidth == other.minWidth &&
         minHeight == other.minHeight &&

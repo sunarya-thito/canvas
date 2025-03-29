@@ -214,6 +214,16 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     return currentShear;
   }
 
+  Rect computeViewportBounds({Matrix4? parentTransform}) {
+    Polygon polygon = Polygon.fromRect(Offset.zero & innerSize);
+    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
+    if (parentTransform != null) {
+      transform = parentTransform * transform;
+    }
+    polygon = polygon.transform(transform);
+    return polygon.boundingBox;
+  }
+
   bool hitTest(CanvasHitTestResult result, Offset position) {
     if (hitTestSelf(result, position)) {
       result.add(CanvasHitTestEntry(this, position));
@@ -222,8 +232,10 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     return false;
   }
 
+  Size get innerSize => item.layoutData.computeInnerSize(this);
+
   bool hitTestSelf(CanvasHitTestResult result, Offset position) {
-    return size.containsIgnoreSign(position);
+    return innerSize.containsIgnoreSign(position);
   }
 
   void selectTest(CanvasHitTestResult result, Polygon polygon) {
@@ -231,7 +243,7 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   }
 
   void selectTestSelf(CanvasHitTestResult result, Polygon polygon) {
-    Polygon self = Polygon.fromRect(Offset.zero & size);
+    Polygon self = Polygon.fromRect(Offset.zero & innerSize);
     PolygonOverlapResult hit = polygon.overlap(self);
     if (hit != PolygonOverlapResult.none) {
       result.add(CanvasPolygonHitTestEntry(this, hit));
@@ -398,6 +410,24 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   }
 
   @override
+  Rect computeViewportBounds({Matrix4? parentTransform}) {
+    Polygon polygon = Polygon.fromRect(Offset.zero & innerSize);
+    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
+    if (parentTransform != null) {
+      transform = parentTransform * transform;
+    }
+    polygon = polygon.transform(transform);
+    Rect boundingBox = polygon.boundingBox;
+    var child = firstChild;
+    while (child != null) {
+      Rect childBound = child.computeViewportBounds(parentTransform: transform);
+      boundingBox = boundingBox.expandToInclude(childBound);
+      child = child.parentData.nextSibling;
+    }
+    return boundingBox;
+  }
+
+  @override
   bool hitTest(CanvasHitTestResult result, Offset position) {
     if (hitTestChildren(result, position) || hitTestSelf(result, position)) {
       result.add(CanvasHitTestEntry(this, position));
@@ -408,7 +438,7 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
   bool hitTestChildren(CanvasHitTestResult result, Offset position) {
     if (item.clipContent) {
-      if (!size.containsIgnoreSign(position)) {
+      if (!innerSize.containsIgnoreSign(position)) {
         return false;
       }
     }
@@ -416,7 +446,6 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
     while (child != null) {
       var childTransform = child.item.layoutData.computeTranslatedMatrix(
         child,
-        child.size,
       );
       final isHit = result.addWithPaintTransform(
         transform: childTransform,
@@ -441,14 +470,13 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
   void selectTestChildren(CanvasHitTestResult result, Polygon polygon) {
     if (item.clipContent) {
-      Polygon self = Polygon.fromRect(Offset.zero & size);
+      Polygon self = Polygon.fromRect(Offset.zero & innerSize);
       polygon = polygon.intersect(self);
     }
     var child = lastChild;
     while (child != null) {
       var childTransform = child.item.layoutData.computeTranslatedMatrix(
         child,
-        child.size,
       );
       result.addWithPaintTransformPolygon(
         transform: childTransform,

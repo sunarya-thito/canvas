@@ -45,6 +45,7 @@ mixin CanvasEditorHandler {
   Matrix4 getGlobalToLocalTransform();
   void shiftViewport(Offset delta);
   Size get viewportSize;
+  Rect computeViewportBounds();
 
   // position is in editor local coordinates
   CanvasItemState? findItemAtPosition(Offset position) {

@@ -52,7 +52,6 @@ class SelectionGroup {
       CanvasItemState? current = selectedItems.first;
       var transform = current.item.layoutData.computeTranslatedMatrix(
         current,
-        current.size,
       );
       var shear = current.item.layoutData.shear ?? Offset.zero;
       while (current != null) {
@@ -60,7 +59,6 @@ class SelectionGroup {
         if (parent is CanvasItemState) {
           transform = parent.item.layoutData.computeTranslatedMatrix(
                 parent,
-                parent.size,
               ) *
               transform;
           shear += parent.item.layoutData.shear ?? Offset.zero;
@@ -69,7 +67,7 @@ class SelectionGroup {
       }
       var first = selectedItems.first;
       return TransformControlBox(
-        size: first.size,
+        size: first.innerSize,
         transform:
             parentTransform == null ? transform : parentTransform * transform,
         shear: shear,
@@ -77,18 +75,16 @@ class SelectionGroup {
     }
     List<Offset> points = [];
     for (var item in selectedItems) {
-      var size = item.size;
+      var size = item.innerSize;
       CanvasItemState? current = item;
       var transform = item.item.layoutData.computeTranslatedMatrix(
         current,
-        current.size,
       );
       while (current != null) {
         var parent = current.parent;
         if (parent is CanvasItemState) {
           transform = parent.item.layoutData.computeTranslatedMatrix(
                 parent,
-                parent.size,
               ) *
               transform;
         }

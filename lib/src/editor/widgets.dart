@@ -2,7 +2,9 @@ import 'dart:math';
 
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/actions.dart';
+import 'package:canvas/src/editor/ruler.dart';
 import 'package:canvas/src/external/widgets.dart';
+import 'package:canvas/src/editor/scrollable.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:canvas/src/selection/widgets.dart';
 import 'package:flutter/gestures.dart';
@@ -18,6 +20,7 @@ class CanvasEditor extends StatefulWidget {
   final CanvasSelectionMode selectionMode;
   final FocusNode? focusNode;
   final bool scrollAsZoom;
+  final bool showRuler;
 
   const CanvasEditor({
     super.key,
@@ -28,6 +31,7 @@ class CanvasEditor extends StatefulWidget {
     this.selectionMode = CanvasSelectionMode.single,
     this.focusNode,
     this.scrollAsZoom = false,
+    this.showRuler = false,
   });
 
   @override
@@ -65,6 +69,14 @@ class CanvasEditorState extends State<CanvasEditor>
   }
 
   @override
+  Rect computeViewportBounds() {
+    Matrix4 transform = getLocalToGlobalTransform();
+    Rect rootBounds =
+        _rootState.computeViewportBounds(parentTransform: transform);
+    return rootBounds;
+  }
+
+  @override
   void didUpdateWidget(covariant CanvasEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.root != widget.root) {
@@ -97,144 +109,156 @@ class CanvasEditorState extends State<CanvasEditor>
   @override
   Widget build(BuildContext context) {
     assert(_rootState.hasSize, 'Root object has not been laid out');
-    return Focus(
-      focusNode: _focusNode,
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerSignal: (event) {
-          if (event is PointerScrollEvent) {
-            widget.gesture.onPointerScroll(event, this);
-          }
-        },
-        child: RawGestureDetector(
-          behavior: HitTestBehavior.translucent,
-          gestures: {
-            TertiaryPanGestureRecognizer: GestureRecognizerFactoryWithHandlers<
-                TertiaryPanGestureRecognizer>(
-              () => TertiaryPanGestureRecognizer(),
-              (instance) {
-                instance.onUpdate = (details) {
-                  widget.controller.value = widget.controller.value.drag(
-                    details.delta,
-                  );
-                };
+    return CanvasRuler(
+      controller: widget.controller,
+      editor: this,
+      showRuler: widget.showRuler,
+      child: LayoutBuilder(builder: (context, constraints) {
+        _editorSize = constraints.biggest;
+        print('editorSize: $_editorSize');
+        return Focus(
+          focusNode: _focusNode,
+          child: CanvasEditorScrollable(
+            controller: widget.controller,
+            editor: this,
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerSignal: (event) {
+                if (event is PointerScrollEvent) {
+                  widget.gesture.onPointerScroll(event, this);
+                }
               },
-            ),
-            PanGestureRecognizer:
-                GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
-              () => PanGestureRecognizer(),
-              (PanGestureRecognizer instance) {
-                instance
-                  ..onStart = (details) {
+              child: RawGestureDetector(
+                behavior: HitTestBehavior.translucent,
+                gestures: {
+                  TertiaryPanGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          TertiaryPanGestureRecognizer>(
+                    () => TertiaryPanGestureRecognizer(),
+                    (instance) {
+                      instance.onUpdate = (details) {
+                        widget.controller.value = widget.controller.value.drag(
+                          details.delta,
+                        );
+                      };
+                    },
+                  ),
+                  PanGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+                      PanGestureRecognizer>(
+                    () => PanGestureRecognizer(),
+                    (PanGestureRecognizer instance) {
+                      instance
+                        ..onStart = (details) {
+                          if (widget.selectionMode !=
+                              CanvasSelectionMode.multiple) {
+                            localSelection = null;
+                          }
+                          _activeMouseGesture ??= createMouseGesture();
+                          _dragStart = details.localPosition;
+                          _activeMouseGesture?.onDragStart(_dragStart!);
+                        }
+                        ..onUpdate = (details) {
+                          _activeMouseGesture?.onDrag(
+                              _dragStart!, details.localPosition);
+                        }
+                        ..onEnd = (details) {
+                          _activeMouseGesture?.onDragRelease(
+                              _dragStart!, details.localPosition);
+                          _activeMouseGesture?.dispose();
+                          _dragStart = null;
+                          _activeMouseGesture = null;
+                        }
+                        ..onCancel = () {
+                          _activeMouseGesture?.onDragCancel();
+                          _activeMouseGesture?.dispose();
+                          _dragStart = null;
+                          _activeMouseGesture = null;
+                        };
+                    },
+                  ),
+                },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTapDown: (details) {
                     if (widget.selectionMode != CanvasSelectionMode.multiple) {
                       localSelection = null;
                     }
-                    _activeMouseGesture ??= createMouseGesture();
-                    _dragStart = details.localPosition;
-                    _activeMouseGesture?.onDragStart(_dragStart!);
-                  }
-                  ..onUpdate = (details) {
-                    _activeMouseGesture?.onDrag(
-                        _dragStart!, details.localPosition);
-                  }
-                  ..onEnd = (details) {
-                    _activeMouseGesture?.onDragRelease(
-                        _dragStart!, details.localPosition);
-                    _activeMouseGesture?.dispose();
-                    _dragStart = null;
-                    _activeMouseGesture = null;
-                  }
-                  ..onCancel = () {
-                    _activeMouseGesture?.onDragCancel();
-                    _activeMouseGesture?.dispose();
-                    _dragStart = null;
-                    _activeMouseGesture = null;
-                  };
-              },
-            ),
-          },
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTapDown: (details) {
-              if (widget.selectionMode != CanvasSelectionMode.multiple) {
-                localSelection = null;
-              }
-              CanvasItemState? targetClick =
-                  findItemAtPosition(MatrixUtils.transformPoint(
-                getGlobalToLocalTransform(),
-                details.localPosition,
-              ));
-              if (targetClick != null) {
-                switch (widget.selectionMode) {
-                  case CanvasSelectionMode.single:
-                    setToLocalSelection(targetClick);
-                    break;
-                  case CanvasSelectionMode.multiple:
-                    addToLocalSelection(targetClick);
-                    break;
-                  case CanvasSelectionMode.none:
-                    break;
-                }
-                return;
-              }
-            },
-            child: Actions(
-              actions: {
-                CanvasUpdateLayoutDataIntent: Action.overridable(
-                  defaultAction: CanvasUpdateLayoutDataAction(),
-                  context: context,
-                ),
-                CanvasUpdateChildrenIntent: Action.overridable(
-                  defaultAction: CanvasUpdateChildrenAction(),
-                  context: context,
-                ),
-              },
-              child: LayoutBuilder(builder: (context, constraints) {
-                _editorSize = constraints.biggest;
-                return ListenableBuilder(
-                  listenable: widget.controller,
-                  builder: (context, child) {
-                    Matrix4 transform = getLocalToGlobalTransform();
-                    return Stack(
-                      fit: StackFit.passthrough,
-                      children: [
-                        CanvasItemWidget(
-                          state: _rootState,
-                          parentTransform: transform,
-                        ),
-                        for (var selected in _selections)
-                          ListenableBuilder(
-                            listenable: selected.groups,
-                            builder: (context, child) {
-                              return Stack(
-                                fit: StackFit.passthrough,
-                                children: selected.groups.value.map(
-                                  (e) {
-                                    return SelectionTransformControlWidget(
-                                        parentTransform: transform,
-                                        selectionGroup: e);
-                                  },
-                                ).toList(),
-                              );
-                            },
-                          ),
-                        for (var selection in _selectionBoxes)
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            child: SelectionWidget(
-                              selectionBox: selection,
-                            ),
-                          ),
-                      ],
-                    );
+                    CanvasItemState? targetClick =
+                        findItemAtPosition(MatrixUtils.transformPoint(
+                      getGlobalToLocalTransform(),
+                      details.localPosition,
+                    ));
+                    if (targetClick != null) {
+                      switch (widget.selectionMode) {
+                        case CanvasSelectionMode.single:
+                          setToLocalSelection(targetClick);
+                          break;
+                        case CanvasSelectionMode.multiple:
+                          addToLocalSelection(targetClick);
+                          break;
+                        case CanvasSelectionMode.none:
+                          break;
+                      }
+                      return;
+                    }
                   },
-                );
-              }),
+                  child: Actions(
+                    actions: {
+                      CanvasUpdateLayoutDataIntent: Action.overridable(
+                        defaultAction: CanvasUpdateLayoutDataAction(),
+                        context: context,
+                      ),
+                      CanvasUpdateChildrenIntent: Action.overridable(
+                        defaultAction: CanvasUpdateChildrenAction(),
+                        context: context,
+                      ),
+                    },
+                    child: ListenableBuilder(
+                      listenable: widget.controller,
+                      builder: (context, child) {
+                        Matrix4 transform = getLocalToGlobalTransform();
+                        return Stack(
+                          fit: StackFit.passthrough,
+                          children: [
+                            CanvasItemWidget(
+                              state: _rootState,
+                              parentTransform: transform,
+                            ),
+                            for (var selected in _selections)
+                              ListenableBuilder(
+                                listenable: selected.groups,
+                                builder: (context, child) {
+                                  return Stack(
+                                    fit: StackFit.passthrough,
+                                    children: selected.groups.value.map(
+                                      (e) {
+                                        return SelectionTransformControlWidget(
+                                            parentTransform: transform,
+                                            selectionGroup: e);
+                                      },
+                                    ).toList(),
+                                  );
+                                },
+                              ),
+                            for (var selection in _selectionBoxes)
+                              Positioned(
+                                top: 0,
+                                left: 0,
+                                child: SelectionWidget(
+                                  selectionBox: selection,
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      }),
     );
   }
 

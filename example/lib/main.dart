@@ -6,7 +6,10 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 void main() {
   runApp(ShadcnApp(
-    home: Sample(),
+    home: Directionality(
+      textDirection: TextDirection.ltr,
+      child: Sample(),
+    ),
     theme: ThemeData(
       colorScheme: ColorSchemes.darkGreen(),
       radius: 0.5,
@@ -43,8 +46,8 @@ class _SampleState extends State<Sample> {
         crossAxisAlignment: FlexAlignment.start,
       ),
       layoutData: AbsoluteLayoutData(
-        top: 50,
-        left: 50,
+        top: 0,
+        left: 0,
         width: 1200,
         height: 500,
         // rotation: _rotation * pi / 180,
@@ -135,29 +138,6 @@ class _SampleState extends State<Sample> {
             ),
           ),
           Positioned(
-            top: 50,
-            left: 50,
-            child: Builder(
-              builder: (context) {
-                Matrix4 transform = Matrix4.identity();
-                double shearX = _shearX.roundToDouble() * pi / 180;
-                // double shearX = 0;
-                double shearY = _shearY.roundToDouble() * pi / 180;
-
-                transform = computeShearMatrix(shearX, shearY);
-
-                return Transform(
-                  transform: transform,
-                  child: Container(
-                    width: 100,
-                    height: 100,
-                    color: Colors.red,
-                  ),
-                );
-              },
-            ),
-          ),
-          Positioned(
               bottom: 50,
               right: 50,
               width: 300,
@@ -179,28 +159,6 @@ class _SampleState extends State<Sample> {
                           parent.layoutData = (parent.layoutData
                                   as AbsoluteLayoutData)
                               .copyWith(shear: Rotation(_rotation * pi / 180));
-                        });
-                      },
-                    ),
-                    Text('Shear X: $_shearX'),
-                    Slider(
-                      value: SliderValue.single(_shearX),
-                      min: -180,
-                      max: 180,
-                      onChanged: (value) {
-                        setState(() {
-                          _shearX = value.value.roundToDouble();
-                        });
-                      },
-                    ),
-                    Text('Shear Y: $_shearY'),
-                    Slider(
-                      value: SliderValue.single(_shearY),
-                      min: -180,
-                      max: 180,
-                      onChanged: (value) {
-                        setState(() {
-                          _shearY = value.value.roundToDouble();
                         });
                       },
                     ),

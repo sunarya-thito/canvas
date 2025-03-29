@@ -9,6 +9,10 @@ class Rotation extends Offset {
   const Rotation(double angle) : super(angle, -angle);
 }
 
+Rect normalizeRect(Rect rect) {
+  return Offset.zero & rect.size;
+}
+
 double rotationFromShear(Offset shear) {
   // (rotation - (-rotation)) / 2
   // (rotation + rotation) / 2
@@ -77,6 +81,13 @@ Offset transformOffset(Offset point, Matrix4 transform,
   final vector = Vector3(point.dx - origin.dx, point.dy - origin.dy, 0);
   final transformed = transform.perspectiveTransform(vector);
   return Offset(transformed.x + origin.dx, transformed.y + origin.dy);
+}
+
+Size transformSize(Size size, Matrix4 transform,
+    [Offset origin = Offset.zero]) {
+  final vector = Vector3(size.width - origin.dx, size.height - origin.dy, 0);
+  final transformed = transform.perspectiveTransform(vector);
+  return Size(transformed.x + origin.dx, transformed.y + origin.dy);
 }
 
 enum PolygonOverlapResult {
