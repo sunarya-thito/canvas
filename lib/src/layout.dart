@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/external/widgets.dart';
 import 'package:cassowary/cassowary.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart';
@@ -192,8 +193,8 @@ class FixedLayout extends CanvasLayout {
     while (child != null) {
       var layoutData = child.item.layoutData;
       if (layoutData is AbsoluteLayoutData) {
-        layoutAbsolutePositioning(
-            child, constraints.biggest, Offset.zero, layoutData, textDirection);
+        layoutAbsolutePositioning(child, constraints.biggestAllowNegative,
+            Offset.zero, layoutData, textDirection);
       } else {
         child.layout(constraints, textDirection);
         assert(false, 'FixedLayout can only be used with AbsoluteLayoutData');
@@ -201,7 +202,7 @@ class FixedLayout extends CanvasLayout {
       }
       child = child.parentData.nextSibling;
     }
-    return constraints.biggest;
+    return constraints.biggestAllowNegative;
   }
 
   @override
@@ -363,7 +364,7 @@ class FlexLayout extends CanvasLayout {
     }
 
     CanvasItemState? beforeThis;
-    var size = target.item.layoutData.computeInnerSize(target, target.size);
+    var size = target.size;
     switch (direction) {
       case Axis.horizontal:
         beforeThis = localPosition.dx < size.width / 2
@@ -440,8 +441,8 @@ class FlexLayout extends CanvasLayout {
     var crossStartPadding = _getCrossStart(padding);
     var crossEndPadding = _getCrossEnd(padding);
     var gap = spacing;
-    var totalWidth = _getMain(constraints.biggest);
-    var crossSize = _getCross(constraints.biggest);
+    var totalWidth = _getMain(constraints.biggestAllowNegative);
+    var crossSize = _getCross(constraints.biggestAllowNegative);
 
     var offset = _createOffset(startPadding, crossStartPadding);
     var totalMainPadding = _getMainPadding(padding);
@@ -623,7 +624,6 @@ class FlexLayout extends CanvasLayout {
             break;
         }
         child.parentData.position = _createOffset(mainOffset, childCrossOffset);
-        child.parentData.scaleAdjustment = const Offset(1, 1);
         mainOffset += childSize.width + gap;
       }
       child = _resolveNextChild(child, textDirection);
@@ -631,7 +631,7 @@ class FlexLayout extends CanvasLayout {
 
     watch.stop();
 
-    return constraints.biggest;
+    return constraints.biggestAllowNegative;
   }
 
   CanvasItemState? _resolveFirstChild(

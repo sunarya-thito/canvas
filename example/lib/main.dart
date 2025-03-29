@@ -34,6 +34,7 @@ class _SampleState extends State<Sample> {
     super.initState();
     CanvasObject par = CanvasObject(
       debugLabel: 'parent',
+      clipContent: false,
       layout: FlexLayout(
         // direction: Axis.vertical,
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),
@@ -66,7 +67,6 @@ class _SampleState extends State<Sample> {
         min: 150,
         max: 200,
         cross: SizeConstraint.fixed(150),
-        scale: Offset(3, 1),
         shear: Offset(30 * pi / 180, -60 * pi / 180),
       ),
     );
@@ -77,9 +77,6 @@ class _SampleState extends State<Sample> {
         min: 150,
         max: 200,
         cross: SizeConstraint.unconstrained(),
-        // scale: Offset(2, 1),
-        // rotation: 35 * pi / 180,
-        // rotation: _elapsed * pi * 0.1,
       ),
     );
     CanvasObject ch4 = CanvasObject(
@@ -93,9 +90,9 @@ class _SampleState extends State<Sample> {
       debugLabel: 'child5',
       layoutData: AbsoluteLayoutData(
         top: 150,
-        left: 150,
+        left: 0.1,
         bottom: 150,
-        right: 150,
+        right: 0.1,
         scaleHorizontal: true,
       ),
     );
@@ -104,7 +101,7 @@ class _SampleState extends State<Sample> {
       layoutData: AbsoluteLayoutData(
         bottom: 50,
         right: 50,
-        width: 100,
+        width: -100,
         height: 100,
       ),
     );

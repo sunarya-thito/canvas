@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/external/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -222,7 +223,7 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   }
 
   bool hitTestSelf(CanvasHitTestResult result, Offset position) {
-    return item.layoutData.computeInnerSize(this, size).contains(position);
+    return size.containsIgnoreSign(position);
   }
 
   void selectTest(CanvasHitTestResult result, Polygon polygon) {
@@ -230,8 +231,7 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   }
 
   void selectTestSelf(CanvasHitTestResult result, Polygon polygon) {
-    Polygon self = Polygon.fromRect(
-        Offset.zero & item.layoutData.computeInnerSize(this, size));
+    Polygon self = Polygon.fromRect(Offset.zero & size);
     PolygonOverlapResult hit = polygon.overlap(self);
     if (hit != PolygonOverlapResult.none) {
       result.add(CanvasPolygonHitTestEntry(this, hit));
@@ -273,7 +273,7 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   bool hasLayoutPerformedFor(
       BoxConstraints constraints, TextDirection textDirection) {
     return _layoutResult != null &&
-        _layoutResult!.constraints == constraints &&
+        _layoutResult!.constraints.equalsIgnoreSign(constraints) &&
         _layoutResult!.textDirection == textDirection;
   }
 
@@ -300,6 +300,7 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
         constraints: constraints,
         textDirection: textDirection,
       );
+      print('layout: ${item.debugLabel} -> $size');
     }
   }
 
@@ -407,7 +408,7 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
   bool hitTestChildren(CanvasHitTestResult result, Offset position) {
     if (item.clipContent) {
-      if (!item.layoutData.computeInnerSize(this, size).contains(position)) {
+      if (!size.containsIgnoreSign(position)) {
         return false;
       }
     }
@@ -440,8 +441,7 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
   void selectTestChildren(CanvasHitTestResult result, Polygon polygon) {
     if (item.clipContent) {
-      Polygon self = Polygon.fromRect(
-          Offset.zero & item.layoutData.computeInnerSize(this, size));
+      Polygon self = Polygon.fromRect(Offset.zero & size);
       polygon = polygon.intersect(self);
     }
     var child = lastChild;
@@ -827,5 +827,58 @@ enum DirectionalCursor {
   DirectionalCursor rotateByAngle(double angle) {
     int index = ((this.index + (angle / angleStep).round()) % length).toInt();
     return DirectionalCursor.values[index];
+  }
+
+  DirectionalCursor flip({bool horizontal = false, bool vertical = false}) {
+    DirectionalCursor current = this;
+    if (horizontal) {
+      switch (current) {
+        case DirectionalCursor.topLeft:
+          current = DirectionalCursor.topRight;
+          break;
+        case DirectionalCursor.topRight:
+          current = DirectionalCursor.topLeft;
+          break;
+        case DirectionalCursor.bottomLeft:
+          current = DirectionalCursor.bottomRight;
+          break;
+        case DirectionalCursor.bottomRight:
+          current = DirectionalCursor.bottomLeft;
+          break;
+        case DirectionalCursor.left:
+          current = DirectionalCursor.right;
+          break;
+        case DirectionalCursor.right:
+          current = DirectionalCursor.left;
+          break;
+        default:
+          break;
+      }
+    }
+    if (vertical) {
+      switch (current) {
+        case DirectionalCursor.topLeft:
+          current = DirectionalCursor.bottomLeft;
+          break;
+        case DirectionalCursor.topRight:
+          current = DirectionalCursor.bottomRight;
+          break;
+        case DirectionalCursor.bottomLeft:
+          current = DirectionalCursor.topLeft;
+          break;
+        case DirectionalCursor.bottomRight:
+          current = DirectionalCursor.topRight;
+          break;
+        case DirectionalCursor.left:
+          current = DirectionalCursor.right;
+          break;
+        case DirectionalCursor.right:
+          current = DirectionalCursor.left;
+          break;
+        default:
+          break;
+      }
+    }
+    return current;
   }
 }

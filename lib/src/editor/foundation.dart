@@ -14,9 +14,9 @@ enum CanvasSelectionMode {
 
 mixin CanvasEditorHandler {
   Ticker createTicker(TickerCallback onTick);
-  EditorGestureState? get activeMouseGesture;
-  EditorGestureState createMouseGesture(Offset localPosition);
-  void stopMouseGesture(EditorGestureState gesture);
+  EditorDragGestureSession? get activeMouseGesture;
+  EditorDragGestureSession createMouseGesture();
+  void stopMouseGesture(EditorDragGestureSession gesture);
   // returns the active selections and it is shared with other editors.
   List<Selection> get activeSelections;
   // avoid using this method for local selection, use localSelection instead.
@@ -43,6 +43,8 @@ mixin CanvasEditorHandler {
   Offset localToGlobal(Offset position);
   Matrix4 getLocalToGlobalTransform();
   Matrix4 getGlobalToLocalTransform();
+  void shiftViewport(Offset delta);
+  Size get viewportSize;
 
   // position is in editor local coordinates
   CanvasItemState? findItemAtPosition(Offset position) {

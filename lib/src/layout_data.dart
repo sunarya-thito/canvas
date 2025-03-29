@@ -10,63 +10,51 @@ abstract class CanvasLayoutData {
   // scale tool, it is used to scale the entire thing
   // including the size, the font size, the border width,
   // etc. Also, scale tool uses uniform scale.
-  final Offset? scale;
+  // final Offset? scale;
 
   const CanvasLayoutData({
     this.textDirection,
     this.shear,
-    this.scale,
   });
 
-  Size computeInnerSize(CanvasItemState item, Size outerSize,
-      [Alignment alignment = Alignment.center]) {
-    var width = outerSize.width;
-    var height = outerSize.height;
-    var scale = this.scale ?? const Offset(1, 1);
+  // dropTarget is local to the target
+  CanvasLayoutData transferTo(
+      CanvasItemState item, CanvasLayout targetLayout, Offset dropTarget);
 
-    // Apply scaling
-    var scaledWidth = width / scale.dx;
-    var scaledHeight = height / scale.dy;
+  // Matrix4 computeMatrix(CanvasItemState item, Size size,
+  //     {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
+  //   Offset origin = alignment.alongSize(size);
+  //   Matrix4 newMatrix = parentMatrix?.clone() ?? Matrix4.identity();
+  //   origin = alignment.alongSize(size);
+  //   // Offset position = item.parentData.position;
+  //   // newMatrix.translate(position.dx, position.dy);
+  //   newMatrix.translate(origin.dx, origin.dy);
+  //   if (shear != null) {
+  //     newMatrix *= computeShearMatrix(shear!.dx, shear!.dy);
+  //   }
+  //   newMatrix.translate(-origin.dx, -origin.dy);
 
-    return Size(scaledWidth, scaledHeight);
-  }
-
-  Matrix4 computeMatrix(CanvasItemState item, Size size,
-      {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
-    var scale = this.scale ?? const Offset(1, 1);
-
-    Size innerSize = computeInnerSize(item, size, alignment);
-    Offset origin = alignment.alongSize(innerSize);
-
-    Matrix4 newMatrix = parentMatrix?.clone() ?? Matrix4.identity();
-
-    origin = alignment.alongSize(size);
-    // Offset position = item.parentData.position;
-    // newMatrix.translate(position.dx, position.dy);
-    newMatrix.translate(origin.dx, origin.dy);
-    if (shear != null) {
-      newMatrix *= computeShearMatrix(shear!.dx, shear!.dy);
-    }
-    newMatrix.translate(-origin.dx, -origin.dy);
-    newMatrix.scale(scale.dx, scale.dy);
-
-    return newMatrix;
-  }
+  //   return newMatrix;
+  // }
 
   Matrix4 computeTranslatedMatrix(CanvasItemState item, Size size,
       {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
-    Matrix4 translateMatrix = Matrix4.identity();
-    translateMatrix.translate(
+    Matrix4 transform = Matrix4.identity();
+    Offset origin = alignment.alongSize(size);
+    transform.translate(
         item.parentData.position.dx, item.parentData.position.dy);
-    return computeMatrix(item, size,
-        alignment: alignment, parentMatrix: translateMatrix);
-  }
-
-  Matrix4 computeBoundingBoxMatrix(Size size) {
-    Matrix4 matrix = Matrix4.identity();
-    var scale = this.scale ?? const Offset(1, 1);
-    matrix.scale(scale.dx, scale.dy);
-    return matrix;
+    transform.translate(origin.dx, origin.dy);
+    if (shear != null) {
+      transform *= computeShearMatrix(
+        shear!.dx,
+        shear!.dy,
+      );
+    }
+    transform.translate(-origin.dx, -origin.dy);
+    if (parentMatrix != null) {
+      transform = parentMatrix * transform;
+    }
+    return transform;
   }
 
   CanvasLayoutData drag(Offset delta) => this;
@@ -111,10 +99,21 @@ class AbsoluteLayoutData extends CanvasLayoutData {
     this.height,
     super.textDirection,
     super.shear,
-    super.scale,
     this.scaleHorizontal = false,
     this.scaleVertical = false,
   });
+
+  @override
+  CanvasLayoutData transferTo(
+      CanvasItemState item, CanvasLayout targetLayout, Offset dropTarget) {
+    if (targetLayout is FlexLayout) {
+      return FixedLayoutData(
+        width: SizeConstraint.fixed(item.size.width),
+        height: SizeConstraint.fixed(item.size.height),
+      );
+    }
+    return this;
+  }
 
   AbsoluteLayoutData copyWith({
     double? top,
@@ -124,7 +123,6 @@ class AbsoluteLayoutData extends CanvasLayoutData {
     double? width,
     double? height,
     Offset? shear,
-    Offset? scale,
   }) {
     return AbsoluteLayoutData(
       top: top ?? this.top,
@@ -134,7 +132,6 @@ class AbsoluteLayoutData extends CanvasLayoutData {
       width: width ?? this.width,
       height: height ?? this.height,
       shear: shear ?? this.shear,
-      scale: scale ?? this.scale,
     );
   }
 
@@ -183,8 +180,21 @@ class FixedLayoutData extends CanvasLayoutData {
     this.height = const FixedSizeConstraint(0),
     super.textDirection,
     super.shear,
-    super.scale,
   });
+
+  @override
+  CanvasLayoutData transferTo(
+      CanvasItemState item, CanvasLayout targetLayout, Offset dropTarget) {
+    if (targetLayout is FixedLayout) {
+      return AbsoluteLayoutData(
+        top: dropTarget.dy,
+        left: dropTarget.dx,
+        width: item.size.width,
+        height: item.size.height,
+      );
+    }
+    return this;
+  }
 }
 
 class FlexLayoutData extends CanvasLayoutData {
@@ -200,6 +210,19 @@ class FlexLayoutData extends CanvasLayoutData {
     this.cross = const IntrinsicSizeConstraint(),
     super.textDirection,
     super.shear,
-    super.scale,
   });
+
+  @override
+  CanvasLayoutData transferTo(
+      CanvasItemState item, CanvasLayout targetLayout, Offset dropTarget) {
+    if (targetLayout is FixedLayout) {
+      return AbsoluteLayoutData(
+        top: dropTarget.dy,
+        left: dropTarget.dx,
+        width: item.size.width,
+        height: item.size.height,
+      );
+    }
+    return this;
+  }
 }

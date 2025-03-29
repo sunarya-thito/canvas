@@ -1,6 +1,101 @@
 import 'package:canvas/canvas.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+
+class TertiaryPanGestureRecognizer extends PanGestureRecognizer {
+  TertiaryPanGestureRecognizer({
+    super.debugOwner,
+    super.supportedDevices,
+  }) : super(allowedButtonsFilter: (buttons) {
+          return buttons == kTertiaryButton;
+        });
+}
+
+extension SizeExtension on Size {
+  bool containsIgnoreSign(Offset position) {
+    double width = this.width;
+    double height = this.height;
+    if (width.isNaN) {
+      width = 0;
+    }
+    if (height.isNaN) {
+      height = 0;
+    }
+    bool flipHorizontal = width.isNegative;
+    bool flipVertical = height.isNegative;
+    double dx = position.dx;
+    double dy = position.dy;
+    if (flipHorizontal) {
+      dx = -dx;
+      width = -width;
+    }
+    if (flipVertical) {
+      dy = -dy;
+      height = -height;
+    }
+    return dx >= 0 && dy >= 0 && dx <= width && dy <= height;
+  }
+}
+
+extension BoxConstraintsExtension on BoxConstraints {
+  Size get biggestAllowNegative {
+    double absMinWidth = minWidth.abs();
+    double absMinHeight = minHeight.abs();
+    double absMaxWidth = maxWidth.abs();
+    double absMaxHeight = maxHeight.abs();
+    double width = absMinWidth < absMaxWidth ? maxWidth : minWidth;
+    double height = absMinHeight < absMaxHeight ? maxHeight : minHeight;
+    return Size(width, height);
+  }
+
+  bool equalsIgnoreSign(BoxConstraints other) {
+    return minWidth == other.minWidth &&
+        minHeight == other.minHeight &&
+        maxWidth == other.maxWidth &&
+        maxHeight == other.maxHeight;
+  }
+}
+
+class AdaptiveSizedBox extends StatelessWidget {
+  final Size size;
+  final Widget child;
+
+  const AdaptiveSizedBox({
+    super.key,
+    required this.size,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    double width = size.width;
+    double height = size.height;
+    if (width.isNaN) {
+      width = 0;
+    }
+    if (height.isNaN) {
+      height = 0;
+    }
+    bool flipHorizontal = width.isNegative;
+    bool flipVertical = height.isNegative;
+    if (flipHorizontal) {
+      width = -width;
+    }
+    if (flipVertical) {
+      height = -height;
+    }
+    return Transform(
+      transform: Matrix4.identity()
+        ..scale(flipHorizontal ? -1.0 : 1.0, flipVertical ? -1.0 : 1.0),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: child,
+      ),
+    );
+  }
+}
 
 class NonOpaqueMetaData extends MetaData {
   const NonOpaqueMetaData({

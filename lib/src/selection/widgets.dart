@@ -98,7 +98,8 @@ class _SelectionTransformControlWidgetState
     final bottomRightHandleCenter = polygon.points[2];
     final bottomLeftHandleCenter = polygon.points[3];
     final shear = box.shear;
-
+    final flipHorizontal = size.width.isNegative;
+    final flipVertical = size.height.isNegative;
     return Stack(
       fit: StackFit.passthrough,
       children: [
@@ -110,17 +111,37 @@ class _SelectionTransformControlWidgetState
           ),
         ),
         // topLeft
-        _buildHandle(theme, topLeftHandleCenter, handleSize, shear,
-            DirectionalCursor.topLeft),
+        _buildHandle(
+            theme,
+            topLeftHandleCenter,
+            handleSize,
+            shear,
+            DirectionalCursor.topLeft
+                .flip(horizontal: flipHorizontal, vertical: flipVertical)),
         // topRight
-        _buildHandle(theme, topRightHandleCenter, handleSize, shear,
-            DirectionalCursor.topRight),
+        _buildHandle(
+            theme,
+            topRightHandleCenter,
+            handleSize,
+            shear,
+            DirectionalCursor.topRight
+                .flip(horizontal: flipHorizontal, vertical: flipVertical)),
         // bottomLeft
-        _buildHandle(theme, bottomLeftHandleCenter, handleSize, shear,
-            DirectionalCursor.bottomLeft),
+        _buildHandle(
+            theme,
+            bottomLeftHandleCenter,
+            handleSize,
+            shear,
+            DirectionalCursor.bottomLeft
+                .flip(horizontal: flipHorizontal, vertical: flipVertical)),
         // bottomRight
-        _buildHandle(theme, bottomRightHandleCenter, handleSize, shear,
-            DirectionalCursor.bottomRight),
+        _buildHandle(
+            theme,
+            bottomRightHandleCenter,
+            handleSize,
+            shear,
+            DirectionalCursor.bottomRight
+                .flip(horizontal: flipHorizontal, vertical: flipVertical)),
       ],
     );
   }

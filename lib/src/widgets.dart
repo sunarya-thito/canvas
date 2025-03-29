@@ -71,10 +71,9 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
     super.build(context);
     assert(
         widget.state.hasSize, 'CanvasItem ${widget.state} not been laid out');
-    var innerSize = widget.state.item.layoutData
-        .computeInnerSize(widget.state, widget.state.size);
+    var innerSize = widget.state.size;
     Matrix4 transform = widget.state.item.layoutData
-        .computeTranslatedMatrix(widget.state, widget.state.size);
+        .computeTranslatedMatrix(widget.state, innerSize);
     if (widget.parentTransform != null) {
       transform = widget.parentTransform! * transform;
     }
@@ -96,18 +95,19 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
                 onTap: () {
                   print('onTap: ${widget.state.item.debugLabel}');
                 },
-                child: Container(
-                  width: innerSize.width,
-                  height: innerSize.height,
-                  decoration: BoxDecoration(
-                    color: _computeRandomColor(_count),
-                    border: Border.all(
-                      color: _computeRandomColor(_count + 1),
-                      width: 3,
+                child: AdaptiveSizedBox(
+                  size: innerSize,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _computeRandomColor(_count),
+                      border: Border.all(
+                        color: _computeRandomColor(_count + 1),
+                        width: 3,
+                      ),
                     ),
+                    child: Text(
+                        '${widget.state.item.debugLabel}(${widget.state.size.width}, ${widget.state.size.height}))'),
                   ),
-                  child: Text(
-                      '${widget.state.item.debugLabel}(${widget.state.size.width}, ${widget.state.size.height}))'),
                 ),
               ),
             ),
@@ -119,8 +119,6 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
               builder: (context, child) {
                 Polygon polygon = Polygon.fromRect(Offset.zero & innerSize);
                 polygon = polygon.transform(transform);
-                print(
-                    'CanvasItemWidget: ${widget.state.item.debugLabel} ${widget.state.size} $polygon');
                 return ClipPath(
                   clipper: PathClipper(polygon.path),
                   clipBehavior:

@@ -31,10 +31,6 @@ class SelectionBox {
         start = ValueNotifier(start),
         end = ValueNotifier(start);
 
-  void update({required Offset end}) {
-    this.end.value = end;
-  }
-
   Rect get rect {
     return Rect.fromPoints(start.value, end.value);
   }
@@ -73,7 +69,7 @@ class SelectionGroup {
       }
       var first = selectedItems.first;
       return TransformControlBox(
-        size: first.item.layoutData.computeInnerSize(first, first.size),
+        size: first.size,
         transform:
             parentTransform == null ? transform : parentTransform * transform,
         shear: shear,
@@ -81,8 +77,7 @@ class SelectionGroup {
     }
     List<Offset> points = [];
     for (var item in selectedItems) {
-      var layoutData = item.item.layoutData;
-      var size = layoutData.computeInnerSize(item, item.size);
+      var size = item.size;
       CanvasItemState? current = item;
       var transform = item.item.layoutData.computeTranslatedMatrix(
         current,
