@@ -68,6 +68,10 @@ class CanvasRuler extends StatelessWidget {
                             offset: 0, axis: Axis.horizontal),
                         CanvasRulerSnappingPoint(
                             offset: 0, axis: Axis.vertical),
+                        CanvasRulerSnappingPoint(
+                            offset: 600, axis: Axis.horizontal),
+                        CanvasRulerSnappingPoint(
+                            offset: 1200, axis: Axis.vertical),
                       ],
                       rulerWidth: showRuler ? width : 0,
                       strokeHeight: theme.ruler.strokeHeight,
@@ -201,21 +205,14 @@ class _RulerPainter extends CustomPainter {
 
       double currentHorizontalText =
           ((-offset.dx - editorSize.width / 2 * zoom) / (gap * zoom))
-              .ceilToDouble();
+                  .ceilToDouble() -
+              1;
       double currentHorizontalTextOffset = rulerOffset.dx +
-          (offset.dx + editorSize.width / 2 * zoom) % (gap * zoom);
-      while (currentHorizontalTextOffset < size.width) {
+          (offset.dx + editorSize.width / 2 * zoom) % (gap * zoom) -
+          gap * zoom;
+      while (currentHorizontalTextOffset < (size.width + gap * zoom)) {
         double opacity = 1;
         // if its near to edge (start or end), go invisible, with the range of gap
-        double startEdge = currentHorizontalTextOffset - gap;
-        double endEdge = currentHorizontalTextOffset + gap;
-        if (startEdge < 0) {
-          opacity = (currentHorizontalTextOffset / gap).clamp(0, 1);
-        } else if (endEdge > size.width) {
-          opacity =
-              ((size.width - currentHorizontalTextOffset) / gap).clamp(0, 1);
-        }
-        strokePaint.color = strokeColor.withAlpha((opacity * 255).toInt());
         canvas.drawLine(
           Offset(currentHorizontalTextOffset, rulerWidth),
           Offset(currentHorizontalTextOffset, rulerWidth - strokeHeight),
@@ -244,10 +241,12 @@ class _RulerPainter extends CustomPainter {
       // draw the vertical texts
       double currentVerticalText =
           ((-offset.dy - editorSize.height / 2 * zoom) / (gap * zoom))
-              .ceilToDouble();
+                  .ceilToDouble() -
+              1;
       double currentVerticalTextOffset = rulerOffset.dy +
-          (offset.dy + editorSize.height / 2 * zoom) % (gap * zoom);
-      while (currentVerticalTextOffset < size.height) {
+          (offset.dy + editorSize.height / 2 * zoom) % (gap * zoom) -
+          gap * zoom;
+      while (currentVerticalTextOffset < (size.height + gap * zoom)) {
         double opacity = 1;
         // if its near to edge (start or end), go invisible, with the range of gap
         double startEdge = currentVerticalTextOffset - gap;
@@ -335,10 +334,18 @@ class _RulerPainter extends CustomPainter {
       strokePaint.strokeWidth = snapStrokeWidth;
       // draw the snapping points
       for (var snappingPoint in snappingPoints) {
-        double snappingPointOffset = snappingPoint.offset / zoom;
+        double snappingPointOffset = snappingPoint.offset * zoom;
         if (snappingPoint.axis == Axis.vertical) {
           snappingPointOffset +=
               rulerOffset.dx + offset.dx + editorSize.width / 2 * zoom;
+          if (textDirection == TextDirection.ltr &&
+              snappingPointOffset < rulerOffset.dy) {
+            continue;
+          }
+          if (textDirection == TextDirection.rtl &&
+              snappingPointOffset > size.width - rulerOffset.dy) {
+            continue;
+          }
           canvas.drawLine(
             Offset(snappingPointOffset, 0),
             Offset(snappingPointOffset, size.height),
@@ -347,6 +354,12 @@ class _RulerPainter extends CustomPainter {
         } else {
           snappingPointOffset +=
               rulerOffset.dy + offset.dy + editorSize.height / 2 * zoom;
+          if (snappingPointOffset < rulerOffset.dy) {
+            continue;
+          }
+          if (snappingPointOffset > size.height) {
+            continue;
+          }
           canvas.drawLine(
             Offset(0, snappingPointOffset),
             Offset(size.width, snappingPointOffset),

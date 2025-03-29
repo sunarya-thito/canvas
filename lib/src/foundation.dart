@@ -24,9 +24,8 @@ abstract class CanvasItem {
     _attachedStates.remove(state);
   }
 
-  CanvasItemState createState({
-    CanvasItemState? parent,
-  });
+  CanvasItemState createState(
+      {CanvasItemState? parent, CanvasEditorHandler? editor});
 
   List<CanvasItemState> get activeStates => List.unmodifiable(_attachedStates);
 
@@ -84,10 +83,12 @@ class CanvasObject extends CanvasItem {
   }
 
   @override
-  CanvasItemState createState({CanvasItemState? parent}) {
+  CanvasItemState createState(
+      {CanvasItemState? parent, CanvasEditorHandler? editor}) {
     return CanvasObjectState(
       parent: parent,
       item: this,
+      editor: editor,
     );
   }
 
@@ -192,8 +193,9 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   CanvasItem get item;
   CanvasParentData? _parentData;
   _CachedLayout? _layoutResult;
+  final CanvasEditorHandler? editor;
 
-  CanvasItemState({this.parent});
+  CanvasItemState({this.parent, this.editor});
 
   CanvasParentData get parentData {
     var parentData = _parentData;
@@ -372,6 +374,7 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
   CanvasObjectState({
     super.parent,
+    super.editor,
     required this.item,
   });
 
@@ -569,7 +572,7 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
       if (existing != null) {
         append(existing);
       } else {
-        var newState = child.createState(parent: this);
+        var newState = child.createState(parent: this, editor: editor);
         child.attach(newState);
         append(newState);
       }
@@ -624,8 +627,6 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
 class CanvasRoot extends CanvasObject {
   CanvasRoot({
-    super.layout,
-    super.layoutData,
     super.children,
     super.debugLabel,
   }) : super(
@@ -633,10 +634,12 @@ class CanvasRoot extends CanvasObject {
                 false); // NEVER clip content root because root has always zero size
 
   @override
-  CanvasRootState createState({CanvasItemState? parent}) {
+  CanvasRootState createState(
+      {CanvasItemState? parent, CanvasEditorHandler? editor}) {
     return CanvasRootState(
       parent: parent,
       item: this,
+      editor: editor,
     );
   }
 }
@@ -644,6 +647,7 @@ class CanvasRoot extends CanvasObject {
 class CanvasRootState extends CanvasObjectState {
   CanvasRootState({
     super.parent,
+    super.editor,
     required CanvasRoot super.item,
   });
 

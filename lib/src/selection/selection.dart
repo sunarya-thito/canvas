@@ -207,4 +207,13 @@ class Selection {
   String toString() {
     return 'Selection{groups: $groups, client: $client}';
   }
+
+  bool contains(CanvasItemState item) {
+    for (var group in groups.value) {
+      if (group.selectedItems.contains(item)) {
+        return true;
+      }
+    }
+    return false;
+  }
 }

@@ -37,7 +37,7 @@ class _SampleState extends State<Sample> {
     super.initState();
     CanvasObject par = CanvasObject(
       debugLabel: 'parent',
-      clipContent: false,
+      clipContent: true,
       layout: FlexLayout(
         // direction: Axis.vertical,
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),

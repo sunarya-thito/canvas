@@ -1,20 +1,11 @@
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 
 abstract class EditorDragGesture {
   const EditorDragGesture();
   EditorDragGestureSession createState({required CanvasEditorHandler editor});
-
-  void onPointerScroll(PointerScrollEvent event, CanvasEditorHandler editor) {
-    var zoomDelta = event.scrollDelta.dy < 0 ? 0.1 : -0.1;
-    editor.transform = editor.transform.zoomAt(
-      event.localPosition,
-      delta: zoomDelta,
-    );
-  }
 }
 
 abstract class EditorDragGestureSession {

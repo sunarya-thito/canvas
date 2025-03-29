@@ -46,6 +46,9 @@ mixin CanvasEditorHandler {
   void shiftViewport(Offset delta);
   Size get viewportSize;
   Rect computeViewportBounds();
+  void handleItemClick(CanvasItemState item);
+  void handleItemShift(Offset globalStart, Offset globalEnd);
+  Selection? getSelectionForItem(CanvasItemState item);
 
   // position is in editor local coordinates
   CanvasItemState? findItemAtPosition(Offset position) {

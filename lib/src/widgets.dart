@@ -21,8 +21,7 @@ class CanvasItemWidget extends StatefulWidget {
 
 int count = 0;
 
-class _CanvasItemWidgetState extends State<CanvasItemWidget>
-    with AutomaticKeepAliveClientMixin {
+class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   int _count = 0;
   @override
   void initState() {
@@ -62,13 +61,10 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
     });
   }
 
-  @override
-  bool get wantKeepAlive =>
-      widget.state.parent != null || widget.state is CanvasRootState;
+  Offset? _dragStart;
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     assert(
         widget.state.hasSize, 'CanvasItem ${widget.state} not been laid out');
     var innerSize = widget.state.innerSize;
@@ -81,6 +77,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
     if (editorOffset != null) {
       transform.translate(editorOffset.dx, editorOffset.dy);
     }
+    var editor = widget.state.editor;
     return IgnorePointer(
       ignoring: editorOffset != null,
       child: Stack(
@@ -91,12 +88,37 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
             left: 0,
             child: Transform(
               transform: transform,
-              child: GestureDetector(
-                onTap: () {
-                  print('onTap: ${widget.state.item.debugLabel}');
-                },
-                child: AdaptiveSizedBox(
-                  size: innerSize,
+              child: AdaptiveSizedBox(
+                size: innerSize,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.deferToChild,
+                  onTap: () {
+                    widget.state.editor?.handleItemClick(widget.state);
+                    print('tap ${widget.state.item.debugLabel}');
+                  },
+                  onPanStart: editor == null
+                      ? null
+                      : (details) {
+                          _dragStart = details.globalPosition;
+                        },
+                  onPanUpdate: editor == null
+                      ? null
+                      : (details) {
+                          if (_dragStart != null) {
+                            editor.handleItemShift(
+                                _dragStart!, details.globalPosition);
+                          }
+                        },
+                  onPanEnd: editor == null
+                      ? null
+                      : (details) {
+                          _dragStart = null;
+                        },
+                  onPanCancel: editor == null
+                      ? null
+                      : () {
+                          _dragStart = null;
+                        },
                   child: Container(
                     decoration: BoxDecoration(
                       color: _computeRandomColor(_count),
@@ -117,14 +139,14 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget>
               listenable: Listenable.merge(
                   (widget.state as CanvasObjectState).children),
               builder: (context, child) {
-                Polygon polygon = Polygon.fromRect(Offset.zero & innerSize);
-                polygon = polygon.transform(transform);
+                Polygon? polygon =
+                    (widget.state as CanvasObjectState).item.clipContent
+                        ? Polygon.fromRect(Offset.zero & innerSize)
+                        : null;
+                polygon = polygon?.transform(transform);
                 return ClipPath(
-                  clipper: PathClipper(polygon.path),
-                  clipBehavior:
-                      (widget.state as CanvasObjectState).item.clipContent
-                          ? Clip.antiAlias
-                          : Clip.none,
+                  clipper: polygon != null ? PathClipper(polygon.path) : null,
+                  clipBehavior: polygon != null ? Clip.antiAlias : Clip.none,
                   child: Stack(
                     fit: StackFit.passthrough,
                     children: [

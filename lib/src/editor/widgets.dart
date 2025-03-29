@@ -30,8 +30,8 @@ class CanvasEditor extends StatefulWidget {
     this.textDirection = TextDirection.ltr,
     this.selectionMode = CanvasSelectionMode.single,
     this.focusNode,
-    this.scrollAsZoom = false,
-    this.showRuler = false,
+    this.scrollAsZoom = true,
+    this.showRuler = true,
   });
 
   @override
@@ -40,9 +40,7 @@ class CanvasEditor extends StatefulWidget {
 
 class CanvasEditorState extends State<CanvasEditor>
     with TickerProviderStateMixin, CanvasEditorHandler {
-  // The size of the root does not really matter.
-  // But it must not be zero, otherwise flutter will not render the widget.
-  static const rootConstraints = BoxConstraints.tightFor(height: 1, width: 1);
+  static const rootConstraints = BoxConstraints.tightFor(height: 0, width: 0);
   late CanvasRoot _root;
   late CanvasRootState _rootState;
   late FocusNode _focusNode;
@@ -58,7 +56,7 @@ class CanvasEditorState extends State<CanvasEditor>
     super.initState();
     _focusNode = widget.focusNode ?? FocusNode();
     _root = widget.root;
-    _rootState = _root.createState();
+    _rootState = _root.createState(editor: this);
     _root.attach(_rootState);
     _performFullLayout();
     _rootState.addListener(_performFullLayout);
@@ -83,7 +81,7 @@ class CanvasEditorState extends State<CanvasEditor>
       _rootState.removeListener(_performFullLayout);
       _root.detach(_rootState);
       _root = widget.root;
-      _rootState = _root.createState();
+      _rootState = _root.createState(editor: this);
       _root.attach(_rootState);
       _performFullLayout();
       _rootState.addListener(_performFullLayout);
@@ -106,6 +104,57 @@ class CanvasEditorState extends State<CanvasEditor>
     super.dispose();
   }
 
+  void onPointerScroll(PointerScrollEvent event, CanvasEditorHandler editor) {
+    var zoomDelta = event.scrollDelta.dy < 0 ? 0.1 : -0.1;
+    editor.transform = editor.transform.zoomAt(
+      event.localPosition,
+      delta: zoomDelta,
+    );
+  }
+
+  @override
+  Selection? getSelectionForItem(CanvasItemState item) {
+    for (var selection in _selections) {
+      if (selection.contains(item)) {
+        return selection;
+      }
+    }
+    return null;
+  }
+
+  @override
+  void handleItemShift(Offset globalStart, Offset globalEnd) {
+    Selection? localSelection = this.localSelection;
+    if (localSelection == null) {
+      return;
+    }
+    RenderBox box = context.findRenderObject() as RenderBox;
+    Offset localStart = box.globalToLocal(globalStart);
+    Offset localEnd = box.globalToLocal(globalEnd);
+    localStart = globalToLocal(localStart);
+    localEnd = globalToLocal(localEnd);
+    print('$localStart, $localEnd');
+  }
+
+  @override
+  void handleItemClick(CanvasItemState targetClick) {
+    print('onClick: $targetClick');
+    if (widget.selectionMode != CanvasSelectionMode.multiple) {
+      localSelection = null;
+    }
+    switch (widget.selectionMode) {
+      case CanvasSelectionMode.single:
+        setToLocalSelection(targetClick);
+        break;
+      case CanvasSelectionMode.multiple:
+        addToLocalSelection(targetClick);
+        break;
+      case CanvasSelectionMode.none:
+        break;
+    }
+    return;
+  }
+
   @override
   Widget build(BuildContext context) {
     assert(_rootState.hasSize, 'Root object has not been laid out');
@@ -115,7 +164,6 @@ class CanvasEditorState extends State<CanvasEditor>
       showRuler: widget.showRuler,
       child: LayoutBuilder(builder: (context, constraints) {
         _editorSize = constraints.biggest;
-        print('editorSize: $_editorSize');
         return Focus(
           focusNode: _focusNode,
           child: CanvasEditorScrollable(
@@ -124,8 +172,8 @@ class CanvasEditorState extends State<CanvasEditor>
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerSignal: (event) {
-                if (event is PointerScrollEvent) {
-                  widget.gesture.onPointerScroll(event, this);
+                if (event is PointerScrollEvent && widget.scrollAsZoom) {
+                  onPointerScroll(event, this);
                 }
               },
               child: RawGestureDetector(
@@ -177,81 +225,67 @@ class CanvasEditorState extends State<CanvasEditor>
                     },
                   ),
                 },
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTapDown: (details) {
-                    if (widget.selectionMode != CanvasSelectionMode.multiple) {
-                      localSelection = null;
-                    }
-                    CanvasItemState? targetClick =
-                        findItemAtPosition(MatrixUtils.transformPoint(
-                      getGlobalToLocalTransform(),
-                      details.localPosition,
-                    ));
-                    if (targetClick != null) {
-                      switch (widget.selectionMode) {
-                        case CanvasSelectionMode.single:
-                          setToLocalSelection(targetClick);
-                          break;
-                        case CanvasSelectionMode.multiple:
-                          addToLocalSelection(targetClick);
-                          break;
-                        case CanvasSelectionMode.none:
-                          break;
-                      }
-                      return;
-                    }
-                  },
-                  child: Actions(
-                    actions: {
-                      CanvasUpdateLayoutDataIntent: Action.overridable(
-                        defaultAction: CanvasUpdateLayoutDataAction(),
-                        context: context,
-                      ),
-                      CanvasUpdateChildrenIntent: Action.overridable(
-                        defaultAction: CanvasUpdateChildrenAction(),
-                        context: context,
-                      ),
-                    },
-                    child: ListenableBuilder(
-                      listenable: widget.controller,
-                      builder: (context, child) {
-                        Matrix4 transform = getLocalToGlobalTransform();
-                        return Stack(
-                          fit: StackFit.passthrough,
-                          children: [
-                            CanvasItemWidget(
-                              state: _rootState,
-                              parentTransform: transform,
-                            ),
-                            for (var selected in _selections)
-                              ListenableBuilder(
-                                listenable: selected.groups,
-                                builder: (context, child) {
-                                  return Stack(
-                                    fit: StackFit.passthrough,
-                                    children: selected.groups.value.map(
-                                      (e) {
-                                        return SelectionTransformControlWidget(
-                                            parentTransform: transform,
-                                            selectionGroup: e);
-                                      },
-                                    ).toList(),
-                                  );
-                                },
-                              ),
-                            for (var selection in _selectionBoxes)
-                              Positioned(
-                                top: 0,
-                                left: 0,
-                                child: SelectionWidget(
-                                  selectionBox: selection,
-                                ),
-                              ),
-                          ],
-                        );
-                      },
+                child: Actions(
+                  actions: {
+                    CanvasUpdateLayoutDataIntent: Action.overridable(
+                      defaultAction: CanvasUpdateLayoutDataAction(),
+                      context: context,
                     ),
+                    CanvasUpdateChildrenIntent: Action.overridable(
+                      defaultAction: CanvasUpdateChildrenAction(),
+                      context: context,
+                    ),
+                  },
+                  child: ListenableBuilder(
+                    listenable: widget.controller,
+                    builder: (context, child) {
+                      Matrix4 transform = getLocalToGlobalTransform();
+                      return Stack(
+                        fit: StackFit.passthrough,
+                        children: [
+                          Positioned.fill(
+                              child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTap: () {
+                              print('onTap: canvas editor');
+                              if (localSelection != null) {
+                                localSelection = null;
+                              }
+                            },
+                          )),
+                          CanvasItemWidget(
+                            state: _rootState,
+                            parentTransform: transform,
+                          ),
+                          for (var selected in _selections)
+                            ListenableBuilder(
+                              listenable: selected.groups,
+                              builder: (context, child) {
+                                return Stack(
+                                  fit: StackFit.passthrough,
+                                  children: selected.groups.value.map(
+                                    (e) {
+                                      return SelectionTransformControlWidget(
+                                        parentTransform: transform,
+                                        selectionGroup: e,
+                                        zoom: widget.controller.value.zoom,
+                                      );
+                                    },
+                                  ).toList(),
+                                );
+                              },
+                            ),
+                          for (var selection in _selectionBoxes)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              child: SelectionWidget(
+                                selectionBox: selection,
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
