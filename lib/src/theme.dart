@@ -158,11 +158,15 @@ class CanvasRulerThemeData {
 class CanvasSnapThemeData {
   final double strokeWidth;
   final Color strokeColor;
+  final Color selectedStrokeColor;
+  final Color hoveredStrokeColor;
   final TextStyle textStyle;
 
   const CanvasSnapThemeData({
     this.strokeWidth = 1,
-    this.strokeColor = const Color.fromARGB(255, 232, 25, 25),
+    this.strokeColor = const Color.fromARGB(122, 232, 25, 25),
+    this.hoveredStrokeColor = const Color.fromARGB(255, 232, 25, 25),
+    this.selectedStrokeColor = const Color.fromARGB(255, 110, 144, 225),
     this.textStyle = const TextStyle(
       color: Color.fromARGB(255, 232, 25, 25),
       fontSize: 12,

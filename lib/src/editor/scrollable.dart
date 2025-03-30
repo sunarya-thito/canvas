@@ -44,6 +44,9 @@ class _CanvasScrollbarState extends State<CanvasScrollbar> {
           double thumbLength = max(
               theme.scrollbar.minThumbLength, thumbLengthFactor * viewportSize);
 
+          print('thumbOffset: ${widget.scrollExtent.thumbOffset}');
+          print('thumbFactor: $thumbLengthFactor');
+
           double thumbOffset = widget.scrollExtent.thumbOffset.clamp(0, 1) *
               (viewportSize - thumbLength);
 
@@ -66,9 +69,14 @@ class _CanvasScrollbarState extends State<CanvasScrollbar> {
                       : theme.scrollbar.thumbThickness,
                   child: GestureDetector(
                     onPanUpdate: (details) {
-                      widget.onScroll(widget.direction == Axis.horizontal
-                          ? -details.delta.dx
-                          : -details.delta.dy);
+                      double delta = widget.direction == Axis.horizontal
+                          ? details.delta.dx
+                          : details.delta.dy;
+                      if (thumbLengthFactor == 0) {
+                        widget.onScroll(-delta);
+                        return;
+                      }
+                      widget.onScroll(-delta / thumbLengthFactor);
                     },
                     child: Container(
                       decoration: theme.scrollbar.thumbDecoration,
@@ -101,7 +109,9 @@ class CanvasEditorScrollable extends StatelessWidget {
     return ListenableBuilder(
         listenable: controller,
         builder: (context, _) {
-          Rect viewportBounds = editor.computeViewportBounds().inflate(150);
+          Rect viewportBounds = editor
+              .computeViewportBounds()
+              .inflate(150 * editor.transform.zoom);
           Rect editorBounds = Offset.zero & (editor.viewportSize);
           final theme = CanvasTheme.of(context);
           final resolvedPadding = theme.scrollbar.trackPadding.resolve(
@@ -129,11 +139,8 @@ class CanvasEditorScrollable extends StatelessWidget {
                     editorMax: editorBounds.bottom,
                   ),
                   onScroll: (value) {
-                    controller.value = controller.value.copyWith(
-                      offset: Offset(
-                          controller.value.offset.dx,
-                          controller.value.offset.dy +
-                              value * controller.value.zoom),
+                    editor.dragViewport(
+                      Offset(0, value),
                     );
                   },
                 ),
@@ -152,11 +159,8 @@ class CanvasEditorScrollable extends StatelessWidget {
                     editorMax: editorBounds.right,
                   ),
                   onScroll: (value) {
-                    controller.value = controller.value.copyWith(
-                      offset: Offset(
-                          controller.value.offset.dx +
-                              value * controller.value.zoom,
-                          controller.value.offset.dy),
+                    editor.dragViewport(
+                      Offset(value, 0),
                     );
                   },
                 ),
@@ -193,7 +197,11 @@ class CanvasScrollExtent {
 
   double get thumbOffset {
     double viewportSize = viewportMax - viewportMin;
+    double editorSize = this.editorMax - editorMin;
     double editorMax = this.editorMax - viewportSize;
+    if (editorSize > viewportSize) {
+      return viewportMax;
+    }
     return viewportMin / editorMax;
   }
 }

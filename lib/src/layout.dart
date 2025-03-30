@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/extra.dart';
 import 'package:canvas/src/external/widgets.dart';
+import 'package:canvas/src/selection/selection.dart';
 import 'package:cassowary/cassowary.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart';
@@ -119,8 +120,11 @@ abstract class CanvasLayout {
     return DragResult.doNothing;
   }
 
-  Iterable<ExtraTransformationControl> buildControls(CanvasEditorState editor,
-      CanvasItemState item, Matrix4 parentTransform, Matrix4 transform) sync* {}
+  Iterable<ExtraTransformationControl> buildControls({
+    required CanvasEditorState editor,
+    required SelectionGroup selectionGroup,
+    required Matrix4 parentTransform,
+  }) sync* {}
 }
 
 void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,

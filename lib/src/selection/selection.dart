@@ -28,6 +28,14 @@ class SmartSelectionRow {
 
 class SmartSelection {
   final List<SmartSelectionRow> rows;
+
+  SmartSelection({
+    required this.rows,
+  }) {
+    analyze();
+  }
+
+  void analyze() {}
 }
 
 class SelectionClient {
@@ -74,17 +82,19 @@ class SelectionGroup {
     required this.selectedItems,
   });
 
-  Iterable<ExtraTransformationControl> buildControls(
-      {required Selection selection,
-      required CanvasEditorHandler editor,
-      required Matrix4 parentTransform}) sync* {
+  Iterable<ExtraTransformationControl> buildControls({
+    required Selection selection,
+    required CanvasEditorHandler editor,
+    required SelectionGroup selectionGroup,
+    required Matrix4 parentTransform,
+  }) sync* {
     if (selectedItems.length == 1) {
       var first = selectedItems.first;
       var transform = first.item.layoutData.computeTranslatedMatrix(first);
-      yield* first.buildControls(
-          editor: editor,
-          parentTransform: parentTransform,
-          transform: transform);
+      // yield* first.buildControls(
+      //     editor: editor,
+      //     parentTransform: parentTransform,
+      //     transform: transform);
       return;
     }
     // TODO: when items are arranged nicely, it should has a SMART CONTROL like in figma
@@ -182,6 +192,16 @@ class Selection {
     required this.client,
   }) : groups = ValueNotifier(groups);
 
+  CanvasItemState? get singleSelection {
+    if (groups.value.length == 1) {
+      var firstGroup = groups.value.first;
+      if (firstGroup.selectedItems.length == 1) {
+        return firstGroup.selectedItems.first;
+      }
+    }
+    return null;
+  }
+
   factory Selection.fromSelection(List<CanvasItemState> selectedItems,
       {SelectionClient client = SelectionClient.local}) {
     List<SelectionGroup> groups = [];
@@ -224,15 +244,16 @@ class Selection {
 
   Iterable<ExtraTransformationControl> buildControls({
     required CanvasEditorHandler editor,
+    required SelectionGroup selectionGroup,
     required Matrix4 parentTransform,
   }) {
     if (groups.value.length == 1) {
       var first = groups.value.first;
-      return first.buildControls(
-        selection: this,
-        editor: editor,
-        parentTransform: parentTransform,
-      );
+      // return first.buildControls(
+      //   selection: this,
+      //   editor: editor,
+      //   parentTransform: parentTransform,
+      // );
     }
     return const [];
   }

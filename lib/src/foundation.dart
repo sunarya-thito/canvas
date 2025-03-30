@@ -3,7 +3,9 @@ import 'dart:math';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/extra.dart';
 import 'package:canvas/src/editor/grid.dart';
+import 'package:canvas/src/editor/snap.dart';
 import 'package:canvas/src/external/widgets.dart';
+import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -59,6 +61,7 @@ class CanvasObject extends CanvasItem {
   CanvasLayoutData _layoutData;
   List<CanvasItem> _children = [];
   bool _clipContent;
+  BorderRadiusGeometry? _borderRadius;
   @override
   List<CanvasObjectState> get _attachedStates =>
       super._attachedStates.cast<CanvasObjectState>();
@@ -72,11 +75,23 @@ class CanvasObject extends CanvasItem {
     List<LayoutGrid> layoutGrids = const [],
     super.debugLabel,
     bool clipContent = true,
+    BorderRadiusGeometry? borderRadius,
   })  : _layout = layout,
         _layoutData = layoutData,
         _children = List.of(children),
         _clipContent = clipContent,
-        _layoutGrids = layoutGrids;
+        _layoutGrids = layoutGrids,
+        _borderRadius = borderRadius;
+
+  BorderRadiusGeometry? get borderRadius => _borderRadius;
+  set borderRadius(BorderRadiusGeometry? value) {
+    if (value != _borderRadius) {
+      _borderRadius = value;
+      for (var state in _attachedStates) {
+        state.markNeedsLayout();
+      }
+    }
+  }
 
   bool get clipContent => _clipContent;
   set clipContent(bool value) {
@@ -241,6 +256,20 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     return parentData!;
   }
 
+  Matrix4 get globalTransform {
+    Matrix4 currentTransform = item.layoutData.computeTranslatedMatrix(this);
+    CanvasItemState? current = this;
+    while (current != null) {
+      var parent = current.parent;
+      if (parent != null) {
+        currentTransform = parent.item.layoutData
+            .computeTranslatedMatrix(parent, parentMatrix: currentTransform);
+      }
+      current = parent;
+    }
+    return currentTransform;
+  }
+
   Offset get globalShear {
     Offset currentShear = item.layoutData.shear ?? Offset.zero;
     CanvasItemState? current = this;
@@ -254,11 +283,81 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     return currentShear;
   }
 
+  bool visitSnappingPoint(SnappingPointVisitor visitor,
+      {Matrix4? parentTransform, Matrix4? transform}) {
+    transform ??= item.layoutData.computeTranslatedMatrix(this);
+    if (parentTransform != null) {
+      transform = (parentTransform * transform) as Matrix4;
+    }
+    var innerSize = this.innerSize;
+    Offset topLeft = transformOffset(Offset.zero, transform);
+    Offset topRight = transformOffset(Offset(innerSize.width, 0), transform);
+    double horizontalAngle = (topRight - topLeft).direction;
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: topLeft, angle: horizontalAngle))) {
+      return false;
+    }
+    Offset bottomLeft = transformOffset(Offset(0, innerSize.height), transform);
+    double verticalAngle = (bottomLeft - topLeft).direction;
+    double bottomLeftVerticalAngle = verticalAngle;
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: topLeft, angle: verticalAngle))) {
+      return false;
+    }
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: topRight, angle: horizontalAngle))) {
+      return false;
+    }
+    Offset bottomRight =
+        transformOffset(Offset(innerSize.width, innerSize.height), transform);
+    verticalAngle = (bottomRight - topRight).direction;
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: topRight, angle: verticalAngle))) {
+      return false;
+    }
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: bottomRight, angle: verticalAngle))) {
+      return false;
+    }
+    horizontalAngle = (bottomLeft - bottomRight).direction;
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: bottomRight, angle: horizontalAngle))) {
+      return false;
+    }
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: bottomLeft, angle: horizontalAngle))) {
+      return false;
+    }
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: bottomLeft, angle: bottomLeftVerticalAngle))) {
+      return false;
+    }
+    // center
+    Offset center = transformOffset(
+        Offset(innerSize.width / 2, innerSize.height / 2), transform);
+    Offset topCenter =
+        transformOffset(Offset(innerSize.width / 2, 0), transform);
+    verticalAngle = (topCenter - center).direction;
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: center, angle: verticalAngle))) {
+      return false;
+    }
+    Offset centerLeft =
+        transformOffset(Offset(0, innerSize.height / 2), transform);
+    horizontalAngle = (centerLeft - center).direction;
+    if (!visitor(CanvasItemSnappingPoint(
+        item: this, point: center, angle: horizontalAngle))) {
+      return false;
+    }
+    return true;
+  }
+
   // this is build when a single selection is created upon this item
-  Iterable<ExtraTransformationControl> buildControls(
-      {required CanvasEditorHandler editor,
-      required Matrix4 parentTransform,
-      required Matrix4 transform}) sync* {}
+  Iterable<ExtraTransformationControl> buildControls({
+    required CanvasEditorHandler editor,
+    required SelectionGroup selectionGroup,
+    required Matrix4 parentTransform,
+  }) sync* {}
 
   Rect computeViewportBounds({Matrix4? parentTransform}) {
     Polygon polygon = Polygon.fromRect(Offset.zero & innerSize);
@@ -358,7 +457,6 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
         constraints: constraints,
         textDirection: textDirection,
       );
-      print('layout: ${item.debugLabel} -> $size');
     }
   }
 
@@ -534,6 +632,26 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
       );
       child = child.parentData.previousSibling;
     }
+  }
+
+  @override
+  bool visitSnappingPoint(SnappingPointVisitor visitor,
+      {Matrix4? parentTransform, Matrix4? transform}) {
+    transform ??= item.layoutData
+        .computeTranslatedMatrix(this, parentMatrix: parentTransform);
+    if (parentTransform != null) {
+      transform = (parentTransform * transform) as Matrix4;
+    }
+    if (!super.visitSnappingPoint(visitor,
+        parentTransform: null, transform: transform)) {
+      return false;
+    }
+    for (var child in children) {
+      if (!child.visitSnappingPoint(visitor, parentTransform: transform)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @override

@@ -38,6 +38,7 @@ class _SampleState extends State<Sample> {
     CanvasObject par = CanvasObject(
       debugLabel: 'parent',
       clipContent: true,
+      borderRadius: BorderRadius.circular(150),
       layout: FlexLayout(
         // direction: Axis.vertical,
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),
@@ -53,6 +54,7 @@ class _SampleState extends State<Sample> {
         // rotation: _rotation * pi / 180,
         // rotation: _elapsed * pi * 0.1,
         // scale: Offset(2, 1),
+        // shear: Offset(30 * 180 / pi, -60 * 180 / pi),
       ),
     );
     CanvasObject ch1 = CanvasObject(
@@ -78,6 +80,7 @@ class _SampleState extends State<Sample> {
     );
     CanvasObject ch2 = CanvasObject(
       debugLabel: 'child2',
+      borderRadius: BorderRadius.circular(25),
       layoutData: FlexLayoutData(
         flex: 3,
         min: 150,
@@ -99,7 +102,7 @@ class _SampleState extends State<Sample> {
       debugLabel: 'child4',
       layoutData: FlexLayoutData(
         flex: 1,
-        cross: SizeConstraint.fixed(150),
+        cross: SizeConstraint.fixed(200),
       ),
     );
     CanvasObject ch5 = CanvasObject(

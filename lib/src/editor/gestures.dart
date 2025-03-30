@@ -65,7 +65,7 @@ abstract class EditorDragGestureSession {
 
   void onTick(Duration elapsed) {
     if (_shift != null) {
-      editor.shiftViewport(_shift!);
+      editor.dragViewport(_shift!);
       onShift(_shift!);
     }
   }

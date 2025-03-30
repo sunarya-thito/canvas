@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/rendering.dart';
 import 'package:vector_math/vector_math_64.dart';
 
 const kDeg90 = 90.0 * pi / 180;
@@ -36,6 +37,11 @@ Offset resizeShear(Size newOuterSize, Offset shear) {
   double newShearX = atan(tanShearXNew); // atan -> tan-1 or arc tangent
   double newShearY = atan(tanShearYNew);
   return Offset(newShearX, newShearY);
+}
+
+Offset normalizeOffset(Offset offset) {
+  final double length = offset.distance;
+  return length > 0 ? offset / length : offset;
 }
 
 Matrix4 computeShearMatrix(double shearX, double shearY,
@@ -140,6 +146,64 @@ class Polygon {
       }
       path.close();
     }
+    return path;
+  }
+
+  Path computeRoundedRectPath(BorderRadius borderRadius, Matrix4 transform) {
+    assert(points.length == 4,
+        'Polygon must have 4 points to compute rounded rect path');
+    final path = Path();
+
+    final List<double> radii = [
+      borderRadius.topLeft.x,
+      borderRadius.topRight.x,
+      borderRadius.bottomRight.x,
+      borderRadius.bottomLeft.x,
+    ];
+
+    for (int i = 0; i < 4; i++) {
+      final Offset p1 = points[i];
+      final Offset p2 = points[(i + 1) % 4];
+      final Offset p0 = points[(i - 1 + 4) % 4];
+
+      final double radius = radii[i];
+
+      if (radius > 0) {
+        final Offset v1 = normalizeOffset(p1 - p0) * radius;
+        final Offset v2 = normalizeOffset(p2 - p1) * radius;
+
+        final Offset cornerStart = p1 - v1;
+        final Offset cornerEnd = p1 + v2;
+
+        final Offset transformedCornerStart =
+            MatrixUtils.transformPoint(transform, cornerStart);
+        final Offset transformedCornerEnd =
+            MatrixUtils.transformPoint(transform, cornerEnd);
+        final Offset transformedP1 = MatrixUtils.transformPoint(transform, p1);
+
+        if (i == 0) {
+          path.moveTo(transformedCornerStart.dx, transformedCornerStart.dy);
+        } else {
+          path.lineTo(transformedCornerStart.dx, transformedCornerStart.dy);
+        }
+
+        path.arcToPoint(
+          transformedCornerEnd,
+          radius: Radius.circular(radius),
+          largeArc: false,
+          clockwise: true,
+        );
+      } else {
+        final Offset transformedP1 = MatrixUtils.transformPoint(transform, p1);
+        if (i == 0) {
+          path.moveTo(transformedP1.dx, transformedP1.dy);
+        } else {
+          path.lineTo(transformedP1.dx, transformedP1.dy);
+        }
+      }
+    }
+
+    path.close();
     return path;
   }
 

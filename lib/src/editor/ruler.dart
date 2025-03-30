@@ -1,19 +1,98 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/control.dart';
+import 'package:canvas/src/editor/snap.dart';
 import 'package:flutter/widgets.dart';
 
-class CanvasRulerSnappingPoint {
-  final ValueNotifier<double> offset;
+class CanvasRulerSnappingPoint extends SnappingPoint with ChangeNotifier {
+  double _offset;
+  CanvasObjectState? _parent;
   final Axis axis;
 
   CanvasRulerSnappingPoint({
     required double offset,
     required this.axis,
-  }) : offset = ValueNotifier(offset);
+    CanvasObjectState? parent,
+  })  : _offset = offset,
+        _parent = parent;
+
+  double get offset => _offset;
+
+  set offset(double value) {
+    if (value != _offset) {
+      _offset = value;
+      notifyListeners();
+    }
+  }
+
+  CanvasObjectState? get parent => _parent;
+
+  set parent(CanvasObjectState? parent) {
+    if (parent != _parent) {
+      _parent = parent;
+      notifyListeners();
+    }
+  }
+
+  @override
+  String toString() {
+    return 'CanvasRulerSnappingPoint(offset: $offset, axis: $axis)';
+  }
+
+  @override
+  SnappingResult? computeSnapping(CanvasEditorHandler editor,
+      SnappingPoint other, SnappingConfiguration configuration) {
+    SnappingResult? result;
+    double targetDistance =
+        configuration.snappingDistance / editor.transform.zoom;
+    Offset target =
+        axis == Axis.vertical ? Offset(offset, 0) : Offset(0, offset);
+    double angle = axis == Axis.horizontal ? 0 : pi / 2;
+    other.visitLines(
+      (line) {
+        if (line is CanvasRulerSnappingPoint) {
+          return true;
+        }
+        if (line.angle != 0 && !configuration.rotatedSnap) {
+          return true;
+        }
+        if (line.distanceTo(target, angle) <= targetDistance) {
+          result = SnappingResult(
+            newOffset: line.snapToLine(target),
+            angle: axis == Axis.horizontal ? 0 : pi / 2,
+          );
+          return false;
+        }
+        return true;
+      },
+    );
+    return result;
+  }
+
+  @override
+  void visitLines(SnappingLineVisitor visitor) {
+    if (axis == Axis.vertical) {
+      visitor(SnappingLine(
+        point: Offset(
+          offset,
+          0,
+        ),
+        angle: 0,
+      ));
+    } else {
+      visitor(SnappingLine(
+        point: Offset(
+          0,
+          offset,
+        ),
+        angle: pi / 2,
+      ));
+    }
+  }
 }
 
-class CanvasRuler extends StatelessWidget {
+class CanvasRuler extends StatefulWidget {
   final CanvasEditorController controller;
   final CanvasEditorHandler editor;
   final bool showRuler;
@@ -30,55 +109,339 @@ class CanvasRuler extends StatelessWidget {
   });
 
   @override
+  State<CanvasRuler> createState() => _CanvasRulerState();
+}
+
+class _CanvasRulerState extends State<CanvasRuler> {
+  // Axis? _draggingDirection;
+  // CanvasRulerSnappingPoint? _draggingPoint;
+  RulerSnappingControlSession? _draggingSession;
+  // double? _startOffset;
+  CanvasRulerSnappingPoint? _hoveredPoint;
+
+  Widget _buildDraggable(double width, Axis direction) {
+    return MouseRegion(
+      hitTestBehavior: HitTestBehavior.translucent,
+      cursor: _draggingSession != null
+          ? SystemMouseCursors.noDrop
+          : direction == Axis.horizontal
+              ? SystemMouseCursors.resizeUpDown
+              : SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onPanStart: (details) {
+          setState(() {
+            _draggingSession = widget.editor.startControlSession(
+                RulerCreateSnappingPointControlSession(
+                    widget.editor, direction),
+                details.globalPosition);
+            // var editorTransform = widget.editor.transform;
+            // double offset = direction == Axis.horizontal
+            //     ? (-widget.editor.viewportSize.height / 2 -
+            //         editorTransform.offset.dy / editorTransform.zoom -
+            //         (width - details.localPosition.dy) / editorTransform.zoom)
+            //     : (-widget.editor.viewportSize.width / 2 -
+            //         editorTransform.offset.dx / editorTransform.zoom -
+            //         (width - details.localPosition.dx) / editorTransform.zoom);
+            // var created = Actions.invoke(
+            //     context,
+            //     CanvasCreateRulerSnappingPointIntent(
+            //         offset: offset,
+            //         direction: direction,
+            //         editor: widget.editor));
+            // if (created is CanvasRulerSnappingPoint) {
+            //   CanvasRulerSnappingPointCreatedNotification(
+            //           point: created, editor: widget.editor)
+            //       .dispatch(context);
+            //   _draggingPoint = created;
+            //   _startOffset = offset;
+            // }
+          });
+        },
+        onPanUpdate: (details) {
+          // if (_draggingPoint != null) {
+          //   _draggingPoint!.offset.value += direction == Axis.horizontal
+          //       ? (details.delta.dy / widget.controller.value.zoom)
+          //       : (details.delta.dx / widget.controller.value.zoom);
+          //   CanvasRulerSnappingPointCreatedNotification(
+          //           point: _draggingPoint!, editor: widget.editor)
+          //       .dispatch(context);
+          // }
+          if (_draggingSession != null) {
+            widget.editor.updateControlSession(
+                _draggingSession!, details.globalPosition);
+          }
+        },
+        onPanEnd: (details) {
+          // setState(() {
+          // if (_startOffset != null && _draggingPoint != null) {
+          // double offset =
+          //     _draggingPoint!.offset.value * widget.controller.value.zoom +
+          //         (_draggingPoint!.axis == Axis.horizontal
+          //             ? (widget.editor.viewportSize.height /
+          //                     2 *
+          //                     widget.controller.value.zoom +
+          //                 widget.controller.value.offset.dy)
+          //             : (widget.editor.viewportSize.width /
+          //                     2 *
+          //                     widget.controller.value.zoom +
+          //                 widget.controller.value.offset.dx));
+          //   if ((_startOffset! - _draggingPoint!.offset.value).abs() <= 1 ||
+          //       offset < 0 ||
+          //       (_draggingPoint!.axis == Axis.vertical
+          //           ? offset > widget.editor.viewportSize.width
+          //           : offset > widget.editor.viewportSize.height)) {
+          //     Actions.invoke(
+          //         context,
+          //         CanvasRemoveRulerSnappingPointIntent(
+          //             point: _draggingPoint!, editor: widget.editor));
+          //     CanvasRulerSnappingPointRemovedNotification(
+          //             point: _draggingPoint!, editor: widget.editor)
+          //         .dispatch(context);
+          //   }
+          // }
+          // _draggingDirection = null;
+          // _draggingPoint = null;
+          // _startOffset = null;
+
+          // });
+          if (_draggingSession != null) {
+            widget.editor.endControlSession(_draggingSession!);
+            _draggingSession = null;
+          }
+        },
+        onPanCancel: () {
+          // setState(() {
+          //   if (_draggingPoint != null) {
+          //     Actions.invoke(
+          //         context,
+          //         CanvasRemoveRulerSnappingPointIntent(
+          //             point: _draggingPoint!, editor: widget.editor));
+          //     CanvasRulerSnappingPointRemovedNotification(
+          //             point: _draggingPoint!, editor: widget.editor)
+          //         .dispatch(context);
+          //   }
+          //   _draggingDirection = null;
+          //   _draggingPoint = null;
+          //   _draggingPoint = null;
+          // });
+          if (_draggingSession != null) {
+            widget.editor.cancelControlSession(_draggingSession!);
+            _draggingSession = null;
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _wrapChild(BuildContext context) {
+    return ListenableBuilder(
+        listenable: widget.controller,
+        builder: (context, _) {
+          return Stack(
+            fit: StackFit.passthrough,
+            children: [
+              widget.child,
+              Positioned.fill(
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: (event) {
+                    if (widget.editor.selectedSnappingPoint != null) {
+                      setState(() {
+                        widget.editor.selectedSnappingPoint = null;
+                      });
+                    }
+                  },
+                ),
+              ),
+              for (var snappingPoint in widget.snappingPoints)
+                _buildSnappingPointDraggable(snappingPoint),
+            ],
+          );
+        });
+  }
+
+  double _attemptSnap(double newOffset, Axis direction) {
+    CanvasRulerSnappingPoint newPoint =
+        CanvasRulerSnappingPoint(offset: newOffset, axis: direction);
+    double? snappedOffset;
+    widget.editor.visitSnappingPoint(
+      (point) {
+        var result = point.computeSnapping(
+            widget.editor, newPoint, widget.editor.snappingConfiguration);
+        if (result != null) {
+          if (direction == Axis.horizontal) {
+            snappedOffset = result.newOffset.dx;
+          } else {
+            snappedOffset = result.newOffset.dy;
+          }
+          return false;
+        }
+        return true;
+      },
+    );
+    return snappedOffset ?? newOffset;
+  }
+
+  Widget _buildSnappingPointDraggable(CanvasRulerSnappingPoint point) {
+    var editorTransform = widget.editor.transform;
+    return ListenableBuilder(
+      listenable: point,
+      builder: (context, child) {
+        double offset = point.offset * editorTransform.zoom +
+            (point.axis == Axis.horizontal
+                ? (widget.editor.viewportSize.height /
+                        2 *
+                        editorTransform.zoom +
+                    editorTransform.offset.dy)
+                : (widget.editor.viewportSize.width / 2 * editorTransform.zoom +
+                    editorTransform.offset.dx));
+        return Positioned(
+          // 10px to tolerate the hitbox size
+          top: point.axis == Axis.horizontal ? offset - 5 : 0,
+          left: point.axis == Axis.vertical ? offset - 5 : 0,
+          width: point.axis == Axis.horizontal ? null : 10,
+          height: point.axis == Axis.vertical ? null : 10,
+          bottom: point.axis == Axis.horizontal ? null : 0,
+          right: point.axis == Axis.vertical ? null : 0,
+          child: child!,
+        );
+      },
+      child: MouseRegion(
+        hitTestBehavior: HitTestBehavior.translucent,
+        cursor: point.axis == Axis.horizontal
+            ? SystemMouseCursors.resizeUpDown
+            : SystemMouseCursors.resizeLeftRight,
+        onEnter: (event) {
+          setState(() {
+            _hoveredPoint = point;
+          });
+        },
+        onExit: (event) {
+          setState(() {
+            _hoveredPoint = null;
+          });
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            setState(() {
+              widget.editor.selectedSnappingPoint = point;
+            });
+          },
+          onPanStart: (details) {
+            setState(() {
+              _draggingSession = widget.editor.startControlSession(
+                  RulerUpdateSnappingPointControlSession(widget.editor, point),
+                  details.globalPosition);
+            });
+          },
+          onPanEnd: (details) {
+            if (_draggingSession != null) {
+              widget.editor.endControlSession(_draggingSession!);
+              _draggingSession = null;
+            }
+          },
+          onPanCancel: () {
+            if (_draggingSession != null) {
+              widget.editor.cancelControlSession(_draggingSession!);
+              _draggingSession = null;
+            }
+          },
+          onPanUpdate: (details) {
+            if (_draggingSession != null) {
+              widget.editor.updateControlSession(
+                  _draggingSession!, details.globalPosition);
+            }
+          },
+          child: AbsorbPointer(),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = CanvasTheme.of(context);
     final width = theme.ruler.rulerWidth;
-    return Stack(
-      fit: StackFit.passthrough,
-      children: [
-        if (!showRuler)
-          PositionedDirectional(
-            top: 0,
-            start: 0,
-            end: 0,
-            bottom: 0,
-            child: child,
+    return MouseRegion(
+      opaque: false,
+      cursor: _draggingSession?.snappingPoint.axis == Axis.horizontal
+          ? SystemMouseCursors.resizeUpDown
+          : _draggingSession?.snappingPoint.axis == Axis.vertical
+              ? SystemMouseCursors.resizeLeftRight
+              : MouseCursor.defer,
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          if (!widget.showRuler)
+            PositionedDirectional(
+              top: 0,
+              start: 0,
+              end: 0,
+              bottom: 0,
+              child: _wrapChild(context),
+            ),
+          if (widget.showRuler) ...[
+            PositionedDirectional(
+              top: width,
+              start: width,
+              end: 0,
+              bottom: 0,
+              child: _wrapChild(context),
+            ),
+            PositionedDirectional(
+              top: 0,
+              start: width,
+              end: 0,
+              height: width,
+              child: _buildDraggable(width, Axis.horizontal),
+            ),
+            PositionedDirectional(
+              top: width,
+              start: 0,
+              width: width,
+              bottom: 0,
+              child: _buildDraggable(width, Axis.vertical),
+            )
+          ],
+          Positioned.fill(
+            child: IgnorePointer(
+              child: ListenableBuilder(
+                  listenable: Listenable.merge([
+                    widget.controller,
+                    widget.editor.selectedSnappingPointListenable,
+                  ]),
+                  builder: (context, _) {
+                    return CustomPaint(
+                      painter: _RulerPainter(
+                        hovered: _hoveredPoint ??
+                            widget.editor.selectedSnappingPoint ??
+                            _draggingSession?.snappingPoint,
+                        zoom: widget.controller.value.zoom,
+                        offset: widget.controller.value.offset,
+                        style: theme.ruler.textStyle,
+                        strokeWidth: theme.ruler.strokeWidth,
+                        backgroundColor: theme.ruler.backgroundColor,
+                        strokeColor: theme.ruler.strokeColor,
+                        snappingPoints: widget.snappingPoints,
+                        rulerWidth: widget.showRuler ? width : 0,
+                        strokeHeight: theme.ruler.strokeHeight,
+                        textDirection: Directionality.of(context),
+                        snapStrokeColor: theme.snap.strokeColor,
+                        snapStrokeWidth: theme.snap.strokeWidth,
+                        snapTextStyle: theme.snap.textStyle,
+                        pixelGridColor: theme.ruler.pixelGridColor,
+                        snapSelectedStrokeColor: theme.snap.selectedStrokeColor,
+                        selected: widget.editor.selectedSnappingPoint,
+                        snapHoveredStrokeColor: theme.snap.hoveredStrokeColor,
+                      ),
+                    );
+                  }),
+            ),
           ),
-        if (showRuler)
-          PositionedDirectional(
-            top: width,
-            start: width,
-            end: 0,
-            bottom: 0,
-            child: child,
-          ),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: ListenableBuilder(
-                listenable: controller,
-                builder: (context, _) {
-                  return CustomPaint(
-                    painter: _RulerPainter(
-                      zoom: controller.value.zoom,
-                      offset: controller.value.offset,
-                      style: theme.ruler.textStyle,
-                      strokeWidth: theme.ruler.strokeWidth,
-                      backgroundColor: theme.ruler.backgroundColor,
-                      strokeColor: theme.ruler.strokeColor,
-                      snappingPoints: snappingPoints,
-                      rulerWidth: showRuler ? width : 0,
-                      strokeHeight: theme.ruler.strokeHeight,
-                      textDirection: Directionality.of(context),
-                      snapStrokeColor: theme.snap.strokeColor,
-                      snapStrokeWidth: theme.snap.strokeWidth,
-                      snapTextStyle: theme.snap.textStyle,
-                      pixelGridColor: theme.ruler.pixelGridColor,
-                    ),
-                  );
-                }),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -114,6 +477,10 @@ class _RulerPainter extends CustomPainter {
   final double snapStrokeWidth;
   final TextStyle snapTextStyle;
   final Color pixelGridColor;
+  final Color snapSelectedStrokeColor;
+  final Color snapHoveredStrokeColor;
+  final CanvasRulerSnappingPoint? selected;
+  final CanvasRulerSnappingPoint? hovered;
 
   _RulerPainter({
     required this.zoom,
@@ -130,10 +497,11 @@ class _RulerPainter extends CustomPainter {
     required this.snapStrokeWidth,
     required this.snapTextStyle,
     required this.pixelGridColor,
-  }) : super(
-            repaint: Listenable.merge(snappingPoints.map(
-          (e) => e.offset,
-        )));
+    required this.snapSelectedStrokeColor,
+    required this.snapHoveredStrokeColor,
+    required this.selected,
+    required this.hovered,
+  }) : super(repaint: Listenable.merge(snappingPoints));
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -209,6 +577,26 @@ class _RulerPainter extends CustomPainter {
       while (currentHorizontalTextOffset < (size.width + gap * zoom)) {
         double opacity = 1;
         // if its near to edge (start or end), go invisible, with the range of gap
+        double scaledGap = gap * zoom / 4;
+        double edgeStart = rulerWidth;
+        double edgeEnd = size.width;
+        double distanceToEdgeStart = (currentHorizontalTextOffset - edgeStart);
+        double distanceToEdgeEnd = (edgeEnd - currentHorizontalTextOffset);
+        opacity *= (distanceToEdgeStart.clamp(0, scaledGap) / scaledGap) *
+            (distanceToEdgeEnd.clamp(0, scaledGap) / scaledGap);
+        if (hovered != null && hovered!.axis == Axis.vertical) {
+          scaledGap = gap * zoom;
+          double selectedOffset = hovered!.offset * zoom +
+              rulerOffset.dx +
+              offset.dx +
+              editorSize.width / 2 * zoom;
+          double distanceToSelected =
+              (selectedOffset - currentHorizontalTextOffset).abs();
+          double multiplier =
+              (distanceToSelected.clamp(0, scaledGap) / scaledGap);
+          opacity *= multiplier * multiplier * multiplier;
+        }
+        strokePaint.color = strokeColor.withAlpha((opacity * 255).toInt());
         canvas.drawLine(
           Offset(currentHorizontalTextOffset, rulerWidth),
           Offset(currentHorizontalTextOffset, rulerWidth - strokeHeight),
@@ -244,14 +632,25 @@ class _RulerPainter extends CustomPainter {
           gap * zoom;
       while (currentVerticalTextOffset < (size.height + gap * zoom)) {
         double opacity = 1;
+        double scaledGap = gap * zoom / 4;
         // if its near to edge (start or end), go invisible, with the range of gap
-        double startEdge = currentVerticalTextOffset - gap;
-        double endEdge = currentVerticalTextOffset + gap;
-        if (startEdge < rulerOffset.dy) {
-          opacity = (currentVerticalTextOffset / gap).clamp(0, 1);
-        } else if (endEdge > size.height - rulerOffset.dy) {
-          opacity =
-              ((size.height - currentVerticalTextOffset) / gap).clamp(0, 1);
+        double edgeStart = rulerWidth;
+        double edgeEnd = size.height;
+        double distanceToEdgeStart = (currentVerticalTextOffset - edgeStart);
+        double distanceToEdgeEnd = (edgeEnd - currentVerticalTextOffset);
+        opacity *= (distanceToEdgeStart.clamp(0, scaledGap) / scaledGap) *
+            (distanceToEdgeEnd.clamp(0, scaledGap) / scaledGap);
+        if (hovered != null && hovered!.axis == Axis.horizontal) {
+          scaledGap = gap * zoom;
+          double selectedOffset = hovered!.offset * zoom +
+              rulerOffset.dy +
+              offset.dy +
+              editorSize.height / 2 * zoom;
+          double distanceToSelected =
+              (selectedOffset - currentVerticalTextOffset).abs();
+          double multiplier =
+              (distanceToSelected.clamp(0, scaledGap) / scaledGap);
+          opacity *= multiplier * multiplier;
         }
         strokePaint.color = strokeColor.withAlpha((opacity * 255).toInt());
         Offset lineStart = textDirection == TextDirection.ltr
@@ -326,11 +725,15 @@ class _RulerPainter extends CustomPainter {
     }
 
     if (rulerWidth > 0) {
-      strokePaint.color = snapStrokeColor;
       strokePaint.strokeWidth = snapStrokeWidth;
       // draw the snapping points
       for (var snappingPoint in snappingPoints) {
-        double snappingPointOffset = snappingPoint.offset.value * zoom;
+        strokePaint.color = snappingPoint == selected
+            ? snapSelectedStrokeColor
+            : snappingPoint == hovered
+                ? snapHoveredStrokeColor
+                : snapStrokeColor;
+        double snappingPointOffset = snappingPoint.offset * zoom;
         if (snappingPoint.axis == Axis.vertical) {
           snappingPointOffset +=
               rulerOffset.dx + offset.dx + editorSize.width / 2 * zoom;
@@ -341,6 +744,24 @@ class _RulerPainter extends CustomPainter {
           if (textDirection == TextDirection.rtl &&
               snappingPointOffset > size.width - rulerOffset.dy) {
             continue;
+          }
+          if (hovered == snappingPoint) {
+            // draw text next to the line
+            TextPainter textPainter = TextPainter(
+              text: TextSpan(
+                text: snappingPoint.offset.toStringAsFixed(0),
+                style: snapTextStyle.copyWith(
+                  color: snapHoveredStrokeColor,
+                ),
+              ),
+              textDirection: textDirection,
+            );
+            textPainter.layout();
+            textPainter.paint(
+                canvas,
+                Offset(snappingPointOffset + 8,
+                    rulerWidth / 2 - textPainter.height / 2));
+            textPainter.dispose();
           }
           canvas.drawLine(
             Offset(snappingPointOffset, 0),
@@ -355,6 +776,33 @@ class _RulerPainter extends CustomPainter {
           }
           if (snappingPointOffset > size.height) {
             continue;
+          }
+          if (hovered == snappingPoint) {
+            // draw text next to the line
+            canvas.save();
+            TextPainter textPainter = TextPainter(
+              text: TextSpan(
+                text: snappingPoint.offset.toStringAsFixed(0),
+                style: snapTextStyle.copyWith(
+                  color: snapHoveredStrokeColor,
+                ),
+              ),
+              textDirection: textDirection,
+            );
+            textPainter.layout();
+
+            Offset offset = Offset(rulerWidth / 2 - textPainter.width / 2,
+                snappingPointOffset - textPainter.height - 8);
+
+            // rotate (origin center text)
+            canvas.translate(offset.dx + textPainter.width / 2,
+                offset.dy + textPainter.height / 2);
+            canvas.rotate(-pi / 2);
+            canvas.translate(-offset.dx - textPainter.width / 2,
+                -offset.dy - textPainter.height / 2);
+            textPainter.paint(canvas, offset);
+            textPainter.dispose();
+            canvas.restore();
           }
           canvas.drawLine(
             Offset(0, snappingPointOffset),

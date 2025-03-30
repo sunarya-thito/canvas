@@ -98,12 +98,250 @@ class AdaptiveSizedBox extends StatelessWidget {
     return Transform(
       transform: Matrix4.identity()
         ..scale(flipHorizontal ? -1.0 : 1.0, flipVertical ? -1.0 : 1.0),
-      child: SizedBox(
-        width: width,
-        height: height,
+      child: FreeHitSizedBox(
+        size: Size(width, height),
         child: child,
       ),
     );
+  }
+}
+
+class FreeHitSizedBox extends SingleChildRenderObjectWidget {
+  const FreeHitSizedBox({
+    super.key,
+    required this.size,
+    super.child,
+  });
+
+  final Size size;
+
+  @override
+  RenderFreeHitSizedBox createRenderObject(BuildContext context) {
+    return RenderFreeHitSizedBox(
+      additionalConstraints: BoxConstraints.tight(size),
+    );
+  }
+
+  @override
+  RenderFreeHitSizedBox updateRenderObject(
+      BuildContext context, covariant RenderFreeHitSizedBox renderObject) {
+    return renderObject..additionalConstraints = BoxConstraints.tight(size);
+  }
+}
+
+class RenderFreeHitSizedBox extends RenderConstrainedBox {
+  RenderFreeHitSizedBox({required super.additionalConstraints});
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (hitTestChildren(result, position: position) || hitTestSelf(position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
+}
+
+class RRectClipper extends CustomClipper<RRect> {
+  final BorderRadiusGeometry borderRadius;
+  final TextDirection? textDirection;
+
+  const RRectClipper({
+    required this.borderRadius,
+    this.textDirection,
+  });
+
+  @override
+  RRect getClip(Size size) {
+    return borderRadius.resolve(textDirection).toRRect(Offset.zero & size);
+  }
+
+  @override
+  bool shouldReclip(covariant RRectClipper oldClipper) {
+    return oldClipper.borderRadius != borderRadius ||
+        oldClipper.textDirection != textDirection;
+  }
+}
+
+class FreeHitClipRRect extends SingleChildRenderObjectWidget {
+  const FreeHitClipRRect({
+    super.key,
+    required this.borderRadius,
+    this.clipBehavior = Clip.hardEdge,
+    this.clipper,
+    super.child,
+  });
+
+  final BorderRadiusGeometry borderRadius;
+  final Clip clipBehavior;
+  final CustomClipper<RRect>? clipper;
+
+  @override
+  RenderFreeHitClipRRect createRenderObject(BuildContext context) {
+    return RenderFreeHitClipRRect(
+      borderRadius: borderRadius,
+      clipBehavior: clipBehavior,
+      textDirection: Directionality.maybeOf(context),
+      clipper: clipper,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+      BuildContext context, covariant RenderFreeHitClipRRect renderObject) {
+    renderObject.borderRadius = borderRadius;
+    renderObject.clipBehavior = clipBehavior;
+    renderObject.textDirection = Directionality.maybeOf(context);
+    renderObject.clipper = clipper;
+  }
+}
+
+class RenderFreeHitClipRRect extends RenderProxyBox {
+  RenderFreeHitClipRRect({
+    BorderRadiusGeometry borderRadius = BorderRadius.zero,
+    Clip clipBehavior = Clip.hardEdge,
+    TextDirection? textDirection,
+    CustomClipper<RRect>? clipper,
+  })  : _borderRadius = borderRadius,
+        _textDirection = textDirection,
+        _clipBehavior = clipBehavior,
+        _clipper = clipper;
+
+  CustomClipper<RRect>? get clipper => _clipper;
+  CustomClipper<RRect>? _clipper;
+  set clipper(CustomClipper<RRect>? newClipper) {
+    if (_clipper == newClipper) {
+      return;
+    }
+    final CustomClipper<RRect>? oldClipper = _clipper;
+    _clipper = newClipper;
+    assert(newClipper != null || oldClipper != null);
+    if (newClipper == null ||
+        oldClipper == null ||
+        newClipper.runtimeType != oldClipper.runtimeType ||
+        newClipper.shouldReclip(oldClipper)) {
+      _markNeedsClip();
+    }
+    if (attached) {
+      oldClipper?.removeListener(_markNeedsClip);
+      newClipper?.addListener(_markNeedsClip);
+    }
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _clipper?.addListener(_markNeedsClip);
+  }
+
+  @override
+  void detach() {
+    _clipper?.removeListener(_markNeedsClip);
+    super.detach();
+  }
+
+  void _markNeedsClip() {
+    _clip = null;
+    markNeedsPaint();
+    markNeedsSemanticsUpdate();
+  }
+
+  RRect? _clip;
+
+  Clip get clipBehavior => _clipBehavior;
+  set clipBehavior(Clip value) {
+    if (value != _clipBehavior) {
+      _clipBehavior = value;
+      markNeedsPaint();
+    }
+  }
+
+  Clip _clipBehavior;
+
+  @override
+  void performLayout() {
+    final Size? oldSize = hasSize ? size : null;
+    super.performLayout();
+    if (oldSize != size) {
+      _clip = null;
+    }
+  }
+
+  void _updateClip() {
+    _clip ??= _clipper?.getClip(size) ?? _defaultClip;
+  }
+
+  @override
+  Rect? describeApproximatePaintClip(RenderObject child) {
+    switch (clipBehavior) {
+      case Clip.none:
+        return null;
+      case Clip.hardEdge:
+      case Clip.antiAlias:
+      case Clip.antiAliasWithSaveLayer:
+        return _clipper?.getApproximateClipRect(size) ?? Offset.zero & size;
+    }
+  }
+
+  BorderRadiusGeometry get borderRadius => _borderRadius;
+  BorderRadiusGeometry _borderRadius;
+  set borderRadius(BorderRadiusGeometry value) {
+    if (_borderRadius == value) {
+      return;
+    }
+    _borderRadius = value;
+    _markNeedsClip();
+  }
+
+  /// The text direction with which to resolve [borderRadius].
+  TextDirection? get textDirection => _textDirection;
+  TextDirection? _textDirection;
+  set textDirection(TextDirection? value) {
+    if (_textDirection == value) {
+      return;
+    }
+    _textDirection = value;
+    _markNeedsClip();
+  }
+
+  RRect get _defaultClip =>
+      _borderRadius.resolve(textDirection).toRRect(Offset.zero & size);
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    _updateClip();
+    assert(_clip != null);
+    if (clipBehavior != Clip.none && !_clip!.contains(position)) {
+      return false;
+    }
+    if (hitTestChildren(result, position: position) || hitTestSelf(position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child != null) {
+      if (clipBehavior != Clip.none) {
+        _updateClip();
+        layer = context.pushClipRRect(
+          needsCompositing,
+          offset,
+          _clip!.outerRect,
+          _clip!,
+          super.paint,
+          clipBehavior: clipBehavior,
+          oldLayer: layer as ClipRRectLayer?,
+        );
+      } else {
+        context.paintChild(child!, offset);
+        layer = null;
+      }
+    } else {
+      layer = null;
+    }
   }
 }
 
@@ -238,5 +476,60 @@ class PathClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant PathClipper oldClipper) {
     return oldClipper.path != path;
+  }
+}
+
+class GroupWidget extends MultiChildRenderObjectWidget {
+  const GroupWidget({super.key, super.children});
+
+  @override
+  RenderGroup createRenderObject(BuildContext context) {
+    return RenderGroup();
+  }
+}
+
+class GroupParentData extends ContainerBoxParentData<RenderBox> {}
+
+class RenderGroup extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, GroupParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, GroupParentData> {
+  @override
+  void setupParentData(covariant RenderObject child) {
+    if (child.parentData is! GroupParentData) {
+      child.parentData = GroupParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    RenderBox? child = firstChild;
+    while (child != null) {
+      final GroupParentData childParentData =
+          child.parentData as GroupParentData;
+      child.layout(const BoxConstraints());
+      child = childParentData.nextSibling;
+    }
+
+    size = constraints.smallest;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    defaultPaint(context, offset);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    return defaultHitTestChildren(result, position: position);
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (hitTestChildren(result, position: position) || hitTestSelf(position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
   }
 }

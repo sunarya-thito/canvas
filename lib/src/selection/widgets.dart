@@ -62,42 +62,19 @@ class _SelectionTransformControlWidgetState
   @override
   void initState() {
     super.initState();
-    _extraControls = widget.selection
-        .buildControls(
-            editor: widget.editor, parentTransform: widget.parentTransform)
-        .toList();
-    for (var control in _extraControls) {
-      control.addListener(_update);
-    }
+    _extraControls = [];
+    // _extraControls = widget.selection
+    //     .buildControls(
+    //         editor: widget.editor,
+    //         box: widget.selectionGroup.getTransformControlBox(
+    //             parentTransform: widget.parentTransform))
+    //     .toList();
   }
 
   @override
   void didUpdateWidget(covariant SelectionTransformControlWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selection != widget.selection) {
-      for (var control in _extraControls) {
-        control.removeListener(_update);
-      }
-      _extraControls = widget.selection
-          .buildControls(
-              editor: widget.editor, parentTransform: widget.parentTransform)
-          .toList();
-      for (var control in _extraControls) {
-        control.addListener(_update);
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    for (var control in _extraControls) {
-      control.removeListener(_update);
-    }
-    super.dispose();
-  }
-
-  void _update() {
-    setState(() {});
+    if (oldWidget.selection != widget.selection) {}
   }
 
   Polygon _createDiagonalHandlePolygon(Offset center, Size size, Offset shear,
@@ -214,54 +191,9 @@ class _SelectionTransformControlWidgetState
             strokeWidth: theme.transformControl.controlBoundaryBorderWidth,
           ),
         ),
-        // top shear
-        _buildHandle(
-          theme,
-          topHandleCenter,
-          handleSize,
-          size,
-          shear,
-          Axis.horizontal,
-          DirectionalCursor.left
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-          expand: EdgeInsets.only(top: handleSize.height),
-        ),
-        // bottom shear
-        _buildHandle(
-          theme,
-          (bottomLeftHandleCenter + bottomRightHandleCenter) * 0.5,
-          handleSize,
-          size,
-          shear,
-          Axis.horizontal,
-          DirectionalCursor.right
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-          expand: EdgeInsets.only(bottom: handleSize.height),
-        ),
-        // left shear
-        _buildHandle(
-          theme,
-          (topLeftHandleCenter + bottomLeftHandleCenter) * 0.5,
-          handleSize,
-          size,
-          shear,
-          Axis.vertical,
-          DirectionalCursor.top
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-          expand: EdgeInsets.only(left: handleSize.width),
-        ),
-        // right shear
-        _buildHandle(
-          theme,
-          (topRightHandleCenter + bottomRightHandleCenter) * 0.5,
-          handleSize,
-          size,
-          shear,
-          Axis.vertical,
-          DirectionalCursor.bottom
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-          expand: EdgeInsets.only(right: handleSize.width),
-        ),
+        // extra controls
+        for (var control in _extraControls)
+          ExtraTransformationControlWidget(control: control),
         // top
         _buildHandle(
           theme,

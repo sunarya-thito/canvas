@@ -1,6 +1,47 @@
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/ruler.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
+
+class CanvasCreateRulerSnappingPointIntent extends Intent {
+  final double offset;
+  final Axis direction;
+  final CanvasEditorHandler editor;
+
+  const CanvasCreateRulerSnappingPointIntent({
+    required this.offset,
+    required this.direction,
+    required this.editor,
+  });
+}
+
+class CanvasCreateRulerSnappingPointAction
+    extends Action<CanvasCreateRulerSnappingPointIntent> {
+  @override
+  CanvasRulerSnappingPoint invoke(
+      covariant CanvasCreateRulerSnappingPointIntent intent) {
+    return intent.editor
+        .createRulerSnappingPoint(intent.offset, intent.direction);
+  }
+}
+
+class CanvasRemoveRulerSnappingPointIntent extends Intent {
+  final CanvasRulerSnappingPoint point;
+  final CanvasEditorHandler editor;
+
+  const CanvasRemoveRulerSnappingPointIntent({
+    required this.point,
+    required this.editor,
+  });
+}
+
+class CanvasRemoveRulerSnappingPointAction
+    extends Action<CanvasRemoveRulerSnappingPointIntent> {
+  @override
+  void invoke(covariant CanvasRemoveRulerSnappingPointIntent intent) {
+    intent.editor.removeRulerSnappingPoint(intent.point);
+  }
+}
 
 class CanvasDeleteItemsIntent extends Intent {
   final List<CanvasItemState> items;

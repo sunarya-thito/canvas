@@ -1,10 +1,14 @@
 import 'dart:ui';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/control.dart';
+import 'package:canvas/src/editor/ruler.dart';
+import 'package:canvas/src/editor/snap.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
 
 enum CanvasSelectionMode {
   none,
@@ -13,6 +17,13 @@ enum CanvasSelectionMode {
 }
 
 mixin CanvasEditorHandler {
+  void sendNotification(Notification notification);
+  EditorControlSession? get controlSession;
+  T startControlSession<T extends EditorControlSession>(
+      T session, Offset globalStart);
+  void updateControlSession(EditorControlSession session, Offset globalEnd);
+  void endControlSession(EditorControlSession session);
+  void cancelControlSession(EditorControlSession session);
   Ticker createTicker(TickerCallback onTick);
   EditorDragGestureSession? get activeMouseGesture;
   EditorDragGestureSession createMouseGesture();
@@ -43,12 +54,25 @@ mixin CanvasEditorHandler {
   Offset localToGlobal(Offset position);
   Matrix4 getLocalToGlobalTransform();
   Matrix4 getGlobalToLocalTransform();
-  void shiftViewport(Offset delta);
   Size get viewportSize;
   Rect computeViewportBounds();
   void handleItemClick(CanvasItemState item);
   void handleItemShift(Offset globalStart, Offset globalEnd);
   Selection? getSelectionForItem(CanvasItemState item);
+  CanvasRulerSnappingPoint createRulerSnappingPoint(
+      double offset, Axis direction);
+  void removeRulerSnappingPoint(CanvasRulerSnappingPoint point);
+  CanvasRulerSnappingPoint? get selectedSnappingPoint =>
+      selectedSnappingPointListenable.value;
+  set selectedSnappingPoint(CanvasRulerSnappingPoint? point);
+  ValueListenable<CanvasRulerSnappingPoint?>
+      get selectedSnappingPointListenable;
+  SnappingResult? snap(SnappingPoint point);
+
+  SnappingConfiguration get snappingConfiguration;
+
+  void dragViewport(Offset delta);
+  void zoomAtViewport(Offset at, double delta);
 
   // position is in editor local coordinates
   CanvasItemState? findItemAtPosition(Offset position) {
@@ -59,6 +83,8 @@ mixin CanvasEditorHandler {
     }
     return null;
   }
+
+  bool visitSnappingPoint(SnappingPointVisitor visitor);
 }
 
 class CanvasEditorTransform {

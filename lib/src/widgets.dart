@@ -7,11 +7,11 @@ import 'package:flutter/widgets.dart';
 
 class CanvasItemWidget extends StatefulWidget {
   final CanvasItemState state;
-  final Matrix4? parentTransform;
+  // final Matrix4? parentTransform;
 
   const CanvasItemWidget({
     super.key,
-    this.parentTransform,
+    // this.parentTransform,
     required this.state,
   });
 
@@ -70,66 +70,67 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
     var innerSize = widget.state.innerSize;
     Matrix4 transform =
         widget.state.item.layoutData.computeTranslatedMatrix(widget.state);
-    if (widget.parentTransform != null) {
-      transform = widget.parentTransform! * transform;
-    }
     Offset? editorOffset = widget.state.item.editorOffset;
     if (editorOffset != null) {
       transform.translate(editorOffset.dx, editorOffset.dy);
     }
     var editor = widget.state.editor;
-    return IgnorePointer(
-      ignoring: editorOffset != null,
-      child: Stack(
-        fit: StackFit.passthrough,
+    bool clipContent = widget.state is CanvasObjectState &&
+        (widget.state as CanvasObjectState).item.clipContent;
+    BorderRadiusGeometry? borderRadius = widget.state is CanvasObjectState
+        ? (widget.state as CanvasObjectState).item.borderRadius
+        : null;
+    return Transform(
+      transform: transform,
+      child: GroupWidget(
         children: [
-          Positioned(
-            top: 0,
-            left: 0,
-            child: Transform(
-              transform: transform,
-              child: AdaptiveSizedBox(
-                size: innerSize,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.deferToChild,
-                  onTap: () {
-                    widget.state.editor?.handleItemClick(widget.state);
-                    print('tap ${widget.state.item.debugLabel}');
-                  },
-                  onPanStart: editor == null
-                      ? null
-                      : (details) {
-                          _dragStart = details.globalPosition;
-                        },
-                  onPanUpdate: editor == null
-                      ? null
-                      : (details) {
-                          if (_dragStart != null) {
-                            editor.handleItemShift(
-                                _dragStart!, details.globalPosition);
-                          }
-                        },
-                  onPanEnd: editor == null
-                      ? null
-                      : (details) {
-                          _dragStart = null;
-                        },
-                  onPanCancel: editor == null
-                      ? null
-                      : () {
-                          _dragStart = null;
-                        },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: _computeRandomColor(_count),
-                      border: Border.all(
-                        color: _computeRandomColor(_count + 1),
-                        width: 3,
-                      ),
+          AdaptiveSizedBox(
+            size: innerSize,
+            child: FreeHitClipRRect(
+              borderRadius: borderRadius ?? BorderRadius.zero,
+              clipBehavior: clipContent ? Clip.antiAlias : Clip.none,
+              child: GestureDetector(
+                behavior: HitTestBehavior.deferToChild,
+                onTap: () {
+                  widget.state.editor?.handleItemClick(widget.state);
+                  print('tap ${widget.state.item.debugLabel}');
+                },
+                onPanStart: editor == null
+                    ? null
+                    : (details) {
+                        _dragStart = details.globalPosition;
+                      },
+                onPanUpdate: editor == null
+                    ? null
+                    : (details) {
+                        if (_dragStart != null) {
+                          editor.handleItemShift(
+                              _dragStart!, details.globalPosition);
+                        }
+                      },
+                onPanEnd: editor == null
+                    ? null
+                    : (details) {
+                        _dragStart = null;
+                      },
+                onPanCancel: editor == null
+                    ? null
+                    : () {
+                        _dragStart = null;
+                      },
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: widget.state is CanvasObjectState
+                        ? (widget.state as CanvasObjectState).item.borderRadius
+                        : null,
+                    color: _computeRandomColor(_count),
+                    border: Border.all(
+                      color: _computeRandomColor(_count + 1),
+                      width: 3,
                     ),
-                    child: Text(
-                        '${widget.state.item.debugLabel}(${widget.state.size.width}, ${widget.state.size.height}))'),
                   ),
+                  child: Text(
+                      '${widget.state.item.debugLabel}(${widget.state.size.width}, ${widget.state.size.height}))'),
                 ),
               ),
             ),
@@ -139,26 +140,22 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
               listenable: Listenable.merge(
                   (widget.state as CanvasObjectState).children),
               builder: (context, child) {
-                Polygon? polygon =
-                    (widget.state as CanvasObjectState).item.clipContent
-                        ? Polygon.fromRect(Offset.zero & innerSize)
-                        : null;
-                polygon = polygon?.transform(transform);
-                return ClipPath(
-                  clipper: polygon != null ? PathClipper(polygon.path) : null,
-                  clipBehavior: polygon != null ? Clip.antiAlias : Clip.none,
-                  child: Stack(
-                    fit: StackFit.passthrough,
-                    children: [
-                      for (var child in (widget.state as CanvasObjectState)
-                          .children
-                          .sorted(_sortChildren))
-                        CanvasItemWidget(
-                          key: ValueKey(child),
-                          parentTransform: transform,
-                          state: child,
-                        ),
-                    ],
+                return AdaptiveSizedBox(
+                  size: innerSize,
+                  child: FreeHitClipRRect(
+                    borderRadius: borderRadius ?? BorderRadius.zero,
+                    clipBehavior: clipContent ? Clip.antiAlias : Clip.none,
+                    child: GroupWidget(
+                      children: [
+                        for (var child in (widget.state as CanvasObjectState)
+                            .children
+                            .sorted(_sortChildren))
+                          CanvasItemWidget(
+                            key: ValueKey(child),
+                            state: child,
+                          ),
+                      ],
+                    ),
                   ),
                 );
               },
