@@ -1,4 +1,5 @@
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/extra.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
@@ -34,13 +35,17 @@ class SelectionWidget extends StatelessWidget {
 }
 
 class SelectionTransformControlWidget extends StatefulWidget {
+  final CanvasEditorHandler editor;
   final Matrix4 parentTransform;
+  final Selection selection;
   final SelectionGroup selectionGroup;
   final double zoom;
 
   const SelectionTransformControlWidget({
     super.key,
     required this.parentTransform,
+    required this.editor,
+    required this.selection,
     required this.selectionGroup,
     required this.zoom,
   });
@@ -52,6 +57,49 @@ class SelectionTransformControlWidget extends StatefulWidget {
 
 class _SelectionTransformControlWidgetState
     extends State<SelectionTransformControlWidget> {
+  late List<ExtraTransformationControl> _extraControls;
+
+  @override
+  void initState() {
+    super.initState();
+    _extraControls = widget.selection
+        .buildControls(
+            editor: widget.editor, parentTransform: widget.parentTransform)
+        .toList();
+    for (var control in _extraControls) {
+      control.addListener(_update);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SelectionTransformControlWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selection != widget.selection) {
+      for (var control in _extraControls) {
+        control.removeListener(_update);
+      }
+      _extraControls = widget.selection
+          .buildControls(
+              editor: widget.editor, parentTransform: widget.parentTransform)
+          .toList();
+      for (var control in _extraControls) {
+        control.addListener(_update);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    for (var control in _extraControls) {
+      control.removeListener(_update);
+    }
+    super.dispose();
+  }
+
+  void _update() {
+    setState(() {});
+  }
+
   Polygon _createDiagonalHandlePolygon(Offset center, Size size, Offset shear,
       {EdgeInsets? expand}) {
     Matrix4 matrix = Matrix4.identity();

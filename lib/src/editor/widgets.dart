@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/actions.dart';
+import 'package:canvas/src/editor/grid.dart';
 import 'package:canvas/src/editor/ruler.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:canvas/src/editor/scrollable.dart';
@@ -257,8 +258,14 @@ class CanvasEditorState extends State<CanvasEditor>
                             state: _rootState,
                             parentTransform: transform,
                           ),
+                          LayoutGridWidget(
+                            state: _rootState,
+                            parentTransform: transform,
+                            editor: this,
+                          ),
                           for (var selected in _selections)
                             ListenableBuilder(
+                              key: ValueKey(selected),
                               listenable: selected.groups,
                               builder: (context, child) {
                                 return Stack(
@@ -266,9 +273,12 @@ class CanvasEditorState extends State<CanvasEditor>
                                   children: selected.groups.value.map(
                                     (e) {
                                       return SelectionTransformControlWidget(
+                                        key: ValueKey(e),
                                         parentTransform: transform,
                                         selectionGroup: e,
                                         zoom: widget.controller.value.zoom,
+                                        selection: selected,
+                                        editor: this,
                                       );
                                     },
                                   ).toList(),

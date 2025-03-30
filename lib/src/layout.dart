@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/extra.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:cassowary/cassowary.dart';
 import 'package:flutter/cupertino.dart';
@@ -117,6 +118,9 @@ abstract class CanvasLayout {
       CanvasItemState target, Offset localPosition) {
     return DragResult.doNothing;
   }
+
+  Iterable<ExtraTransformationControl> buildControls(CanvasEditorState editor,
+      CanvasItemState item, Matrix4 parentTransform, Matrix4 transform) sync* {}
 }
 
 void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,

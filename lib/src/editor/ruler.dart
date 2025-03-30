@@ -4,13 +4,13 @@ import 'package:canvas/canvas.dart';
 import 'package:flutter/widgets.dart';
 
 class CanvasRulerSnappingPoint {
-  final double offset;
+  final ValueNotifier<double> offset;
   final Axis axis;
 
-  const CanvasRulerSnappingPoint({
-    required this.offset,
+  CanvasRulerSnappingPoint({
+    required double offset,
     required this.axis,
-  });
+  }) : offset = ValueNotifier(offset);
 }
 
 class CanvasRuler extends StatelessWidget {
@@ -18,12 +18,14 @@ class CanvasRuler extends StatelessWidget {
   final CanvasEditorHandler editor;
   final bool showRuler;
   final Widget child;
+  final List<CanvasRulerSnappingPoint> snappingPoints;
 
   const CanvasRuler({
     super.key,
     required this.controller,
     required this.editor,
     required this.showRuler,
+    this.snappingPoints = const [],
     required this.child,
   });
 
@@ -63,16 +65,7 @@ class CanvasRuler extends StatelessWidget {
                       strokeWidth: theme.ruler.strokeWidth,
                       backgroundColor: theme.ruler.backgroundColor,
                       strokeColor: theme.ruler.strokeColor,
-                      snappingPoints: [
-                        CanvasRulerSnappingPoint(
-                            offset: 0, axis: Axis.horizontal),
-                        CanvasRulerSnappingPoint(
-                            offset: 0, axis: Axis.vertical),
-                        CanvasRulerSnappingPoint(
-                            offset: 600, axis: Axis.horizontal),
-                        CanvasRulerSnappingPoint(
-                            offset: 1200, axis: Axis.vertical),
-                      ],
+                      snappingPoints: snappingPoints,
                       rulerWidth: showRuler ? width : 0,
                       strokeHeight: theme.ruler.strokeHeight,
                       textDirection: Directionality.of(context),
@@ -122,7 +115,7 @@ class _RulerPainter extends CustomPainter {
   final TextStyle snapTextStyle;
   final Color pixelGridColor;
 
-  const _RulerPainter({
+  _RulerPainter({
     required this.zoom,
     required this.offset,
     required this.style,
@@ -137,7 +130,10 @@ class _RulerPainter extends CustomPainter {
     required this.snapStrokeWidth,
     required this.snapTextStyle,
     required this.pixelGridColor,
-  });
+  }) : super(
+            repaint: Listenable.merge(snappingPoints.map(
+          (e) => e.offset,
+        )));
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -334,7 +330,7 @@ class _RulerPainter extends CustomPainter {
       strokePaint.strokeWidth = snapStrokeWidth;
       // draw the snapping points
       for (var snappingPoint in snappingPoints) {
-        double snappingPointOffset = snappingPoint.offset * zoom;
+        double snappingPointOffset = snappingPoint.offset.value * zoom;
         if (snappingPoint.axis == Axis.vertical) {
           snappingPointOffset +=
               rulerOffset.dx + offset.dx + editorSize.width / 2 * zoom;

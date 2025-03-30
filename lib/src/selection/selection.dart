@@ -1,7 +1,34 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/extra.dart';
 import 'package:flutter/widgets.dart';
+
+class SmartSelectionRow {
+  final SmartSelection selection;
+  final List<CanvasItemState> columns;
+
+  SmartSelectionRow({
+    required this.selection,
+    required this.columns,
+  }) {
+    analyze();
+  }
+
+  void analyze() {}
+
+  late double _spacing;
+
+  double get spacing => _spacing;
+  set spacing(double value) {
+    _spacing = value;
+    // TODO: update the spacing of the columns on the object
+  }
+}
+
+class SmartSelection {
+  final List<SmartSelectionRow> rows;
+}
 
 class SelectionClient {
   static const SelectionClient local = SelectionClient._();
@@ -46,6 +73,24 @@ class SelectionGroup {
     required this.parent,
     required this.selectedItems,
   });
+
+  Iterable<ExtraTransformationControl> buildControls(
+      {required Selection selection,
+      required CanvasEditorHandler editor,
+      required Matrix4 parentTransform}) sync* {
+    if (selectedItems.length == 1) {
+      var first = selectedItems.first;
+      var transform = first.item.layoutData.computeTranslatedMatrix(first);
+      yield* first.buildControls(
+          editor: editor,
+          parentTransform: parentTransform,
+          transform: transform);
+      return;
+    }
+    // TODO: when items are arranged nicely, it should has a SMART CONTROL like in figma
+    // where it can adjust gaps, rearrange items, etc. Prioritize Columns then Rows!
+    // when the smart control dot is enabled, user can adjust size of the object singularly
+  }
 
   TransformControlBox getTransformControlBox({Matrix4? parentTransform}) {
     if (selectedItems.length == 1) {
@@ -130,6 +175,8 @@ class Selection {
   final ValueNotifier<List<SelectionGroup>> groups;
   final SelectionClient client;
 
+  CanvasItemState? _selectedLayer; // used for smart selection
+
   Selection({
     required List<SelectionGroup> groups,
     required this.client,
@@ -173,6 +220,21 @@ class Selection {
       groups: groups,
       client: client,
     );
+  }
+
+  Iterable<ExtraTransformationControl> buildControls({
+    required CanvasEditorHandler editor,
+    required Matrix4 parentTransform,
+  }) {
+    if (groups.value.length == 1) {
+      var first = groups.value.first;
+      return first.buildControls(
+        selection: this,
+        editor: editor,
+        parentTransform: parentTransform,
+      );
+    }
+    return const [];
   }
 
   int? _findPossibleGroup(CanvasItemState item) {

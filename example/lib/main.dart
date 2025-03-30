@@ -62,13 +62,26 @@ class _SampleState extends State<Sample> {
         width: SizeConstraint.unconstrained(),
         height: SizeConstraint.unconstrained(),
       ),
+      layoutGrids: [
+        // BlockLayoutGrid.stretch(
+        //   count: 3,
+        //   gutter: 25,
+        //   margin: 50,
+        // ),
+        BlockLayoutGrid.center(
+          count: 3,
+          size: 75,
+          gutter: 25,
+          direction: Axis.vertical,
+        )
+      ],
     );
     CanvasObject ch2 = CanvasObject(
       debugLabel: 'child2',
       layoutData: FlexLayoutData(
         flex: 3,
         min: 150,
-        max: 200,
+        max: 204,
         cross: SizeConstraint.fixed(150),
         shear: Offset(30 * pi / 180, -60 * pi / 180),
       ),

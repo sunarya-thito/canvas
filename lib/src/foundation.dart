@@ -1,6 +1,8 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/extra.dart';
+import 'package:canvas/src/editor/grid.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -61,21 +63,35 @@ class CanvasObject extends CanvasItem {
   List<CanvasObjectState> get _attachedStates =>
       super._attachedStates.cast<CanvasObjectState>();
 
+  List<LayoutGrid> _layoutGrids = [];
+
   CanvasObject({
     CanvasLayout layout = const FixedLayout(),
     CanvasLayoutData layoutData = const AbsoluteLayoutData(),
     List<CanvasItem> children = const [],
+    List<LayoutGrid> layoutGrids = const [],
     super.debugLabel,
     bool clipContent = true,
   })  : _layout = layout,
         _layoutData = layoutData,
         _children = List.of(children),
-        _clipContent = clipContent;
+        _clipContent = clipContent,
+        _layoutGrids = layoutGrids;
 
   bool get clipContent => _clipContent;
   set clipContent(bool value) {
     if (value != _clipContent) {
       _clipContent = value;
+      for (var state in _attachedStates) {
+        state.markNeedsLayout();
+      }
+    }
+  }
+
+  List<LayoutGrid> get layoutGrids => List.unmodifiable(_layoutGrids);
+  set layoutGrids(List<LayoutGrid> value) {
+    if (!listEquals(value, _layoutGrids)) {
+      _layoutGrids = List.of(value);
       for (var state in _attachedStates) {
         state.markNeedsLayout();
       }
@@ -140,7 +156,7 @@ class CanvasObject extends CanvasItem {
 
   set children(List<CanvasItem> value) {
     if (!listEquals(value, _children)) {
-      _children = value;
+      _children = List.of(value);
       for (var state in _attachedStates) {
         state.buildChildren(value);
         state.requestRelayout();
@@ -167,6 +183,28 @@ class CanvasObject extends CanvasItem {
     var newChildren = List.of(_children);
     newChildren.removeAt(index);
     children = newChildren;
+  }
+  // end
+
+  // helper methods with layout grids
+  void addLayoutGrid(LayoutGrid grid) {
+    layoutGrids = [..._layoutGrids, grid];
+  }
+
+  void insertLayoutGrid(int index, LayoutGrid grid) {
+    var newGrids = List.of(_layoutGrids);
+    newGrids.insert(index, grid);
+    layoutGrids = newGrids;
+  }
+
+  void removeLayoutGrid(LayoutGrid grid) {
+    layoutGrids = _layoutGrids.where((e) => e != grid).toList();
+  }
+
+  void removeLayoutGridAt(int index) {
+    var newGrids = List.of(_layoutGrids);
+    newGrids.removeAt(index);
+    layoutGrids = newGrids;
   }
   // end
 
@@ -215,6 +253,12 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     }
     return currentShear;
   }
+
+  // this is build when a single selection is created upon this item
+  Iterable<ExtraTransformationControl> buildControls(
+      {required CanvasEditorHandler editor,
+      required Matrix4 parentTransform,
+      required Matrix4 transform}) sync* {}
 
   Rect computeViewportBounds({Matrix4? parentTransform}) {
     Polygon polygon = Polygon.fromRect(Offset.zero & innerSize);
