@@ -44,9 +44,6 @@ class _CanvasScrollbarState extends State<CanvasScrollbar> {
           double thumbLength = max(
               theme.scrollbar.minThumbLength, thumbLengthFactor * viewportSize);
 
-          print('thumbOffset: ${widget.scrollExtent.thumbOffset}');
-          print('thumbFactor: $thumbLengthFactor');
-
           double thumbOffset = widget.scrollExtent.thumbOffset.clamp(0, 1) *
               (viewportSize - thumbLength);
 

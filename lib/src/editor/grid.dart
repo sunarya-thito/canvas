@@ -219,12 +219,10 @@ class _LayoutGridPainter extends CustomPainter {
 
 class LayoutGridWidget extends StatelessWidget {
   final CanvasItemState state;
-  final Matrix4? parentTransform;
   final CanvasEditorHandler editor;
 
   const LayoutGridWidget({
     super.key,
-    this.parentTransform,
     required this.state,
     required this.editor,
   });
@@ -240,21 +238,23 @@ class LayoutGridWidget extends StatelessWidget {
         }
         Matrix4 transform =
             state.item.layoutData.computeTranslatedMatrix(state);
-        if (parentTransform != null) {
-          transform = parentTransform! * transform;
+        Offset? editorOffset = state.item.editorOffset;
+        if (editorOffset != null) {
+          transform.translate(editorOffset.dx, editorOffset.dy);
         }
         var innerSize = state.innerSize;
-        return Stack(
-          fit: StackFit.passthrough,
-          children: [
-            for (var layoutGrid in state.item.layoutGrids)
-              Positioned(
-                top: 0,
-                left: 0,
-                child: Transform(
-                  transform: transform,
-                  child: AdaptiveSizedBox(
-                    size: innerSize,
+        bool clipContent = state.item.clipContent;
+        BorderRadiusGeometry? borderRadius = state.item.borderRadius;
+        return Transform(
+          transform: transform,
+          child: GroupWidget(
+            children: [
+              for (var layoutGrid in state.item.layoutGrids)
+                AdaptiveSizedBox(
+                  size: innerSize,
+                  child: FreeHitClipRRect(
+                    borderRadius: borderRadius ?? BorderRadius.zero,
+                    clipBehavior: clipContent ? Clip.antiAlias : Clip.none,
                     child: CustomPaint(
                       painter: _LayoutGridPainter(
                         editor: editor,
@@ -263,33 +263,32 @@ class LayoutGridWidget extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
-            ListenableBuilder(
-              listenable: Listenable.merge(state.children),
-              builder: (context, child) {
-                Polygon? polygon = state.item.clipContent
-                    ? Polygon.fromRect(Offset.zero & innerSize)
-                    : null;
-                polygon = polygon?.transform(transform);
-                return ClipPath(
-                  clipper: polygon != null ? PathClipper(polygon.path) : null,
-                  clipBehavior: polygon != null ? Clip.antiAlias : Clip.none,
-                  child: Stack(
-                    fit: StackFit.passthrough,
-                    children: [
-                      for (var child in state.children)
-                        LayoutGridWidget(
-                          key: ValueKey(child),
-                          editor: editor,
-                          parentTransform: transform,
-                          state: child,
+              IgnorePointer(
+                child: ListenableBuilder(
+                  listenable: Listenable.merge(state.children),
+                  builder: (context, child) {
+                    return AdaptiveSizedBox(
+                      size: innerSize,
+                      child: FreeHitClipRRect(
+                        borderRadius: borderRadius ?? BorderRadius.zero,
+                        clipBehavior: clipContent ? Clip.antiAlias : Clip.none,
+                        child: GroupWidget(
+                          children: [
+                            for (var child in state.children)
+                              LayoutGridWidget(
+                                key: ValueKey(child),
+                                editor: editor,
+                                state: child,
+                              ),
+                          ],
                         ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

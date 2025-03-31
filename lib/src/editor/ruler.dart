@@ -26,6 +26,15 @@ class CanvasRulerSnappingPoint extends SnappingPoint with ChangeNotifier {
     }
   }
 
+  @override
+  SnappingPoint shift(Offset offset) {
+    return CanvasRulerSnappingPoint(
+      offset: this.offset + (axis == Axis.horizontal ? offset.dy : offset.dx),
+      axis: axis,
+      parent: parent,
+    );
+  }
+
   CanvasObjectState? get parent => _parent;
 
   set parent(CanvasObjectState? parent) {
@@ -168,7 +177,7 @@ class _CanvasRulerState extends State<CanvasRuler> {
           //       .dispatch(context);
           // }
           if (_draggingSession != null) {
-            widget.editor.updateControlSession(
+            _draggingSession = widget.editor.updateControlSession(
                 _draggingSession!, details.globalPosition);
           }
         },
@@ -261,28 +270,6 @@ class _CanvasRulerState extends State<CanvasRuler> {
         });
   }
 
-  double _attemptSnap(double newOffset, Axis direction) {
-    CanvasRulerSnappingPoint newPoint =
-        CanvasRulerSnappingPoint(offset: newOffset, axis: direction);
-    double? snappedOffset;
-    widget.editor.visitSnappingPoint(
-      (point) {
-        var result = point.computeSnapping(
-            widget.editor, newPoint, widget.editor.snappingConfiguration);
-        if (result != null) {
-          if (direction == Axis.horizontal) {
-            snappedOffset = result.newOffset.dx;
-          } else {
-            snappedOffset = result.newOffset.dy;
-          }
-          return false;
-        }
-        return true;
-      },
-    );
-    return snappedOffset ?? newOffset;
-  }
-
   Widget _buildSnappingPointDraggable(CanvasRulerSnappingPoint point) {
     var editorTransform = widget.editor.transform;
     return ListenableBuilder(
@@ -350,7 +337,7 @@ class _CanvasRulerState extends State<CanvasRuler> {
           },
           onPanUpdate: (details) {
             if (_draggingSession != null) {
-              widget.editor.updateControlSession(
+              _draggingSession = widget.editor.updateControlSession(
                   _draggingSession!, details.globalPosition);
             }
           },

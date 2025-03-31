@@ -2,9 +2,12 @@ import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/notifications.dart';
 import 'package:canvas/src/editor/ruler.dart';
 import 'package:canvas/src/editor/snap.dart';
+import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/cupertino.dart';
 
 class EditorControlDelta {
+  static EditorControlDelta zero =
+      const EditorControlDelta(start: Offset.zero, end: Offset.zero);
   // the start and end must be at editor local coordinate (after translated and scaled by its transform)
   final Offset start;
   final Offset end;
@@ -24,7 +27,24 @@ class EditorControlDelta {
     );
   }
 
+  EditorControlDelta shift(Offset delta) {
+    return copyWith(
+      end: end + delta,
+    );
+  }
+
+  bool get hasChanged => start != end;
+
   Offset get delta => end - start;
+
+  double get deltaY => end.dy - start.dy;
+  double get deltaX => end.dx - start.dx;
+
+  double get endX => end.dx;
+  double get endY => end.dy;
+
+  double get startX => start.dx;
+  double get startY => start.dy;
 
   EditorControlDelta transform(Matrix4 transform) {
     return EditorControlDelta(
@@ -35,12 +55,29 @@ class EditorControlDelta {
 }
 
 abstract class EditorControlSession {
-  const EditorControlSession();
-  void start(Offset start);
-  void update(Offset end);
-  void cancel();
-  void apply();
-  CanvasRulerSnappingPoint computeNewSnappingPoint(Offset end);
+  late EditorControlDelta _delta;
+  void start(Offset start) {
+    _delta = EditorControlDelta(start: start, end: start);
+    onStart();
+  }
+
+  void update(Offset end) {
+    _delta = _delta.copyWith(end: end);
+    // onUpdate is called manually after the end is snapped
+  }
+
+  void shift(Offset delta) {
+    _delta = _delta.shift(delta);
+  }
+
+  EditorControlDelta get delta => _delta;
+
+  void onStart() {}
+  void onUpdate() {}
+  void onCancel() {}
+  void onApply() {}
+
+  void visitTransformedSnappingPoint(SnappingPointVisitor visitor) {}
 }
 
 abstract class RulerSnappingControlSession extends EditorControlSession {
@@ -53,43 +90,40 @@ class RulerCreateSnappingPointControlSession
   final Axis direction;
   RulerCreateSnappingPointControlSession(this.editor, this.direction);
 
-  late Offset _startOffset;
-  Offset? _end;
   late CanvasRulerSnappingPoint _snappingPoint;
 
   @override
   CanvasRulerSnappingPoint get snappingPoint => _snappingPoint;
 
   @override
-  CanvasRulerSnappingPoint computeNewSnappingPoint(Offset end) {
-    return CanvasRulerSnappingPoint(
-      offset: direction == Axis.horizontal ? end.dy : end.dx,
+  void visitTransformedSnappingPoint(SnappingPointVisitor visitor) {
+    visitor(CanvasRulerSnappingPoint(
+      offset: direction == Axis.horizontal ? delta.startY : delta.startX,
       axis: direction,
-    );
+    ));
   }
 
   @override
-  void start(Offset start) {
-    _startOffset = start;
+  void onStart() {
     _snappingPoint = editor.createRulerSnappingPoint(
-        direction == Axis.horizontal ? start.dy : start.dx, direction);
+        direction == Axis.horizontal ? delta.startY : delta.startX, direction);
   }
 
   @override
-  void update(Offset end) {
-    _snappingPoint.offset = direction == Axis.horizontal ? end.dy : end.dx;
-    _end = end;
+  void onUpdate() {
+    _snappingPoint.offset =
+        direction == Axis.horizontal ? delta.endY : delta.endX;
   }
 
   @override
-  void apply() {
-    if (_end == null) {
+  void onApply() {
+    if (!this.delta.hasChanged) {
       editor.removeRulerSnappingPoint(_snappingPoint);
       return;
     }
     double delta = snappingPoint.axis == Axis.horizontal
-        ? _end!.dy - _startOffset.dy
-        : _end!.dx - _startOffset.dx;
+        ? this.delta.deltaY
+        : this.delta.deltaX;
     if (delta < 1) {
       editor.removeRulerSnappingPoint(snappingPoint);
       return;
@@ -113,7 +147,7 @@ class RulerCreateSnappingPointControlSession
   }
 
   @override
-  void cancel() {
+  void onCancel() {
     editor.removeRulerSnappingPoint(_snappingPoint);
   }
 }
@@ -126,33 +160,13 @@ class RulerUpdateSnappingPointControlSession
   RulerUpdateSnappingPointControlSession(this.editor, this.snappingPoint);
 
   @override
-  CanvasRulerSnappingPoint computeNewSnappingPoint(Offset end) {
-    return CanvasRulerSnappingPoint(
-      offset: snappingPoint.axis == Axis.horizontal ? end.dy : end.dx,
-      axis: snappingPoint.axis,
-    );
-  }
-
-  late Offset _start;
-  Offset? _end;
-  @override
-  void start(Offset start) {
-    _start = start;
-  }
-
-  @override
-  void update(Offset end) {
-    _end = end;
+  void onUpdate() {
     snappingPoint.offset =
-        snappingPoint.axis == Axis.horizontal ? end.dy : end.dx;
+        snappingPoint.axis == Axis.horizontal ? delta.endY : delta.endX;
   }
 
   @override
-  void apply() {
-    if (_end == null) {
-      editor.removeRulerSnappingPoint(snappingPoint);
-      return;
-    }
+  void onApply() {
     double offset = snappingPoint.offset * editor.transform.zoom +
         (snappingPoint.axis == Axis.horizontal
             ? (editor.viewportSize.height / 2 * editor.transform.zoom +
@@ -172,13 +186,74 @@ class RulerUpdateSnappingPointControlSession
   }
 
   @override
-  void cancel() {
-    if (_end == null) {
-      return;
-    }
+  void onCancel() {
     double delta = snappingPoint.axis == Axis.horizontal
-        ? _end!.dy - _start.dy
-        : _end!.dx - _start.dx;
+        ? this.delta.deltaY
+        : this.delta.deltaX;
     snappingPoint.offset -= delta;
+  }
+}
+
+class SelectionMoveControlSession extends EditorControlSession {
+  final Selection selection;
+  final CanvasEditorHandler editor;
+
+  SelectionMoveControlSession(this.selection, this.editor);
+
+  @override
+  void visitTransformedSnappingPoint(SnappingPointVisitor visitor) {
+    // for (var group in selection.groups.value) {
+    //   for (var item in group.selectedItems) {
+    //     if (!item.visitSnappingPoint(
+    //       (point) {
+    //         return visitor(point.shift(delta.delta));
+    //       },
+    //       transform: item.globalTransform,
+    //     )) {
+    //       return;
+    //     }
+    //   }
+    // }
+  }
+
+  @override
+  void onStart() {
+    for (var group in selection.groups.value) {
+      for (var item in group.selectedItems) {
+        item.item.editorOffset =
+            Offset.zero; // this prevents snapping for the item
+      }
+    }
+  }
+
+  @override
+  void onUpdate() {
+    selection.editorOffset.value = delta;
+    for (var group in selection.groups.value) {
+      for (var item in group.selectedItems) {
+        var transform = Matrix4.inverted(item.globalTransform);
+        var transformedDelta = delta.transform(transform);
+        item.item.editorOffset = transformedDelta.delta;
+      }
+    }
+  }
+
+  @override
+  void onApply() {
+    _resetEditorOffset();
+  }
+
+  @override
+  void onCancel() {
+    _resetEditorOffset();
+  }
+
+  void _resetEditorOffset() {
+    selection.editorOffset.value = EditorControlDelta.zero;
+    for (var group in selection.groups.value) {
+      for (var item in group.selectedItems) {
+        item.item.editorOffset = null;
+      }
+    }
   }
 }

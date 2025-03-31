@@ -16,12 +16,15 @@ enum CanvasSelectionMode {
   multiple,
 }
 
+typedef SnappingPointHost = Function(SnappingPointVisitor visitor);
+
 mixin CanvasEditorHandler {
   void sendNotification(Notification notification);
   EditorControlSession? get controlSession;
   T startControlSession<T extends EditorControlSession>(
       T session, Offset globalStart);
-  void updateControlSession(EditorControlSession session, Offset globalEnd);
+  T? updateControlSession<T extends EditorControlSession>(
+      T session, Offset globalEnd);
   void endControlSession(EditorControlSession session);
   void cancelControlSession(EditorControlSession session);
   Ticker createTicker(TickerCallback onTick);
@@ -48,7 +51,7 @@ mixin CanvasEditorHandler {
   void addToLocalSelection(CanvasItemState item);
   void setToLocalSelection(CanvasItemState item);
   void hitTest(CanvasHitTestResult result, Offset position);
-  void hitTestPolygon(CanvasHitTestResult result, Polygon polygon);
+  void selectTest(CanvasHitTestResult result, Path path);
   // converts from widget local position to editor local position
   Offset globalToLocal(Offset position);
   Offset localToGlobal(Offset position);
@@ -57,7 +60,6 @@ mixin CanvasEditorHandler {
   Size get viewportSize;
   Rect computeViewportBounds();
   void handleItemClick(CanvasItemState item);
-  void handleItemShift(Offset globalStart, Offset globalEnd);
   Selection? getSelectionForItem(CanvasItemState item);
   CanvasRulerSnappingPoint createRulerSnappingPoint(
       double offset, Axis direction);
@@ -67,7 +69,8 @@ mixin CanvasEditorHandler {
   set selectedSnappingPoint(CanvasRulerSnappingPoint? point);
   ValueListenable<CanvasRulerSnappingPoint?>
       get selectedSnappingPointListenable;
-  SnappingResult? snap(SnappingPoint point);
+  // SnappingResult? snap(SnappingPoint point);
+  SnappingResult? snap(SnappingPointHost host);
 
   SnappingConfiguration get snappingConfiguration;
 

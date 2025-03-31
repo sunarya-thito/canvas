@@ -59,10 +59,14 @@ class _SampleState extends State<Sample> {
     );
     CanvasObject ch1 = CanvasObject(
       debugLabel: 'child1',
-      layoutData: FixedLayoutData(
+      layoutData: AbsoluteLayoutData(
         // width: SizeConstraint.fixed(100),
-        width: SizeConstraint.unconstrained(),
-        height: SizeConstraint.unconstrained(),
+        // width: SizeConstraint.unconstrained(),
+        // height: SizeConstraint.unconstrained(),
+        top: -150,
+        left: -150,
+        width: 300,
+        height: 300,
       ),
       layoutGrids: [
         // BlockLayoutGrid.stretch(
@@ -79,16 +83,18 @@ class _SampleState extends State<Sample> {
       ],
     );
     CanvasObject ch2 = CanvasObject(
-      debugLabel: 'child2',
-      borderRadius: BorderRadius.circular(25),
-      layoutData: FlexLayoutData(
-        flex: 3,
-        min: 150,
-        max: 204,
-        cross: SizeConstraint.fixed(150),
-        shear: Offset(30 * pi / 180, -60 * pi / 180),
-      ),
-    );
+        debugLabel: 'child2',
+        borderRadius: BorderRadius.circular(25),
+        layoutData: FlexLayoutData(
+          flex: 3,
+          min: 150,
+          max: 204,
+          cross: SizeConstraint.fixed(150),
+          shear: Offset(30 * pi / 180, -60 * pi / 180),
+        ),
+        layoutGrids: [
+          GridLayoutGrid(),
+        ]);
     CanvasObject ch3 = CanvasObject(
       debugLabel: 'child3',
       layoutData: FlexLayoutData(

@@ -22,10 +22,12 @@ class SnappingConfiguration {
   //   pi / 4, // deg: 45
   //   pi / 2, // deg: 90
   // ];
+  final bool enableSnapping;
   final List<double> angleSnapping;
   final bool rotatedSnap;
 
   const SnappingConfiguration({
+    this.enableSnapping = true,
     this.snappingDistance = 10,
     this.angleSnapping = defaultAngleSnapping,
     this.rotatedSnap = true,
@@ -90,6 +92,8 @@ abstract class SnappingPoint {
   );
 
   void visitLines(SnappingLineVisitor visitor);
+
+  SnappingPoint shift(Offset offset);
 }
 
 class AbsoluteSnappingPoint extends SnappingPoint {
@@ -103,6 +107,14 @@ class AbsoluteSnappingPoint extends SnappingPoint {
     required this.point,
     this.angle = 0,
   });
+
+  @override
+  SnappingPoint shift(Offset offset) {
+    return AbsoluteSnappingPoint(
+      point: point + offset,
+      angle: angle,
+    );
+  }
 
   @override
   void visitLines(SnappingLineVisitor visitor) {
@@ -155,6 +167,15 @@ class CanvasItemSnappingPoint extends AbsoluteSnappingPoint {
   });
 
   @override
+  SnappingPoint shift(Offset offset) {
+    return CanvasItemSnappingPoint(
+      item: item,
+      point: point + offset,
+      angle: angle,
+    );
+  }
+
+  @override
   SnappingResult? computeSnapping(CanvasEditorHandler editor,
       SnappingPoint other, SnappingConfiguration configuration) {
     if (other is CanvasItemSnappingPoint && angle != 0) {
@@ -181,11 +202,20 @@ class CanvasItemSnappingPoint extends AbsoluteSnappingPoint {
   }
 }
 
-class SelectionSnappingPoint extends AbsoluteSnappingPoint {
-  final SelectionGroup group;
+// class SelectionSnappingPoint extends AbsoluteSnappingPoint {
+//   final SelectionGroup group;
 
-  const SelectionSnappingPoint({
-    required this.group,
-    required super.point,
-  });
-}
+//   const SelectionSnappingPoint({
+//     required this.group,
+//     required super.point,
+//   });
+
+//   @override
+//   SnappingPoint shift(Offset offset) {
+//     return SelectionSnappingPoint(
+//       group: group,
+//       point: point + offset,
+//     );
+//   }
+// }
+// IT SHOULD BE RESIZE NOT SELECTION DRAG

@@ -22,6 +22,7 @@ abstract class EditorDragGestureSession {
     if (_ticker != null) {
       return;
     }
+    _lastTick = null;
     _ticker = editor.createTicker(onTick);
     _ticker!.start();
   }
@@ -56,18 +57,25 @@ abstract class EditorDragGestureSession {
       shiftX = (position.dx - horizontalMax) / shiftPadding.right;
     }
     if (shiftX != 0 || shiftY != 0) {
-      _shift = Offset(-shiftX * 3, -shiftY * 3);
+      _shift = Offset(-shiftX, -shiftY);
       startTicker();
     } else {
       stopTicker();
     }
   }
 
+  Duration? _lastTick;
   void onTick(Duration elapsed) {
+    Duration delta = elapsed - (_lastTick ?? Duration.zero);
     if (_shift != null) {
-      editor.dragViewport(_shift!);
-      onShift(_shift!);
+      var shift = Offset(
+        _shift!.dx * delta.inMilliseconds / 2,
+        _shift!.dy * delta.inMilliseconds / 2,
+      );
+      editor.dragViewport(shift);
+      onShift(shift);
     }
+    _lastTick = elapsed;
   }
 
   void onShift(Offset shift) {}

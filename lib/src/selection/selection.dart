@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/extra.dart';
 import 'package:flutter/widgets.dart';
 
@@ -184,6 +185,8 @@ class Selection {
   // from the selected items based on the parent item.
   final ValueNotifier<List<SelectionGroup>> groups;
   final SelectionClient client;
+  final ValueNotifier<EditorControlDelta> editorOffset =
+      ValueNotifier(EditorControlDelta.zero);
 
   CanvasItemState? _selectedLayer; // used for smart selection
 

@@ -1,4 +1,5 @@
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/extra.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:canvas/src/selection/selection.dart';
@@ -162,172 +163,229 @@ class _SelectionTransformControlWidgetState
     );
   }
 
+  SelectionMoveControlSession? _moveSession;
+
   @override
   Widget build(BuildContext context) {
-    var box = widget.selectionGroup
-        .getTransformControlBox(parentTransform: widget.parentTransform);
-    Size size = box.size;
-    Matrix4 transform = box.transform;
-    Polygon polygon = Polygon.fromRect(Offset.zero & size);
-    polygon = polygon.transform(transform);
-    final theme = CanvasTheme.of(context);
-    final handleSize = Size(
-        theme.transformControl.controlSize, theme.transformControl.controlSize);
-    final topLeftHandleCenter = polygon.points[0];
-    final topRightHandleCenter = polygon.points[1];
-    final bottomRightHandleCenter = polygon.points[2];
-    final bottomLeftHandleCenter = polygon.points[3];
-    final topHandleCenter = (topLeftHandleCenter + topRightHandleCenter) * 0.5;
-    final shear = box.shear;
-    final flipHorizontal = size.width.isNegative;
-    final flipVertical = size.height.isNegative;
-    return Stack(
-      fit: StackFit.passthrough,
-      children: [
-        IgnorePointer(
-          child: DecoratedPolygon(
-            polygon: polygon,
-            strokeColor: theme.transformControl.controlBoundaryBorderColor,
-            strokeWidth: theme.transformControl.controlBoundaryBorderWidth,
-          ),
-        ),
-        // extra controls
-        for (var control in _extraControls)
-          ExtraTransformationControlWidget(control: control),
-        // top
-        _buildHandle(
-          theme,
-          topHandleCenter,
-          handleSize,
-          size,
-          shear,
-          Axis.horizontal,
-          DirectionalCursor.top
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-        ),
-        // bottom
-        _buildHandle(
-          theme,
-          (bottomLeftHandleCenter + bottomRightHandleCenter) * 0.5,
-          handleSize,
-          size,
-          shear,
-          Axis.horizontal,
-          DirectionalCursor.bottom
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-        ),
-        // left
-        _buildHandle(
-          theme,
-          (topLeftHandleCenter + bottomLeftHandleCenter) * 0.5,
-          handleSize,
-          size,
-          shear,
-          Axis.vertical,
-          DirectionalCursor.left
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-        ),
-        // right
-        _buildHandle(
-          theme,
-          (topRightHandleCenter + bottomRightHandleCenter) * 0.5,
-          handleSize,
-          size,
-          shear,
-          Axis.vertical,
-          DirectionalCursor.right
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-        ),
-        // rotate topLeft
-        _buildDiagonalHandle(
-          theme,
-          topLeftHandleCenter,
-          handleSize,
-          shear,
-          DirectionalCursor.topRight
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-          expand: EdgeInsets.only(
-            top: handleSize.height,
-            left: handleSize.width,
-          ),
-          fill: false,
-        ),
-        // rotate topRight
-        _buildDiagonalHandle(
-          theme,
-          topRightHandleCenter,
-          handleSize,
-          shear,
-          DirectionalCursor.bottomRight
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-          expand: EdgeInsets.only(
-            top: handleSize.height,
-            right: handleSize.width,
-          ),
-          fill: false,
-        ),
-        // rotate bottomLeft
-        _buildDiagonalHandle(
-          theme,
-          bottomLeftHandleCenter,
-          handleSize,
-          shear,
-          DirectionalCursor.topLeft
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-          expand: EdgeInsets.only(
-            bottom: handleSize.height,
-            left: handleSize.width,
-          ),
-          fill: false,
-        ),
-        // rotate bottomRight
-        _buildDiagonalHandle(
-          theme,
-          bottomRightHandleCenter,
-          handleSize,
-          shear,
-          DirectionalCursor.bottomLeft
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-          expand: EdgeInsets.only(
-            bottom: handleSize.height,
-            right: handleSize.width,
-          ),
-          fill: false,
-        ),
-        // topLeft
-        _buildDiagonalHandle(
-          theme,
-          topLeftHandleCenter,
-          handleSize,
-          shear,
-          DirectionalCursor.topLeft
-              .flip(horizontal: flipHorizontal, vertical: flipVertical),
-        ),
-        // topRight
-        _buildDiagonalHandle(
-            theme,
-            topRightHandleCenter,
-            handleSize,
-            shear,
-            DirectionalCursor.topRight
-                .flip(horizontal: flipHorizontal, vertical: flipVertical)),
-        // bottomLeft
-        _buildDiagonalHandle(
-            theme,
-            bottomLeftHandleCenter,
-            handleSize,
-            shear,
-            DirectionalCursor.bottomLeft
-                .flip(horizontal: flipHorizontal, vertical: flipVertical)),
-        // bottomRight
-        _buildDiagonalHandle(
-            theme,
-            bottomRightHandleCenter,
-            handleSize,
-            shear,
-            DirectionalCursor.bottomRight
-                .flip(horizontal: flipHorizontal, vertical: flipVertical)),
-      ],
+    return ListenableBuilder(
+      listenable: widget.selection.editorOffset,
+      builder: (context, child) {
+        var delta = widget.selection.editorOffset.value;
+        var parentTransform = Matrix4.copy(widget.parentTransform);
+        parentTransform.translate(delta.deltaX, delta.deltaY);
+        var box = widget.selectionGroup
+            .getTransformControlBox(parentTransform: parentTransform);
+        Size size = box.size;
+        Matrix4 transform = Matrix4.copy(box.transform);
+        Polygon polygon = Polygon.fromRect(Offset.zero & size);
+        polygon = polygon.transform(transform);
+        final theme = CanvasTheme.of(context);
+        final handleSize = Size(theme.transformControl.controlSize,
+            theme.transformControl.controlSize);
+        final topLeftHandleCenter = polygon.points[0];
+        final topRightHandleCenter = polygon.points[1];
+        final bottomRightHandleCenter = polygon.points[2];
+        final bottomLeftHandleCenter = polygon.points[3];
+        final topHandleCenter =
+            (topLeftHandleCenter + topRightHandleCenter) * 0.5;
+        final shear = box.shear;
+        final flipHorizontal = size.width.isNegative;
+        final flipVertical = size.height.isNegative;
+        final editor = widget.editor;
+        return Stack(
+          fit: StackFit.passthrough,
+          children: [
+            for (var item in widget.selectionGroup.selectedItems)
+              Builder(
+                builder: (context) {
+                  var globalTransform =
+                      widget.parentTransform * item.globalEditorTransform;
+                  Polygon polygon =
+                      Polygon.fromRect(Offset.zero & item.innerSize);
+                  polygon = polygon.transform(globalTransform);
+                  return DecoratedPolygon(
+                    polygon: polygon,
+                    strokeColor:
+                        theme.transformControl.controlBoundaryBorderColor,
+                    strokeWidth:
+                        theme.transformControl.controlBoundaryBorderWidth,
+                  );
+                },
+              ),
+            GestureDetector(
+              onTapUp: (details) {
+                CanvasItemState? item = editor.findItemAtPosition(
+                    editor.globalToLocal(details.localPosition));
+                if (item != null) {
+                  editor.handleItemClick(item);
+                }
+              },
+              onPanStart: (details) {
+                _moveSession = editor.startControlSession(
+                    SelectionMoveControlSession(widget.selection, editor),
+                    details.globalPosition);
+              },
+              onPanUpdate: (details) {
+                if (_moveSession != null) {
+                  _moveSession = editor.updateControlSession(
+                      _moveSession!, details.globalPosition);
+                }
+              },
+              onPanEnd: (details) {
+                if (_moveSession != null) {
+                  editor.endControlSession(_moveSession!);
+                }
+              },
+              onPanCancel: () {
+                if (_moveSession != null) {
+                  editor.cancelControlSession(_moveSession!);
+                }
+              },
+              child: DecoratedPolygon(
+                polygon: polygon,
+                strokeColor: theme.transformControl.controlBoundaryBorderColor,
+                strokeWidth: theme.transformControl.controlBoundaryBorderWidth,
+              ),
+            ),
+            // extra controls
+            for (var control in _extraControls)
+              ExtraTransformationControlWidget(control: control),
+            // top
+            _buildHandle(
+              theme,
+              topHandleCenter,
+              handleSize,
+              size,
+              shear,
+              Axis.horizontal,
+              DirectionalCursor.top
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+            ),
+            // bottom
+            _buildHandle(
+              theme,
+              (bottomLeftHandleCenter + bottomRightHandleCenter) * 0.5,
+              handleSize,
+              size,
+              shear,
+              Axis.horizontal,
+              DirectionalCursor.bottom
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+            ),
+            // left
+            _buildHandle(
+              theme,
+              (topLeftHandleCenter + bottomLeftHandleCenter) * 0.5,
+              handleSize,
+              size,
+              shear,
+              Axis.vertical,
+              DirectionalCursor.left
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+            ),
+            // right
+            _buildHandle(
+              theme,
+              (topRightHandleCenter + bottomRightHandleCenter) * 0.5,
+              handleSize,
+              size,
+              shear,
+              Axis.vertical,
+              DirectionalCursor.right
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+            ),
+            // rotate topLeft
+            _buildDiagonalHandle(
+              theme,
+              topLeftHandleCenter,
+              handleSize,
+              shear,
+              DirectionalCursor.topRight
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              expand: EdgeInsets.only(
+                top: handleSize.height,
+                left: handleSize.width,
+              ),
+              fill: false,
+            ),
+            // rotate topRight
+            _buildDiagonalHandle(
+              theme,
+              topRightHandleCenter,
+              handleSize,
+              shear,
+              DirectionalCursor.bottomRight
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              expand: EdgeInsets.only(
+                top: handleSize.height,
+                right: handleSize.width,
+              ),
+              fill: false,
+            ),
+            // rotate bottomLeft
+            _buildDiagonalHandle(
+              theme,
+              bottomLeftHandleCenter,
+              handleSize,
+              shear,
+              DirectionalCursor.topLeft
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              expand: EdgeInsets.only(
+                bottom: handleSize.height,
+                left: handleSize.width,
+              ),
+              fill: false,
+            ),
+            // rotate bottomRight
+            _buildDiagonalHandle(
+              theme,
+              bottomRightHandleCenter,
+              handleSize,
+              shear,
+              DirectionalCursor.bottomLeft
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              expand: EdgeInsets.only(
+                bottom: handleSize.height,
+                right: handleSize.width,
+              ),
+              fill: false,
+            ),
+            // topLeft
+            _buildDiagonalHandle(
+              theme,
+              topLeftHandleCenter,
+              handleSize,
+              shear,
+              DirectionalCursor.topLeft
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+            ),
+            // topRight
+            _buildDiagonalHandle(
+                theme,
+                topRightHandleCenter,
+                handleSize,
+                shear,
+                DirectionalCursor.topRight
+                    .flip(horizontal: flipHorizontal, vertical: flipVertical)),
+            // bottomLeft
+            _buildDiagonalHandle(
+                theme,
+                bottomLeftHandleCenter,
+                handleSize,
+                shear,
+                DirectionalCursor.bottomLeft
+                    .flip(horizontal: flipHorizontal, vertical: flipVertical)),
+            // bottomRight
+            _buildDiagonalHandle(
+                theme,
+                bottomRightHandleCenter,
+                handleSize,
+                shear,
+                DirectionalCursor.bottomRight
+                    .flip(horizontal: flipHorizontal, vertical: flipVertical)),
+          ],
+        );
+      },
     );
   }
 }

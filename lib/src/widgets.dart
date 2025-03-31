@@ -1,7 +1,9 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/external/widgets.dart';
+import 'package:canvas/src/selection/selection.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 
@@ -61,7 +63,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
     });
   }
 
-  Offset? _dragStart;
+  SelectionMoveControlSession? _moveControlSession;
 
   @override
   Widget build(BuildContext context) {
@@ -93,30 +95,41 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
                 behavior: HitTestBehavior.deferToChild,
                 onTap: () {
                   widget.state.editor?.handleItemClick(widget.state);
-                  print('tap ${widget.state.item.debugLabel}');
                 },
                 onPanStart: editor == null
                     ? null
                     : (details) {
-                        _dragStart = details.globalPosition;
+                        editor.setToLocalSelection(widget.state);
+                        Selection? local = editor.localSelection;
+                        if (local != null) {
+                          _moveControlSession = editor.startControlSession(
+                              SelectionMoveControlSession(local, editor),
+                              details.globalPosition);
+                        }
                       },
                 onPanUpdate: editor == null
                     ? null
                     : (details) {
-                        if (_dragStart != null) {
-                          editor.handleItemShift(
-                              _dragStart!, details.globalPosition);
+                        if (_moveControlSession != null) {
+                          _moveControlSession = editor.updateControlSession(
+                              _moveControlSession!, details.globalPosition);
                         }
                       },
                 onPanEnd: editor == null
                     ? null
                     : (details) {
-                        _dragStart = null;
+                        if (_moveControlSession != null) {
+                          editor.endControlSession(_moveControlSession!);
+                          _moveControlSession = null;
+                        }
                       },
                 onPanCancel: editor == null
                     ? null
                     : () {
-                        _dragStart = null;
+                        if (_moveControlSession != null) {
+                          editor.cancelControlSession(_moveControlSession!);
+                          _moveControlSession = null;
+                        }
                       },
                 child: Container(
                   decoration: BoxDecoration(

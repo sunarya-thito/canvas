@@ -257,17 +257,40 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   }
 
   Matrix4 get globalTransform {
-    Matrix4 currentTransform = item.layoutData.computeTranslatedMatrix(this);
-    CanvasItemState? current = this;
+    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
+    CanvasItemState? current = parent;
     while (current != null) {
-      var parent = current.parent;
-      if (parent != null) {
-        currentTransform = parent.item.layoutData
-            .computeTranslatedMatrix(parent, parentMatrix: currentTransform);
-      }
-      current = parent;
+      transform =
+          current.item.layoutData.computeTranslatedMatrix(current) * transform;
+      current = current.parent;
     }
-    return currentTransform;
+    return transform;
+  }
+
+  Matrix4 get globalEditorTransform {
+    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
+    var editorOffset = item.editorOffset;
+    if (editorOffset != null) {
+      transform.translate(editorOffset.dx, editorOffset.dy);
+    }
+    CanvasItemState? current = parent;
+    while (current != null) {
+      transform =
+          current.item.layoutData.computeTranslatedMatrix(current) * transform;
+      current = current.parent;
+    }
+    return transform;
+  }
+
+  Matrix4 get parentTransform {
+    Matrix4 transform = Matrix4.identity();
+    CanvasItemState? current = parent;
+    while (current != null) {
+      transform =
+          current.item.layoutData.computeTranslatedMatrix(current) * transform;
+      current = current.parent;
+    }
+    return transform;
   }
 
   Offset get globalShear {
@@ -285,6 +308,14 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
 
   bool visitSnappingPoint(SnappingPointVisitor visitor,
       {Matrix4? parentTransform, Matrix4? transform}) {
+    // if this object or its ascendant is being dragged, then do not snap!
+    CanvasItemState? currentTest = this;
+    while (currentTest != null) {
+      if (currentTest.item.editorOffset != null) {
+        return true;
+      }
+      currentTest = currentTest.parent;
+    }
     transform ??= item.layoutData.computeTranslatedMatrix(this);
     if (parentTransform != null) {
       transform = (parentTransform * transform) as Matrix4;
@@ -352,6 +383,10 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     return true;
   }
 
+  Path getPath(TextDirection textDirection) {
+    return Path()..addRect(Offset.zero & innerSize);
+  }
+
   // this is build when a single selection is created upon this item
   Iterable<ExtraTransformationControl> buildControls({
     required CanvasEditorHandler editor,
@@ -383,15 +418,27 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     return innerSize.containsIgnoreSign(position);
   }
 
-  void selectTest(CanvasHitTestResult result, Polygon polygon) {
-    selectTestSelf(result, polygon);
+  void selectTest(
+      CanvasHitTestResult result, Path path, TextDirection textDirection) {
+    selectTestSelf(result, path, textDirection);
   }
 
-  void selectTestSelf(CanvasHitTestResult result, Polygon polygon) {
-    Polygon self = Polygon.fromRect(Offset.zero & innerSize);
-    PolygonOverlapResult hit = polygon.overlap(self);
-    if (hit != PolygonOverlapResult.none) {
-      result.add(CanvasPolygonHitTestEntry(this, hit));
+  void selectTestSelf(
+      CanvasHitTestResult result, Path path, TextDirection textDirection) {
+    Path self = getPath(textDirection);
+    Path combined = Path.combine(PathOperation.intersect, self, path);
+    if (combined.computeMetrics().isNotEmpty) {
+      Rect rect = combined.getBounds();
+      Rect testRect = self.getBounds();
+      double rectArea = rect.width * rect.height;
+      double testArea = testRect.width * testRect.height;
+      PolygonOverlapResult overlap;
+      if (rectArea < testArea) {
+        overlap = PolygonOverlapResult.partial;
+      } else {
+        overlap = PolygonOverlapResult.full;
+      }
+      result.add(CanvasPathHitTestEntry(this, overlap));
     }
   }
 
@@ -608,35 +655,52 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   }
 
   @override
-  void selectTest(CanvasHitTestResult result, Polygon polygon) {
-    selectTestSelf(result, polygon);
-    selectTestChildren(result, polygon);
+  void selectTest(
+      CanvasHitTestResult result, Path path, TextDirection textDirection) {
+    selectTestSelf(result, path, textDirection);
+    selectTestChildren(result, path, textDirection);
   }
 
-  void selectTestChildren(CanvasHitTestResult result, Polygon polygon) {
+  void selectTestChildren(
+      CanvasHitTestResult result, Path path, TextDirection textDirection) {
     if (item.clipContent) {
-      Polygon self = Polygon.fromRect(Offset.zero & innerSize);
-      polygon = polygon.intersect(self);
+      Path self = getPath(textDirection);
+      path = Path.combine(PathOperation.intersect, self, path);
     }
     var child = lastChild;
     while (child != null) {
       var childTransform = child.item.layoutData.computeTranslatedMatrix(
         child,
       );
-      result.addWithPaintTransformPolygon(
+      result.addWithPaintTransformPath(
         transform: childTransform,
-        polygon: polygon,
+        path: path,
         hitTest: (result, polygon) {
-          child!.selectTest(result, polygon);
+          child!.selectTest(result, polygon, textDirection);
         },
       );
       child = child.parentData.previousSibling;
     }
   }
 
+  bool get descendantHasEditorOffset {
+    for (var item in children) {
+      if (item.item.editorOffset != null) {
+        return true;
+      }
+      if (item is CanvasObjectState && item.descendantHasEditorOffset) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   @override
   bool visitSnappingPoint(SnappingPointVisitor visitor,
       {Matrix4? parentTransform, Matrix4? transform}) {
+    if (descendantHasEditorOffset) {
+      return true;
+    }
     transform ??= item.layoutData
         .computeTranslatedMatrix(this, parentMatrix: parentTransform);
     if (parentTransform != null) {
@@ -652,6 +716,18 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
       }
     }
     return true;
+  }
+
+  @override
+  Path getPath(TextDirection textDirection) {
+    var borderRadius = item.borderRadius;
+    if (borderRadius == null) return super.getPath(textDirection);
+    var resolvedBorderRadius = borderRadius.resolve(textDirection);
+    if (resolvedBorderRadius == BorderRadius.zero) {
+      return super.getPath(textDirection);
+    }
+    return Path()
+      ..addRRect(resolvedBorderRadius.toRRect(Offset.zero & innerSize));
   }
 
   @override
@@ -819,8 +895,20 @@ class CanvasRootState extends CanvasObjectState {
   }
 
   @override
-  bool selectTestSelf(CanvasHitTestResult result, Polygon polygon) {
+  bool selectTestSelf(
+      CanvasHitTestResult result, Path path, TextDirection textDirection) {
     return false;
+  }
+
+  @override
+  bool visitSnappingPoint(SnappingPointVisitor visitor,
+      {Matrix4? parentTransform, Matrix4? transform}) {
+    for (var child in children) {
+      if (!child.visitSnappingPoint(visitor, parentTransform: transform)) {
+        return false;
+      }
+    }
+    return true;
   }
 }
 
@@ -867,6 +955,9 @@ typedef CanvasHitTest = bool Function(
 
 typedef CanvasHitTestPolygon = void Function(
     CanvasHitTestResult result, Polygon polygon);
+
+typedef CanvasHitTestPath = void Function(
+    CanvasHitTestResult result, Path path);
 
 class CanvasHitTestResult extends HitTestResult {
   CanvasHitTestResult() : super();
@@ -975,6 +1066,38 @@ class CanvasHitTestResult extends HitTestResult {
       popTransform();
     }
   }
+
+  void addWithRawTransformPath({
+    required Matrix4? transform,
+    required Path path,
+    required CanvasHitTestPath hitTest,
+  }) {
+    final Path transformedPath =
+        transform == null ? path : path.transform(transform.storage);
+    if (transform != null) {
+      pushTransform(transform);
+    }
+    hitTest(this, transformedPath);
+    if (transform != null) {
+      popTransform();
+    }
+  }
+
+  void addWithPaintTransformPath({
+    required Matrix4? transform,
+    required Path path,
+    required CanvasHitTestPath hitTest,
+  }) {
+    if (transform != null) {
+      transform =
+          Matrix4.tryInvert(PointerEvent.removePerspectiveTransform(transform));
+      if (transform == null) {
+        // Objects are not visible on screen and cannot be hit-tested.
+        return;
+      }
+    }
+    addWithRawTransformPath(transform: transform, path: path, hitTest: hitTest);
+  }
 }
 
 class CanvasHitTestEntry extends HitTestEntry<CanvasItemState> {
@@ -993,6 +1116,17 @@ class CanvasPolygonHitTestEntry extends HitTestEntry<CanvasItemState> {
   @override
   String toString() {
     return 'CanvasPolygonHitTestEntry(target: $target, overlap: $overlap)';
+  }
+}
+
+class CanvasPathHitTestEntry extends HitTestEntry<CanvasItemState> {
+  final PolygonOverlapResult overlap;
+
+  CanvasPathHitTestEntry(super.target, this.overlap);
+
+  @override
+  String toString() {
+    return 'CanvasPathHitTestEntry(target: $target, overlap: $overlap)';
   }
 }
 
