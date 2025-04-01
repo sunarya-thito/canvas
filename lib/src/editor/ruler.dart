@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/snap.dart';
+import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
 
 class CanvasRulerSnappingPoint extends SnappingPoint with ChangeNotifier {
@@ -107,6 +108,8 @@ class CanvasRuler extends StatefulWidget {
   final bool showRuler;
   final Widget child;
   final List<CanvasRulerSnappingPoint> snappingPoints;
+  final Selection? selection;
+  final Matrix4 editorTransform;
 
   const CanvasRuler({
     super.key,
@@ -114,6 +117,8 @@ class CanvasRuler extends StatefulWidget {
     required this.editor,
     required this.showRuler,
     this.snappingPoints = const [],
+    this.selection,
+    required this.editorTransform,
     required this.child,
   });
 
@@ -144,96 +149,21 @@ class _CanvasRulerState extends State<CanvasRuler> {
                 RulerCreateSnappingPointControlSession(
                     widget.editor, direction),
                 details.globalPosition);
-            // var editorTransform = widget.editor.transform;
-            // double offset = direction == Axis.horizontal
-            //     ? (-widget.editor.viewportSize.height / 2 -
-            //         editorTransform.offset.dy / editorTransform.zoom -
-            //         (width - details.localPosition.dy) / editorTransform.zoom)
-            //     : (-widget.editor.viewportSize.width / 2 -
-            //         editorTransform.offset.dx / editorTransform.zoom -
-            //         (width - details.localPosition.dx) / editorTransform.zoom);
-            // var created = Actions.invoke(
-            //     context,
-            //     CanvasCreateRulerSnappingPointIntent(
-            //         offset: offset,
-            //         direction: direction,
-            //         editor: widget.editor));
-            // if (created is CanvasRulerSnappingPoint) {
-            //   CanvasRulerSnappingPointCreatedNotification(
-            //           point: created, editor: widget.editor)
-            //       .dispatch(context);
-            //   _draggingPoint = created;
-            //   _startOffset = offset;
-            // }
           });
         },
         onPanUpdate: (details) {
-          // if (_draggingPoint != null) {
-          //   _draggingPoint!.offset.value += direction == Axis.horizontal
-          //       ? (details.delta.dy / widget.controller.value.zoom)
-          //       : (details.delta.dx / widget.controller.value.zoom);
-          //   CanvasRulerSnappingPointCreatedNotification(
-          //           point: _draggingPoint!, editor: widget.editor)
-          //       .dispatch(context);
-          // }
           if (_draggingSession != null) {
             _draggingSession = widget.editor.updateControlSession(
                 _draggingSession!, details.globalPosition);
           }
         },
         onPanEnd: (details) {
-          // setState(() {
-          // if (_startOffset != null && _draggingPoint != null) {
-          // double offset =
-          //     _draggingPoint!.offset.value * widget.controller.value.zoom +
-          //         (_draggingPoint!.axis == Axis.horizontal
-          //             ? (widget.editor.viewportSize.height /
-          //                     2 *
-          //                     widget.controller.value.zoom +
-          //                 widget.controller.value.offset.dy)
-          //             : (widget.editor.viewportSize.width /
-          //                     2 *
-          //                     widget.controller.value.zoom +
-          //                 widget.controller.value.offset.dx));
-          //   if ((_startOffset! - _draggingPoint!.offset.value).abs() <= 1 ||
-          //       offset < 0 ||
-          //       (_draggingPoint!.axis == Axis.vertical
-          //           ? offset > widget.editor.viewportSize.width
-          //           : offset > widget.editor.viewportSize.height)) {
-          //     Actions.invoke(
-          //         context,
-          //         CanvasRemoveRulerSnappingPointIntent(
-          //             point: _draggingPoint!, editor: widget.editor));
-          //     CanvasRulerSnappingPointRemovedNotification(
-          //             point: _draggingPoint!, editor: widget.editor)
-          //         .dispatch(context);
-          //   }
-          // }
-          // _draggingDirection = null;
-          // _draggingPoint = null;
-          // _startOffset = null;
-
-          // });
           if (_draggingSession != null) {
             widget.editor.endControlSession(_draggingSession!);
             _draggingSession = null;
           }
         },
         onPanCancel: () {
-          // setState(() {
-          //   if (_draggingPoint != null) {
-          //     Actions.invoke(
-          //         context,
-          //         CanvasRemoveRulerSnappingPointIntent(
-          //             point: _draggingPoint!, editor: widget.editor));
-          //     CanvasRulerSnappingPointRemovedNotification(
-          //             point: _draggingPoint!, editor: widget.editor)
-          //         .dispatch(context);
-          //   }
-          //   _draggingDirection = null;
-          //   _draggingPoint = null;
-          //   _draggingPoint = null;
-          // });
           if (_draggingSession != null) {
             widget.editor.cancelControlSession(_draggingSession!);
             _draggingSession = null;
@@ -422,6 +352,9 @@ class _CanvasRulerState extends State<CanvasRuler> {
                         snapSelectedStrokeColor: theme.snap.selectedStrokeColor,
                         selected: widget.editor.selectedSnappingPoint,
                         snapHoveredStrokeColor: theme.snap.hoveredStrokeColor,
+                        selection: widget.selection,
+                        editorTransform: widget.editorTransform,
+                        selectionColor: theme.ruler.selectionColor,
                       ),
                     );
                   }),
@@ -468,6 +401,9 @@ class _RulerPainter extends CustomPainter {
   final Color snapHoveredStrokeColor;
   final CanvasRulerSnappingPoint? selected;
   final CanvasRulerSnappingPoint? hovered;
+  final Selection? selection;
+  final Matrix4 editorTransform;
+  final Color selectionColor;
 
   _RulerPainter({
     required this.zoom,
@@ -488,6 +424,9 @@ class _RulerPainter extends CustomPainter {
     required this.snapHoveredStrokeColor,
     required this.selected,
     required this.hovered,
+    required this.selection,
+    required this.editorTransform,
+    required this.selectionColor,
   }) : super(repaint: Listenable.merge(snappingPoints));
 
   @override
@@ -512,6 +451,15 @@ class _RulerPainter extends CustomPainter {
     Size editorSize = Size(size.width - rulerWidth, size.height - rulerWidth);
     Offset rulerOffset =
         Offset(textDirection == TextDirection.ltr ? rulerWidth : 0, rulerWidth);
+
+    bool overrideWithSelection = false;
+    Rect? selectionRect;
+    if (selection != null && rulerWidth > 0) {
+      overrideWithSelection = selection!.singleSelection != null;
+      selectionRect = selection!.computeBoundingBox(
+        parentTransform: editorTransform,
+      );
+    }
 
     if (rulerWidth > 0) {
       // draw the ruler background
@@ -554,13 +502,18 @@ class _RulerPainter extends CustomPainter {
       }
       // draw the texts
 
+      double horizontalOffset = (offset.dx + (editorSize.width / 2 * zoom));
+
+      if (overrideWithSelection) {
+        print('left: ${selectionRect!.left}');
+        horizontalOffset = selectionRect!.left;
+      }
+
       double currentHorizontalText =
-          ((-offset.dx - editorSize.width / 2 * zoom) / (gap * zoom))
-                  .ceilToDouble() -
-              1;
-      double currentHorizontalTextOffset = rulerOffset.dx +
-          (offset.dx + editorSize.width / 2 * zoom) % (gap * zoom) -
-          gap * zoom;
+          (-horizontalOffset / (gap * zoom)).floorToDouble();
+      double currentHorizontalTextOffset =
+          rulerOffset.dx + horizontalOffset % (gap * zoom) - gap * zoom;
+
       while (currentHorizontalTextOffset < (size.width + gap * zoom)) {
         double opacity = 1;
         // if its near to edge (start or end), go invisible, with the range of gap
@@ -581,6 +534,16 @@ class _RulerPainter extends CustomPainter {
               (selectedOffset - currentHorizontalTextOffset).abs();
           double multiplier =
               (distanceToSelected.clamp(0, scaledGap) / scaledGap);
+          opacity *= multiplier * multiplier * multiplier;
+        }
+        if (selectionRect != null) {
+          double distanceToStart =
+              (selectionRect.left - currentHorizontalTextOffset).abs();
+          double distanceToEnd =
+              (selectionRect.right - currentHorizontalTextOffset).abs();
+          double multiplier =
+              (distanceToStart.clamp(0, scaledGap) / scaledGap) *
+                  (distanceToEnd.clamp(0, scaledGap) / scaledGap);
           opacity *= multiplier * multiplier * multiplier;
         }
         strokePaint.color = strokeColor.withAlpha((opacity * 255).toInt());
@@ -610,13 +573,16 @@ class _RulerPainter extends CustomPainter {
       }
 
       // draw the vertical texts
+      double verticalOffset = (offset.dy + (editorSize.height / 2 * zoom));
+
+      if (overrideWithSelection) {
+        verticalOffset = selectionRect!.top;
+      }
+
       double currentVerticalText =
-          ((-offset.dy - editorSize.height / 2 * zoom) / (gap * zoom))
-                  .ceilToDouble() -
-              1;
-      double currentVerticalTextOffset = rulerOffset.dy +
-          (offset.dy + editorSize.height / 2 * zoom) % (gap * zoom) -
-          gap * zoom;
+          (-verticalOffset / (gap * zoom)).floorToDouble();
+      double currentVerticalTextOffset =
+          rulerOffset.dy + verticalOffset % (gap * zoom) - gap * zoom;
       while (currentVerticalTextOffset < (size.height + gap * zoom)) {
         double opacity = 1;
         double scaledGap = gap * zoom / 4;
@@ -638,6 +604,16 @@ class _RulerPainter extends CustomPainter {
           double multiplier =
               (distanceToSelected.clamp(0, scaledGap) / scaledGap);
           opacity *= multiplier * multiplier;
+        }
+        if (selectionRect != null) {
+          double distanceToStart =
+              (selectionRect.top - currentVerticalTextOffset).abs();
+          double distanceToEnd =
+              (selectionRect.bottom - currentVerticalTextOffset).abs();
+          double multiplier =
+              (distanceToStart.clamp(0, scaledGap) / scaledGap) *
+                  (distanceToEnd.clamp(0, scaledGap) / scaledGap);
+          opacity *= multiplier * multiplier * multiplier;
         }
         strokePaint.color = strokeColor.withAlpha((opacity * 255).toInt());
         Offset lineStart = textDirection == TextDirection.ltr
@@ -675,6 +651,40 @@ class _RulerPainter extends CustomPainter {
         textPainter.dispose();
         currentVerticalText++;
         currentVerticalTextOffset += gap * zoom;
+      }
+
+      if (selectionRect != null) {
+        // draw selection rect at top ruler
+        var selectionPaint = Paint()
+          ..color = selectionColor
+          ..style = PaintingStyle.fill;
+        canvas.drawRect(
+          Rect.fromLTWH(
+            selectionRect.left + rulerWidth,
+            0,
+            selectionRect.width,
+            rulerWidth,
+          ),
+          selectionPaint,
+        );
+
+        // draw selection rect at left ruler
+        canvas.drawRect(
+          textDirection == TextDirection.ltr
+              ? Rect.fromLTWH(
+                  0,
+                  selectionRect.top + rulerWidth,
+                  rulerWidth,
+                  selectionRect.height,
+                )
+              : Rect.fromLTWH(
+                  size.width - rulerWidth,
+                  selectionRect.top + rulerWidth,
+                  rulerWidth,
+                  selectionRect.height,
+                ),
+          selectionPaint,
+        );
       }
       // draw a small box at top left
       canvas.drawRect(

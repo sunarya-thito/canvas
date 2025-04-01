@@ -77,12 +77,12 @@ class RandomContainer extends StatelessWidget {
 
   const RandomContainer({super.key, required this.seed});
 
-  Color _randomColor(Random random) {
+  Color _randomColor(Random random, {double? value}) {
     HSVColor hsvColor = HSVColor.fromAHSV(
       1.0,
       random.nextDouble() * 360,
-      0.8,
-      0.8,
+      0.5,
+      value ?? 0.8,
     );
     return hsvColor.toColor();
   }
@@ -94,7 +94,7 @@ class RandomContainer extends StatelessWidget {
       decoration: BoxDecoration(
         color: _randomColor(random),
         border: Border.all(
-          color: _randomColor(random),
+          color: _randomColor(random, value: 0.4),
           width: 3.0,
         ),
       ),

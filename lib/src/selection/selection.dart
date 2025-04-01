@@ -178,6 +178,32 @@ class TransformControlBox {
     required this.transform,
     required this.shear,
   });
+
+  Rect get boundingBox {
+    Offset topLeft = transformOffset(Offset.zero, transform);
+    Offset topRight = transformOffset(
+      Offset(size.width, 0),
+      transform,
+    );
+    Offset bottomLeft = transformOffset(
+      Offset(0, size.height),
+      transform,
+    );
+    Offset bottomRight = transformOffset(
+      Offset(size.width, size.height),
+      transform,
+    );
+    return Rect.fromPoints(
+      Offset(
+        min(topLeft.dx, bottomLeft.dx),
+        min(topLeft.dy, topRight.dy),
+      ),
+      Offset(
+        max(topRight.dx, bottomRight.dx),
+        max(bottomLeft.dy, bottomRight.dy),
+      ),
+    );
+  }
 }
 
 class Selection {
@@ -243,6 +269,23 @@ class Selection {
       groups: groups,
       client: client,
     );
+  }
+
+  Rect computeBoundingBox({Matrix4? parentTransform}) {
+    Rect? boundingBox;
+    for (var group in groups.value) {
+      var box = group.getTransformControlBox(parentTransform: parentTransform);
+      if (boundingBox == null) {
+        boundingBox = box.boundingBox;
+      } else {
+        boundingBox = boundingBox.expandToInclude(box.boundingBox);
+      }
+    }
+    boundingBox ??= Rect.zero;
+    boundingBox = boundingBox.shift(editorOffset.value
+        .transform(parentTransform ?? Matrix4.identity())
+        .delta);
+    return boundingBox;
   }
 
   Iterable<ExtraTransformationControl> buildControls({

@@ -143,6 +143,7 @@ class CanvasRulerThemeData {
   final double rulerWidth;
   final double strokeHeight;
   final Color pixelGridColor;
+  final Color selectionColor;
 
   const CanvasRulerThemeData({
     this.textStyle = const TextStyle(
@@ -156,6 +157,7 @@ class CanvasRulerThemeData {
     this.rulerWidth = 25,
     this.strokeHeight = 5,
     this.pixelGridColor = const Color.fromARGB(114, 0, 0, 0),
+    this.selectionColor = const Color.fromARGB(123, 110, 144, 225),
   });
 }
 

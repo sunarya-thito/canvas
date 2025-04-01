@@ -71,9 +71,6 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
     var editor = widget.state.editor;
     bool clipContent = widget.state is CanvasObjectState &&
         (widget.state as CanvasObjectState).item.clipContent;
-    if (!clipContent) {
-      print('found non clipping: ${widget.state.item.debugLabel}');
-    }
     BorderRadiusGeometry? borderRadius = widget.state is CanvasObjectState
         ? (widget.state as CanvasObjectState).item.borderRadius
         : null;

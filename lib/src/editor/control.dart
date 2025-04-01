@@ -235,7 +235,6 @@ class SelectionMoveControlSession extends EditorControlSession {
         item.editorOffset = Offset.zero; // this prevents snapping for the item
       }
     }
-    print('parentStart: $_parentStart');
   }
 
   @override
@@ -249,7 +248,6 @@ class SelectionMoveControlSession extends EditorControlSession {
     _parentEnd?.targetDrop.value = null;
     _parentEnd = targetReparent;
     _parentEnd?.targetDrop.value = selection;
-    print('target: $targetReparent');
     for (var group in selection.groups.value) {
       for (var item in group.selectedItems) {
         var transform = Matrix4.inverted(item.globalTransform);
@@ -262,13 +260,11 @@ class SelectionMoveControlSession extends EditorControlSession {
 
   @override
   void onApply() {
-    print('apply');
     _resetEditorOffset();
   }
 
   @override
   void onCancel() {
-    print('cancel');
     _resetEditorOffset();
   }
 
