@@ -197,7 +197,7 @@ class _SelectionTransformControlWidgetState
         final bottomLeftHandleCenter = polygon.points[3];
         final topHandleCenter =
             (topLeftHandleCenter + topRightHandleCenter) * 0.5;
-        final shear = box.shear;
+        final shear = computeShearFromMatrix(box.transform);
         final flipHorizontal = size.width.isNegative;
         final flipVertical = size.height.isNegative;
         final editor = widget.editor;

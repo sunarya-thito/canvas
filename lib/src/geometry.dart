@@ -66,6 +66,12 @@ Matrix4 computeShearMatrix(double shearX, double shearY,
   return result;
 }
 
+Offset computeShearFromMatrix(Matrix4 matrix) {
+  final shearX = atan(matrix.entry(0, 1) / matrix.entry(1, 1));
+  final shearY = atan(matrix.entry(1, 0) / matrix.entry(0, 0));
+  return Offset(shearX, shearY);
+}
+
 Offset rotatePoint(Offset point, double angle, [Offset origin = Offset.zero]) {
   final cosAngle = cos(angle);
   final sinAngle = sin(angle);
@@ -146,64 +152,6 @@ class Polygon {
       }
       path.close();
     }
-    return path;
-  }
-
-  Path computeRoundedRectPath(BorderRadius borderRadius, Matrix4 transform) {
-    assert(points.length == 4,
-        'Polygon must have 4 points to compute rounded rect path');
-    final path = Path();
-
-    final List<double> radii = [
-      borderRadius.topLeft.x,
-      borderRadius.topRight.x,
-      borderRadius.bottomRight.x,
-      borderRadius.bottomLeft.x,
-    ];
-
-    for (int i = 0; i < 4; i++) {
-      final Offset p1 = points[i];
-      final Offset p2 = points[(i + 1) % 4];
-      final Offset p0 = points[(i - 1 + 4) % 4];
-
-      final double radius = radii[i];
-
-      if (radius > 0) {
-        final Offset v1 = normalizeOffset(p1 - p0) * radius;
-        final Offset v2 = normalizeOffset(p2 - p1) * radius;
-
-        final Offset cornerStart = p1 - v1;
-        final Offset cornerEnd = p1 + v2;
-
-        final Offset transformedCornerStart =
-            MatrixUtils.transformPoint(transform, cornerStart);
-        final Offset transformedCornerEnd =
-            MatrixUtils.transformPoint(transform, cornerEnd);
-        final Offset transformedP1 = MatrixUtils.transformPoint(transform, p1);
-
-        if (i == 0) {
-          path.moveTo(transformedCornerStart.dx, transformedCornerStart.dy);
-        } else {
-          path.lineTo(transformedCornerStart.dx, transformedCornerStart.dy);
-        }
-
-        path.arcToPoint(
-          transformedCornerEnd,
-          radius: Radius.circular(radius),
-          largeArc: false,
-          clockwise: true,
-        );
-      } else {
-        final Offset transformedP1 = MatrixUtils.transformPoint(transform, p1);
-        if (i == 0) {
-          path.moveTo(transformedP1.dx, transformedP1.dy);
-        } else {
-          path.lineTo(transformedP1.dx, transformedP1.dy);
-        }
-      }
-    }
-
-    path.close();
     return path;
   }
 

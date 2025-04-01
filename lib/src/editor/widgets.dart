@@ -462,20 +462,20 @@ class CanvasEditorState extends State<CanvasEditor>
             }
             return Focus(
               focusNode: _focusNode,
-              child: CanvasEditorScrollable(
-                controller: widget.controller,
-                editor: this,
-                child: ListenableBuilder(
-                  listenable: widget.controller,
-                  builder: (context, child) {
-                    Matrix4 transform = getLocalToGlobalTransform();
-                    return CanvasRuler(
+              child: ListenableBuilder(
+                listenable: widget.controller,
+                builder: (context, child) {
+                  Matrix4 transform = getLocalToGlobalTransform();
+                  return CanvasRuler(
+                    controller: widget.controller,
+                    editor: this,
+                    showRuler: widget.showRuler,
+                    snappingPoints: _rulerSnappingPoints.value,
+                    selection: localSelection,
+                    editorTransform: transform,
+                    child: CanvasEditorScrollable(
                       controller: widget.controller,
                       editor: this,
-                      showRuler: widget.showRuler,
-                      snappingPoints: _rulerSnappingPoints.value,
-                      selection: localSelection,
-                      editorTransform: transform,
                       child: RawGestureDetector(
                         behavior: HitTestBehavior.translucent,
                         gestures: {
@@ -604,9 +604,9 @@ class CanvasEditorState extends State<CanvasEditor>
                           ],
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
             );
           });
