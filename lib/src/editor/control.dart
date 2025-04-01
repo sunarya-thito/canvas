@@ -78,6 +78,7 @@ abstract class EditorControlSession {
   void onUpdate() {}
   void onCancel() {}
   void onApply() {}
+  void onUpdateEditor(CanvasEditorHandler editor) {}
 
   void visitTransformedSnappingPoint(SnappingPointVisitor visitor) {}
 }
@@ -223,9 +224,36 @@ class SelectionMoveControlSession extends EditorControlSession {
 
   CanvasObjectState? _parentStart;
   CanvasObjectState? _parentEnd;
+  bool _lockReparenting = false;
+  bool _isReparenting = false;
 
   @override
   void onStart() {
+    for (var group in selection.groups.value) {
+      for (var item in group.selectedItems) {
+        item.editorOffset = Offset.zero; // this prevents snapping for the item
+      }
+    }
+    if (editor.allowReparenting) {
+      _startReparenting();
+    }
+  }
+
+  @override
+  void onUpdateEditor(CanvasEditorHandler editor) {
+    if (editor.allowReparenting) {
+      _startReparenting();
+    } else {
+      _stopReparenting();
+    }
+  }
+
+  void _startReparenting() {
+    if (_isReparenting) {
+      return;
+    }
+    _isReparenting = true;
+    _lockReparenting = false;
     CanvasItemState? targetHit = editor.findItemAtPosition(delta.start);
     while (targetHit != null) {
       if (targetHit is CanvasObjectState &&
@@ -235,24 +263,43 @@ class SelectionMoveControlSession extends EditorControlSession {
       }
       targetHit = targetHit.parent;
     }
+  }
+
+  void _stopReparenting() {
+    if (!_isReparenting) {
+      return;
+    }
+    _isReparenting = false;
+    _parentEnd?.targetDrop.value = null;
+    _parentEnd = null;
+    _parentStart = null;
+    _lockReparenting = false;
     for (var group in selection.groups.value) {
       for (var item in group.selectedItems) {
-        item.editorOffset = Offset.zero; // this prevents snapping for the item
+        item.targetReparent = null;
       }
     }
   }
 
   @override
   void onUpdate() {
-    CanvasItemState targetHit = editor.findItemAtPosition(delta.end);
     selection.editorOffset.value = delta;
     CanvasObjectState? targetReparent;
-    if (targetHit is CanvasObjectState && targetHit != _parentStart) {
-      targetReparent = targetHit;
+    if (editor.allowReparenting) {
+      CanvasItemState targetHit = editor.findItemAtPosition(delta.end);
+      if (targetHit is CanvasObjectState &&
+          (targetHit != _parentStart || _lockReparenting)) {
+        targetReparent = targetHit;
+      }
+      _parentEnd?.targetDrop.value = null;
+      _parentEnd = targetReparent;
+      _parentEnd?.targetDrop.value = selection;
+      if (_parentStart != targetHit &&
+          targetHit is CanvasObjectState &&
+          !_lockReparenting) {
+        _lockReparenting = true;
+      }
     }
-    _parentEnd?.targetDrop.value = null;
-    _parentEnd = targetReparent;
-    _parentEnd?.targetDrop.value = selection;
     for (var group in selection.groups.value) {
       for (var item in group.selectedItems) {
         var transform = Matrix4.inverted(item.globalTransform);
@@ -274,13 +321,12 @@ class SelectionMoveControlSession extends EditorControlSession {
   }
 
   void _resetEditorOffset() {
-    _parentEnd?.targetDrop.value = null;
     selection.editorOffset.value = EditorControlDelta.zero;
     for (var group in selection.groups.value) {
       for (var item in group.selectedItems) {
         item.editorOffset = null;
-        item.targetReparent = null;
       }
     }
+    _stopReparenting();
   }
 }

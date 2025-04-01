@@ -276,13 +276,11 @@ class _SelectionTransformControlWidgetState
                 if (_moveSession != null) {
                   editor.endControlSession(_moveSession!);
                 }
-                print('panEnd');
               },
               onPanCancel: () {
                 if (_moveSession != null) {
                   editor.cancelControlSession(_moveSession!);
                 }
-                print('panCancel');
               },
               child: DecoratedPolygon(
                 polygon: polygon,

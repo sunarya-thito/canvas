@@ -17,8 +17,9 @@ enum CanvasSelectionMode {
 }
 
 typedef SnappingPointHost = Function(SnappingPointVisitor visitor);
-
+typedef CanvasHitTestPredicate = bool Function(CanvasItemState item);
 mixin CanvasEditorHandler {
+  bool get allowReparenting;
   CanvasRootState get rootState;
   void sendNotification(Notification notification);
   EditorControlSession? get controlSession;
@@ -51,7 +52,8 @@ mixin CanvasEditorHandler {
   set transform(CanvasEditorTransform value);
   void addToLocalSelection(CanvasItemState item);
   void setToLocalSelection(CanvasItemState item);
-  void hitTest(CanvasHitTestResult result, Offset position);
+  void hitTest(CanvasHitTestResult result, Offset position,
+      {CanvasHitTestPredicate? test});
   void selectTest(CanvasHitTestResult result, Path path);
   // converts from widget local position to editor local position
   Offset globalToLocal(Offset position);
@@ -79,9 +81,10 @@ mixin CanvasEditorHandler {
   void zoomAtViewport(Offset at, double delta);
 
   // position is in editor local coordinates
-  CanvasItemState findItemAtPosition(Offset position) {
+  CanvasItemState findItemAtPosition(Offset position,
+      {CanvasHitTestPredicate? test}) {
     CanvasHitTestResult result = CanvasHitTestResult();
-    hitTest(result, position);
+    hitTest(result, position, test: test);
     if (result.path.isNotEmpty) {
       return result.path.first.target;
     }

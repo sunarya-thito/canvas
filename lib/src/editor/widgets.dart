@@ -33,6 +33,7 @@ class CanvasEditor extends StatefulWidget {
   final Offset maxOffset;
   final double minZoom;
   final double maxZoom;
+  final bool allowReparenting;
 
   const CanvasEditor({
     super.key,
@@ -49,6 +50,7 @@ class CanvasEditor extends StatefulWidget {
     this.maxOffset = const Offset(10000, 10000),
     this.minZoom = 0.01,
     this.maxZoom = 100,
+    this.allowReparenting = true,
   });
 
   @override
@@ -82,6 +84,9 @@ class CanvasEditorState extends State<CanvasEditor>
 
   @override
   CanvasRootState get rootState => _rootState;
+
+  @override
+  bool get allowReparenting => widget.allowReparenting;
 
   void _handleDrag(Offset position) {
     // position is local to the editor widget
@@ -367,6 +372,7 @@ class CanvasEditorState extends State<CanvasEditor>
       }
       _focusNode = widget.focusNode ?? FocusNode();
     }
+    _controlSession?.onUpdateEditor(this);
   }
 
   @override
@@ -744,8 +750,9 @@ class CanvasEditorState extends State<CanvasEditor>
   }
 
   @override
-  void hitTest(CanvasHitTestResult result, Offset position) {
-    _rootState.hitTest(result, position);
+  void hitTest(CanvasHitTestResult result, Offset position,
+      {CanvasHitTestPredicate? test}) {
+    _rootState.hitTest(result, position, test: test);
   }
 
   @override

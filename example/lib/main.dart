@@ -199,7 +199,7 @@ class _SampleState extends State<Sample> {
         children: [
           Positioned.fill(
             child: Container(
-              color: Colors.white,
+              color: const Color.fromARGB(255, 20, 20, 20),
               child: CanvasEditor(
                 controller: _controller,
                 root: root,

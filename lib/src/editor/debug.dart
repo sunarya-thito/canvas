@@ -74,8 +74,9 @@ class _SnappingLinesPainter extends CustomPainter {
 
 class RandomContainer extends StatelessWidget {
   final int seed;
+  final Widget? child;
 
-  const RandomContainer({super.key, required this.seed});
+  const RandomContainer({super.key, required this.seed, this.child});
 
   Color _randomColor(Random random, {double? value}) {
     HSVColor hsvColor = HSVColor.fromAHSV(
@@ -98,6 +99,7 @@ class RandomContainer extends StatelessWidget {
           width: 3.0,
         ),
       ),
+      child: child,
     );
   }
 }

@@ -12,6 +12,19 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
+enum CanvasChildOperation {
+  intersection,
+  subtraction,
+  reverseSubtraction,
+  symmetricDifference, // reversed intersection
+}
+
+enum CanvasOverflow {
+  hide,
+  visible,
+  scroll,
+}
+
 abstract class CanvasItem {
   final String? debugLabel;
 
@@ -221,11 +234,13 @@ class _CachedLayout {
   final Size size;
   final BoxConstraints constraints;
   final TextDirection textDirection;
+  final Rect preferredBounds; // used to make the item scrollable
 
   _CachedLayout({
     required this.size,
     required this.constraints,
     required this.textDirection,
+    required this.preferredBounds,
   });
 }
 
@@ -298,7 +313,6 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     }
     CanvasItemState? current = parent;
     while (current != null && current != topParent) {
-      print('-- ${current.item.debugLabel}');
       transform =
           current.item.layoutData.computeTranslatedMatrix(current) * transform;
       current = current.parent;
@@ -461,7 +475,17 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
 
   Size get innerSize => item.layoutData.computeInnerSize(this);
 
-  bool hitTestSelf(CanvasHitTestResult result, Offset position) {
+  bool hitTestSelf(CanvasHitTestResult result, Offset position,
+      {CanvasHitTestPredicate? test}) {
+    if (editorOffset != null) {
+      // object is being invisible
+      return false;
+    }
+    if (test != null) {
+      if (!test(this)) {
+        return false;
+      }
+    }
     return innerSize.containsIgnoreSign(position);
   }
 
@@ -492,7 +516,10 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   @override
   void handleEvent(PointerEvent event, HitTestEntry<HitTestTarget> entry) {}
 
-  Widget? render(BuildContext context) => RandomContainer(seed: hashCode);
+  Widget? render(BuildContext context) => RandomContainer(
+        seed: hashCode,
+        child: Text('${item.debugLabel}'),
+      );
 
   bool isDescendantOf(CanvasItemState state) {
     var parent = this.parent;
@@ -550,6 +577,7 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
         size: size,
         constraints: constraints,
         textDirection: textDirection,
+        preferredBounds: Offset.zero & size,
       );
     }
   }
@@ -671,19 +699,50 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   }
 
   @override
-  bool hitTest(CanvasHitTestResult result, Offset position) {
+  void layout(BoxConstraints constraints, TextDirection textDirection) {
+    if (!hasLayoutPerformedFor(constraints, textDirection)) {
+      var size = forceLayout(constraints, textDirection);
+      var child = firstChild;
+      double minX = 0;
+      double minY = 0;
+      double maxX = size.width;
+      double maxY = size.height;
+      while (child != null) {
+        var childPosition = child.parentData.position;
+        var childSize = child.size;
+        minX = min(minX, childPosition.dx);
+        minY = min(minY, childPosition.dy);
+        maxX = max(maxX, childPosition.dx + childSize.width);
+        maxY = max(maxY, childPosition.dy + childSize.height);
+        child = child.parentData.nextSibling;
+      }
+      var preferredBounds = Rect.fromLTRB(minX, minY, maxX, maxY);
+      _layoutResult = _CachedLayout(
+        size: size,
+        constraints: constraints,
+        textDirection: textDirection,
+        preferredBounds: preferredBounds,
+      );
+    }
+  }
+
+  @override
+  bool hitTest(CanvasHitTestResult result, Offset position,
+      {CanvasHitTestPredicate? test}) {
     if (editorOffset != null) {
       // object is being invisible
       return false;
     }
-    if (hitTestChildren(result, position) || hitTestSelf(result, position)) {
+    if (hitTestChildren(result, position, test: test) ||
+        hitTestSelf(result, position, test: test)) {
       result.add(CanvasHitTestEntry(this, position));
       return true;
     }
     return false;
   }
 
-  bool hitTestChildren(CanvasHitTestResult result, Offset position) {
+  bool hitTestChildren(CanvasHitTestResult result, Offset position,
+      {CanvasHitTestPredicate? test}) {
     if (item.clipContent) {
       if (!innerSize.containsIgnoreSign(position)) {
         return false;
@@ -694,6 +753,12 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
       var childTransform = child.item.layoutData.computeTranslatedMatrix(
         child,
       );
+      if (test != null) {
+        if (!test(child)) {
+          child = child.parentData.previousSibling;
+          continue;
+        }
+      }
       final isHit = result.addWithPaintTransform(
         transform: childTransform,
         position: position,
@@ -945,7 +1010,8 @@ class CanvasRootState extends CanvasObjectState {
   });
 
   @override
-  bool hitTestSelf(CanvasHitTestResult result, Offset position) {
+  bool hitTestSelf(CanvasHitTestResult result, Offset position,
+      {CanvasHitTestPredicate? test}) {
     return false;
   }
 
