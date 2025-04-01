@@ -147,12 +147,12 @@ class CanvasRulerThemeData {
 
   const CanvasRulerThemeData({
     this.textStyle = const TextStyle(
-      color: Color.fromARGB(255, 0, 0, 0),
+      color: Color.fromARGB(255, 141, 141, 141),
       fontSize: 12,
       fontWeight: FontWeight.w400,
     ),
     this.strokeWidth = 1,
-    this.backgroundColor = const Color(0xFFB0B0B0),
+    this.backgroundColor = const Color.fromARGB(255, 36, 36, 36),
     this.strokeColor = const Color.fromARGB(255, 0, 0, 0),
     this.rulerWidth = 25,
     this.strokeHeight = 5,

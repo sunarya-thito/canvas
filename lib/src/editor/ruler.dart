@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/snap.dart';
+import 'package:canvas/src/editor/util.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
 
@@ -173,7 +174,7 @@ class _CanvasRulerState extends State<CanvasRuler> {
     );
   }
 
-  Widget _wrapChild(BuildContext context) {
+  Widget _wrapChild(BuildContext context, double width) {
     return ListenableBuilder(
         listenable: widget.controller,
         builder: (context, _) {
@@ -194,13 +195,14 @@ class _CanvasRulerState extends State<CanvasRuler> {
                 ),
               ),
               for (var snappingPoint in widget.snappingPoints)
-                _buildSnappingPointDraggable(snappingPoint),
+                _buildSnappingPointDraggable(snappingPoint, width),
             ],
           );
         });
   }
 
-  Widget _buildSnappingPointDraggable(CanvasRulerSnappingPoint point) {
+  Widget _buildSnappingPointDraggable(
+      CanvasRulerSnappingPoint point, double width) {
     var editorTransform = widget.editor.transform;
     return ListenableBuilder(
       listenable: point,
@@ -271,7 +273,6 @@ class _CanvasRulerState extends State<CanvasRuler> {
                   _draggingSession!, details.globalPosition);
             }
           },
-          child: AbsorbPointer(),
         ),
       ),
     );
@@ -297,7 +298,7 @@ class _CanvasRulerState extends State<CanvasRuler> {
               start: 0,
               end: 0,
               bottom: 0,
-              child: _wrapChild(context),
+              child: _wrapChild(context, width),
             ),
           if (widget.showRuler) ...[
             PositionedDirectional(
@@ -305,7 +306,7 @@ class _CanvasRulerState extends State<CanvasRuler> {
               start: width,
               end: 0,
               bottom: 0,
-              child: _wrapChild(context),
+              child: _wrapChild(context, width),
             ),
             PositionedDirectional(
               top: 0,
@@ -503,9 +504,10 @@ class _RulerPainter extends CustomPainter {
       // draw the texts
 
       double horizontalOffset = (offset.dx + (editorSize.width / 2 * zoom));
+      // horizontalOffset is offset at editor widget level
+      // selectionRect is rect at editor widget level
 
       if (overrideWithSelection) {
-        print('left: ${selectionRect!.left}');
         horizontalOffset = selectionRect!.left;
       }
 
@@ -513,6 +515,77 @@ class _RulerPainter extends CustomPainter {
           (-horizontalOffset / (gap * zoom)).floorToDouble();
       double currentHorizontalTextOffset =
           rulerOffset.dx + horizontalOffset % (gap * zoom) - gap * zoom;
+
+      double? leftSelectionRectTextWidth;
+      double? rightSelectionRectTextWidth;
+
+      // draw the selection rect text before and after
+      if (selectionRect != null) {
+        double left = selectionRect.left + rulerWidth;
+        double right = selectionRect.right + rulerWidth;
+        double textValueLeft = overrideWithSelection
+            ? 0
+            : (selectionRect.left -
+                    (offset.dx + (editorSize.width / 2 * zoom))) /
+                zoom;
+        double textValueRight = overrideWithSelection
+            ? selectionRect.width / zoom
+            : (selectionRect.right -
+                    (offset.dx + (editorSize.width / 2 * zoom))) /
+                zoom;
+        double opacityLeft = 1;
+        double opacityRight = 1;
+        if (hovered != null && hovered!.axis == Axis.vertical) {
+          double selectedOffset = hovered!.offset * zoom +
+              rulerOffset.dx +
+              offset.dx +
+              editorSize.width / 2 * zoom;
+          double selectionLeft = selectionRect.left + rulerOffset.dx;
+          double selectionRight = selectionRect.right + rulerOffset.dx;
+          double distanceLeftToSelected =
+              (selectedOffset - selectionLeft).abs();
+          double distanceRightToSelected =
+              (selectedOffset - selectionRight).abs();
+          double scaledGap = gap * zoom;
+          double multiplierLeft =
+              (distanceLeftToSelected.clamp(0, scaledGap) / scaledGap);
+          double multiplierRight =
+              (distanceRightToSelected.clamp(0, scaledGap) / scaledGap);
+          opacityLeft *= multiplierLeft * multiplierLeft * multiplierLeft;
+          opacityRight *= multiplierRight * multiplierRight * multiplierRight;
+        }
+        TextPainter leftText = TextPainter(
+          text: TextSpan(
+            text: optimalDoubleString(textValueLeft),
+            style: style.copyWith(
+                color: selectionColor.withAlpha((opacityLeft * 255).toInt())),
+          ),
+          textDirection: textDirection,
+        );
+        leftText.layout();
+        leftText.paint(
+          canvas,
+          Offset(
+              left - leftText.width - 8, rulerWidth / 2 - leftText.height / 2),
+        );
+        leftSelectionRectTextWidth = leftText.width * 3.5;
+        leftText.dispose();
+        TextPainter rightText = TextPainter(
+          text: TextSpan(
+            text: optimalDoubleString(textValueRight),
+            style: style.copyWith(
+                color: selectionColor.withAlpha((opacityRight * 255).toInt())),
+          ),
+          textDirection: textDirection,
+        );
+        rightText.layout();
+        rightText.paint(
+          canvas,
+          Offset(right + 8, rulerWidth / 2 - rightText.height / 2),
+        );
+        rightSelectionRectTextWidth = rightText.width * 3.5;
+        rightText.dispose();
+      }
 
       while (currentHorizontalTextOffset < (size.width + gap * zoom)) {
         double opacity = 1;
@@ -537,13 +610,17 @@ class _RulerPainter extends CustomPainter {
           opacity *= multiplier * multiplier * multiplier;
         }
         if (selectionRect != null) {
+          double selectionLeft = selectionRect.left + rulerOffset.dx;
+          double selectionRight = selectionRect.right + rulerOffset.dx;
           double distanceToStart =
-              (selectionRect.left - currentHorizontalTextOffset).abs();
+              (selectionLeft - currentHorizontalTextOffset).abs();
           double distanceToEnd =
-              (selectionRect.right - currentHorizontalTextOffset).abs();
+              (selectionRight - currentHorizontalTextOffset).abs();
           double multiplier =
-              (distanceToStart.clamp(0, scaledGap) / scaledGap) *
-                  (distanceToEnd.clamp(0, scaledGap) / scaledGap);
+              (distanceToStart.clamp(0, leftSelectionRectTextWidth!) /
+                      leftSelectionRectTextWidth) *
+                  (distanceToEnd.clamp(0, rightSelectionRectTextWidth!) /
+                      rightSelectionRectTextWidth);
           opacity *= multiplier * multiplier * multiplier;
         }
         strokePaint.color = strokeColor.withAlpha((opacity * 255).toInt());
@@ -579,6 +656,93 @@ class _RulerPainter extends CustomPainter {
         verticalOffset = selectionRect!.top;
       }
 
+      double? topSelectionRectTextWidth;
+      double? bottomSelectionRectTextWidth;
+
+      // draw the selection rect text before and after
+      if (selectionRect != null) {
+        double top = selectionRect.top + rulerWidth;
+        double bottom = selectionRect.bottom + rulerWidth;
+        double textValueTop = overrideWithSelection
+            ? 0
+            : (selectionRect.top -
+                    (offset.dy + (editorSize.height / 2 * zoom))) /
+                zoom;
+        double textValueBottom = overrideWithSelection
+            ? selectionRect.height / zoom
+            : (selectionRect.bottom -
+                    (offset.dy + (editorSize.height / 2 * zoom))) /
+                zoom;
+        double opacityTop = 1;
+        double opacityBottom = 1;
+        if (hovered != null && hovered!.axis == Axis.horizontal) {
+          double selectedOffset = hovered!.offset * zoom +
+              rulerOffset.dy +
+              offset.dy +
+              editorSize.height / 2 * zoom;
+          double selectionTop = selectionRect.top + rulerOffset.dy;
+          double selectionBottom = selectionRect.bottom + rulerOffset.dy;
+          double distanceTopToSelected = (selectedOffset - selectionTop).abs();
+          double distanceBottomToSelected =
+              (selectedOffset - selectionBottom).abs();
+          double scaledGap = gap * zoom;
+          double multiplierTop =
+              (distanceTopToSelected.clamp(0, scaledGap) / scaledGap);
+          double multiplierBottom =
+              (distanceBottomToSelected.clamp(0, scaledGap) / scaledGap);
+          opacityTop *= multiplierTop * multiplierTop * multiplierTop;
+          opacityBottom *=
+              multiplierBottom * multiplierBottom * multiplierBottom;
+        }
+        TextPainter topText = TextPainter(
+          text: TextSpan(
+            text: optimalDoubleString(textValueTop),
+            style: style.copyWith(
+                color: selectionColor.withAlpha((opacityTop * 255).toInt())),
+          ),
+          textDirection: textDirection,
+        );
+        topText.layout();
+        Offset textTopCenter = textDirection == TextDirection.ltr
+            ? Offset(rulerWidth / 2, top)
+            : Offset(size.width - rulerWidth / 2, top);
+        canvas.save();
+        canvas.translate(textTopCenter.dx, textTopCenter.dy);
+        canvas.rotate(-pi / 2);
+        canvas.translate(-textTopCenter.dx, -textTopCenter.dy);
+        topText.paint(
+          canvas,
+          textTopCenter - Offset(-8, topText.height / 2),
+        );
+        canvas.restore();
+        topSelectionRectTextWidth = topText.width * 3.5;
+        topText.dispose();
+        TextPainter bottomText = TextPainter(
+          text: TextSpan(
+            text: optimalDoubleString(textValueBottom),
+            style: style.copyWith(
+                color: selectionColor.withAlpha((opacityBottom * 255).toInt())),
+          ),
+          textDirection: textDirection,
+        );
+        Offset textBottomCenter = textDirection == TextDirection.ltr
+            ? Offset(rulerWidth / 2, bottom)
+            : Offset(size.width - rulerWidth / 2, bottom);
+        canvas.save();
+        canvas.translate(textBottomCenter.dx, textBottomCenter.dy);
+        canvas.rotate(-pi / 2);
+        canvas.translate(-textBottomCenter.dx, -textBottomCenter.dy);
+        bottomText.layout();
+        bottomText.paint(
+          canvas,
+          textBottomCenter -
+              Offset(bottomText.width + 8, bottomText.height / 2),
+        );
+        canvas.restore();
+        bottomSelectionRectTextWidth = bottomText.width * 3.5;
+        bottomText.dispose();
+      }
+
       double currentVerticalText =
           (-verticalOffset / (gap * zoom)).floorToDouble();
       double currentVerticalTextOffset =
@@ -606,13 +770,17 @@ class _RulerPainter extends CustomPainter {
           opacity *= multiplier * multiplier;
         }
         if (selectionRect != null) {
+          double selectionTop = selectionRect.top + rulerOffset.dy;
+          double selectionBottom = selectionRect.bottom + rulerOffset.dy;
           double distanceToStart =
-              (selectionRect.top - currentVerticalTextOffset).abs();
+              (selectionTop - currentVerticalTextOffset).abs();
           double distanceToEnd =
-              (selectionRect.bottom - currentVerticalTextOffset).abs();
+              (selectionBottom - currentVerticalTextOffset).abs();
           double multiplier =
-              (distanceToStart.clamp(0, scaledGap) / scaledGap) *
-                  (distanceToEnd.clamp(0, scaledGap) / scaledGap);
+              (distanceToStart.clamp(0, topSelectionRectTextWidth!) /
+                      topSelectionRectTextWidth) *
+                  (distanceToEnd.clamp(0, bottomSelectionRectTextWidth!) /
+                      bottomSelectionRectTextWidth);
           opacity *= multiplier * multiplier * multiplier;
         }
         strokePaint.color = strokeColor.withAlpha((opacity * 255).toInt());

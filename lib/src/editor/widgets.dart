@@ -419,6 +419,7 @@ class CanvasEditorState extends State<CanvasEditor>
   @override
   Widget build(BuildContext context) {
     assert(_rootState.hasSize, 'Root object has not been laid out');
+    final theme = CanvasTheme.of(context);
     return Actions(
       actions: {
         CanvasUpdateLayoutDataIntent: Action.overridable(
@@ -442,7 +443,15 @@ class CanvasEditorState extends State<CanvasEditor>
         listenable: Listenable.merge([_rulerSnappingPoints, widget.controller]),
         builder: (context, child) {
           return LayoutBuilder(builder: (context, constraints) {
-            _editorSize = constraints.biggest;
+            if (widget.showRuler) {
+              // this is kinda ugly on the lowks
+              _editorSize = Size(
+                constraints.biggest.width - theme.ruler.rulerWidth,
+                constraints.biggest.height - theme.ruler.rulerWidth,
+              );
+            } else {
+              _editorSize = constraints.biggest;
+            }
             return Focus(
               focusNode: _focusNode,
               child: CanvasEditorScrollable(
