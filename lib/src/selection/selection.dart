@@ -302,4 +302,15 @@ class Selection {
     }
     return false;
   }
+
+  bool containsOrDescendant(CanvasItemState other) {
+    for (var group in groups.value) {
+      for (var item in group.selectedItems) {
+        if (item == other || other.isDescendantOf(item)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
 }

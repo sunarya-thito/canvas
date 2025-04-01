@@ -19,6 +19,7 @@ enum CanvasSelectionMode {
 typedef SnappingPointHost = Function(SnappingPointVisitor visitor);
 
 mixin CanvasEditorHandler {
+  CanvasRootState get rootState;
   void sendNotification(Notification notification);
   EditorControlSession? get controlSession;
   T startControlSession<T extends EditorControlSession>(
@@ -78,13 +79,13 @@ mixin CanvasEditorHandler {
   void zoomAtViewport(Offset at, double delta);
 
   // position is in editor local coordinates
-  CanvasItemState? findItemAtPosition(Offset position) {
+  CanvasItemState findItemAtPosition(Offset position) {
     CanvasHitTestResult result = CanvasHitTestResult();
     hitTest(result, position);
     if (result.path.isNotEmpty) {
       return result.path.first.target;
     }
-    return null;
+    return rootState;
   }
 
   bool visitSnappingPoint(SnappingPointVisitor visitor);

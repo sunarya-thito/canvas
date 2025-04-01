@@ -71,3 +71,33 @@ class _SnappingLinesPainter extends CustomPainter {
     return oldDelegate.lines != lines;
   }
 }
+
+class RandomContainer extends StatelessWidget {
+  final int seed;
+
+  const RandomContainer({super.key, required this.seed});
+
+  Color _randomColor(Random random) {
+    HSVColor hsvColor = HSVColor.fromAHSV(
+      1.0,
+      random.nextDouble() * 360,
+      0.8,
+      0.8,
+    );
+    return hsvColor.toColor();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Random random = Random(seed);
+    return Container(
+      decoration: BoxDecoration(
+        color: _randomColor(random),
+        border: Border.all(
+          color: _randomColor(random),
+          width: 3.0,
+        ),
+      ),
+    );
+  }
+}

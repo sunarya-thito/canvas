@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/debug.dart';
 import 'package:canvas/src/editor/extra.dart';
 import 'package:canvas/src/editor/grid.dart';
 import 'package:canvas/src/editor/snap.dart';
@@ -32,19 +33,6 @@ abstract class CanvasItem {
       {CanvasItemState? parent, CanvasEditorHandler? editor});
 
   List<CanvasItemState> get activeStates => List.unmodifiable(_attachedStates);
-
-  // Editor specific properties
-  Offset? _editorOffset;
-  Offset? get editorOffset => _editorOffset;
-  set editorOffset(Offset? value) {
-    if (value != _editorOffset) {
-      _editorOffset = value;
-      for (var state in _attachedStates) {
-        state.markNeedsLayout();
-      }
-    }
-  }
-  //
 }
 
 CanvasParentData _migrateParentData(
@@ -248,6 +236,26 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   _CachedLayout? _layoutResult;
   final CanvasEditorHandler? editor;
 
+  // Editor specific properties
+  Offset? _editorOffset;
+  Offset? get editorOffset => _editorOffset;
+  set editorOffset(Offset? value) {
+    if (value != _editorOffset) {
+      _editorOffset = value;
+      markNeedsLayout();
+    }
+  }
+
+  CanvasObjectState? _targetReparent;
+  CanvasObjectState? get targetReparent => _targetReparent;
+  set targetReparent(CanvasObjectState? value) {
+    if (_targetReparent != value) {
+      _targetReparent = value;
+      markNeedsLayout();
+    }
+  }
+  //
+
   CanvasItemState({this.parent, this.editor});
 
   CanvasParentData get parentData {
@@ -269,12 +277,28 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
 
   Matrix4 get globalEditorTransform {
     Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
-    var editorOffset = item.editorOffset;
+    var editorOffset = this.editorOffset;
     if (editorOffset != null) {
       transform.translate(editorOffset.dx, editorOffset.dy);
     }
     CanvasItemState? current = parent;
     while (current != null) {
+      transform =
+          current.item.layoutData.computeTranslatedMatrix(current) * transform;
+      current = current.parent;
+    }
+    return transform;
+  }
+
+  Matrix4 getGlobalEditorTransformUntil(CanvasItemState topParent) {
+    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
+    var editorOffset = this.editorOffset;
+    if (editorOffset != null) {
+      transform.translate(editorOffset.dx, editorOffset.dy);
+    }
+    CanvasItemState? current = parent;
+    while (current != null && current != topParent) {
+      print('-- ${current.item.debugLabel}');
       transform =
           current.item.layoutData.computeTranslatedMatrix(current) * transform;
       current = current.parent;
@@ -293,6 +317,10 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     return transform;
   }
 
+  Matrix4 get localTransform {
+    return item.layoutData.computeTranslatedMatrix(this);
+  }
+
   Offset get globalShear {
     Offset currentShear = item.layoutData.shear ?? Offset.zero;
     CanvasItemState? current = this;
@@ -306,12 +334,27 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     return currentShear;
   }
 
+  CanvasItemState? findCommonParent(CanvasItemState other) {
+    CanvasItemState? current = this;
+    while (current != null) {
+      CanvasItemState? otherCurrent = other;
+      while (otherCurrent != null) {
+        if (current == otherCurrent) {
+          return current;
+        }
+        otherCurrent = otherCurrent.parent;
+      }
+      current = current.parent;
+    }
+    return null;
+  }
+
   bool visitSnappingPoint(SnappingPointVisitor visitor,
       {Matrix4? parentTransform, Matrix4? transform}) {
     // if this object or its ascendant is being dragged, then do not snap!
     CanvasItemState? currentTest = this;
     while (currentTest != null) {
-      if (currentTest.item.editorOffset != null) {
+      if (currentTest.editorOffset != null) {
         return true;
       }
       currentTest = currentTest.parent;
@@ -405,6 +448,10 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   }
 
   bool hitTest(CanvasHitTestResult result, Offset position) {
+    if (editorOffset != null) {
+      // object is being invisible
+      return false;
+    }
     if (hitTestSelf(result, position)) {
       result.add(CanvasHitTestEntry(this, position));
       return true;
@@ -445,7 +492,7 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   @override
   void handleEvent(PointerEvent event, HitTestEntry<HitTestTarget> entry) {}
 
-  Widget? render(BuildContext context) => null;
+  Widget? render(BuildContext context) => RandomContainer(seed: hashCode);
 
   bool isDescendantOf(CanvasItemState state) {
     var parent = this.parent;
@@ -567,6 +614,10 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
     required this.item,
   });
 
+  // Editor specific properties
+  final ValueNotifier<Selection?> targetDrop = ValueNotifier(null);
+  //
+
   set children(Iterable<CanvasItemState> children) {
     item.children = children.map((e) => e.item).toList();
   }
@@ -621,6 +672,10 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
   @override
   bool hitTest(CanvasHitTestResult result, Offset position) {
+    if (editorOffset != null) {
+      // object is being invisible
+      return false;
+    }
     if (hitTestChildren(result, position) || hitTestSelf(result, position)) {
       result.add(CanvasHitTestEntry(this, position));
       return true;
@@ -685,7 +740,7 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
 
   bool get descendantHasEditorOffset {
     for (var item in children) {
-      if (item.item.editorOffset != null) {
+      if (item.editorOffset != null) {
         return true;
       }
       if (item is CanvasObjectState && item.descendantHasEditorOffset) {

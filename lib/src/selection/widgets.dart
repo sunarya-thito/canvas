@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/extra.dart';
@@ -165,6 +167,13 @@ class _SelectionTransformControlWidgetState
 
   SelectionMoveControlSession? _moveSession;
 
+  String _toStringDouble(double d) {
+    if (d.floorToDouble() == d) {
+      return d.toStringAsFixed(0);
+    }
+    return d.toStringAsFixed(2);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -192,9 +201,43 @@ class _SelectionTransformControlWidgetState
         final flipHorizontal = size.width.isNegative;
         final flipVertical = size.height.isNegative;
         final editor = widget.editor;
+        final boundsInfoRotation =
+            (bottomLeftHandleCenter - bottomRightHandleCenter).direction;
+        final boundsInfoSize =
+            (bottomLeftHandleCenter - bottomRightHandleCenter).distance;
         return Stack(
           fit: StackFit.passthrough,
           children: [
+            GroupWidget(
+              children: [
+                Transform.translate(
+                  offset: bottomLeftHandleCenter,
+                  child: Transform.rotate(
+                    angle: boundsInfoRotation + pi,
+                    alignment: Alignment.topLeft,
+                    child: IntrinsicHeight(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minWidth: boundsInfoSize,
+                        ),
+                        child: Center(
+                          widthFactor: 0,
+                          child: Container(
+                            margin: EdgeInsets.only(top: 8),
+                            decoration:
+                                theme.transformControl.boundsInfoDecoraation,
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            child: Text(
+                                '${_toStringDouble(box.size.width)} x ${_toStringDouble(box.size.height)}'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
             for (var item in widget.selectionGroup.selectedItems)
               Builder(
                 builder: (context) {
@@ -214,11 +257,9 @@ class _SelectionTransformControlWidgetState
               ),
             GestureDetector(
               onTapUp: (details) {
-                CanvasItemState? item = editor.findItemAtPosition(
+                CanvasItemState item = editor.findItemAtPosition(
                     editor.globalToLocal(details.localPosition));
-                if (item != null) {
-                  editor.handleItemClick(item);
-                }
+                editor.handleItemClick(item);
               },
               onPanStart: (details) {
                 _moveSession = editor.startControlSession(
@@ -235,11 +276,13 @@ class _SelectionTransformControlWidgetState
                 if (_moveSession != null) {
                   editor.endControlSession(_moveSession!);
                 }
+                print('panEnd');
               },
               onPanCancel: () {
                 if (_moveSession != null) {
                   editor.cancelControlSession(_moveSession!);
                 }
+                print('panCancel');
               },
               child: DecoratedPolygon(
                 polygon: polygon,

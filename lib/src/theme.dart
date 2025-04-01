@@ -65,15 +65,19 @@ class CanvasTransformControlThemeData {
   final double controlBorderWidth;
   final Color controlBoundaryBorderColor;
   final double controlBoundaryBorderWidth;
+  final Decoration boundsInfoDecoraation;
 
-  const CanvasTransformControlThemeData({
-    this.controlSize = 10,
-    this.controlColor = const Color(0xFFFFFFFF),
-    this.controlBorderColor = const Color(0xFF6E91E1),
-    this.controlBorderWidth = 1,
-    this.controlBoundaryBorderColor = const Color(0xFF6E91E1),
-    this.controlBoundaryBorderWidth = 1,
-  });
+  const CanvasTransformControlThemeData(
+      {this.controlSize = 10,
+      this.controlColor = const Color(0xFFFFFFFF),
+      this.controlBorderColor = const Color(0xFF6E91E1),
+      this.controlBorderWidth = 1,
+      this.controlBoundaryBorderColor = const Color(0xFF6E91E1),
+      this.controlBoundaryBorderWidth = 1,
+      this.boundsInfoDecoraation = const BoxDecoration(
+        color: Color(0xFF6E91E1),
+        borderRadius: BorderRadius.all(Radius.circular(5)),
+      )});
 }
 
 class CanvasThemeData {

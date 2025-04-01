@@ -220,11 +220,13 @@ class _LayoutGridPainter extends CustomPainter {
 class LayoutGridWidget extends StatelessWidget {
   final CanvasItemState state;
   final CanvasEditorHandler editor;
+  final Matrix4? overrideTransform;
 
   const LayoutGridWidget({
     super.key,
     required this.state,
     required this.editor,
+    this.overrideTransform,
   });
 
   @override
@@ -236,58 +238,91 @@ class LayoutGridWidget extends StatelessWidget {
         if (state is! CanvasObjectState) {
           return SizedBox.shrink();
         }
-        Matrix4 transform =
+        Matrix4 transform = overrideTransform ??
             state.item.layoutData.computeTranslatedMatrix(state);
-        Offset? editorOffset = state.item.editorOffset;
-        if (editorOffset != null) {
+        Offset? editorOffset = state.editorOffset;
+        if (editorOffset != null && overrideTransform == null) {
           transform.translate(editorOffset.dx, editorOffset.dy);
         }
         var innerSize = state.innerSize;
         bool clipContent = state.item.clipContent;
         BorderRadiusGeometry? borderRadius = state.item.borderRadius;
-        return Transform(
-          transform: transform,
-          child: GroupWidget(
-            children: [
-              for (var layoutGrid in state.item.layoutGrids)
-                AdaptiveSizedBox(
-                  size: innerSize,
-                  child: FreeHitClipRRect(
-                    borderRadius: borderRadius ?? BorderRadius.zero,
-                    clipBehavior: clipContent ? Clip.antiAlias : Clip.none,
-                    child: CustomPaint(
-                      painter: _LayoutGridPainter(
-                        editor: editor,
-                        layoutGrid: layoutGrid,
-                      ),
-                    ),
-                  ),
-                ),
-              IgnorePointer(
-                child: ListenableBuilder(
-                  listenable: Listenable.merge(state.children),
-                  builder: (context, child) {
-                    return AdaptiveSizedBox(
-                      size: innerSize,
-                      child: FreeHitClipRRect(
-                        borderRadius: borderRadius ?? BorderRadius.zero,
-                        clipBehavior: clipContent ? Clip.antiAlias : Clip.none,
-                        child: GroupWidget(
-                          children: [
-                            for (var child in state.children)
-                              LayoutGridWidget(
-                                key: ValueKey(child),
-                                editor: editor,
-                                state: child,
-                              ),
-                          ],
+        return Visibility(
+          visible: state.targetReparent == null || overrideTransform != null,
+          child: Transform(
+            transform: transform,
+            child: AdaptiveSizedBox(
+              size: innerSize,
+              child: FreeHitClipRRect(
+                borderRadius: borderRadius ?? BorderRadius.zero,
+                clipBehavior: clipContent ? Clip.antiAlias : Clip.none,
+                child: GroupWidget(
+                  passthrough: true,
+                  children: [
+                    for (var layoutGrid in state.item.layoutGrids)
+                      CustomPaint(
+                        painter: _LayoutGridPainter(
+                          editor: editor,
+                          layoutGrid: layoutGrid,
                         ),
                       ),
-                    );
-                  },
+                    IgnorePointer(
+                      child: ListenableBuilder(
+                        listenable: Listenable.merge(state.children),
+                        builder: (context, child) {
+                          return GroupWidget(
+                            children: [
+                              for (var child in state.children)
+                                LayoutGridWidget(
+                                  key: ValueKey(child),
+                                  editor: editor,
+                                  state: child,
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                    ValueListenableBuilder(
+                      valueListenable: state.targetDrop,
+                      builder: (context, value, _) {
+                        if (value == null) {
+                          return GroupWidget();
+                        }
+                        return GroupWidget(
+                          children: [
+                            for (var group in value.groups.value)
+                              for (var ghost in group.selectedItems)
+                                Builder(
+                                  builder: (context) {
+                                    var commonParent =
+                                        ghost.findCommonParent(state);
+                                    if (commonParent == null) {
+                                      return SizedBox.shrink();
+                                    }
+                                    Matrix4 reparentedTransform =
+                                        commonParent.globalEditorTransform *
+                                            ghost.getGlobalEditorTransformUntil(
+                                                commonParent);
+                                    return Transform(
+                                      transform: Matrix4.inverted(
+                                          state.globalTransform),
+                                      child: LayoutGridWidget(
+                                        state: ghost,
+                                        editor: editor,
+                                        overrideTransform: reparentedTransform,
+                                      ),
+                                    );
+                                  },
+                                )
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         );
       },

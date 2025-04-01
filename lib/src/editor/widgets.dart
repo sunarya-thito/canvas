@@ -80,6 +80,9 @@ class CanvasEditorState extends State<CanvasEditor>
   @override
   EditorControlSession? get controlSession => _controlSession;
 
+  @override
+  CanvasRootState get rootState => _rootState;
+
   void _handleDrag(Offset position) {
     // position is local to the editor widget
     double shiftX = 0;
@@ -391,6 +394,12 @@ class CanvasEditorState extends State<CanvasEditor>
 
   @override
   void handleItemClick(CanvasItemState targetClick) {
+    if (targetClick == _rootState) {
+      if (widget.selectionMode != CanvasSelectionMode.multiple) {
+        localSelection = null;
+      }
+      return;
+    }
     if (widget.selectionMode != CanvasSelectionMode.multiple) {
       localSelection = null;
     }

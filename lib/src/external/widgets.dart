@@ -2,6 +2,7 @@ import 'package:canvas/canvas.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'dart:ui' as ui;
 
 class TertiaryPanGestureRecognizer extends PanGestureRecognizer {
   TertiaryPanGestureRecognizer({
@@ -345,6 +346,247 @@ class RenderFreeHitClipRRect extends RenderProxyBox {
   }
 }
 
+class FreeHitClipPath extends SingleChildRenderObjectWidget {
+  const FreeHitClipPath({
+    super.key,
+    required this.clipper,
+    this.clipBehavior = Clip.hardEdge,
+    super.child,
+  });
+
+  final CustomClipper<Path> clipper;
+  final Clip clipBehavior;
+
+  @override
+  RenderFreeHitClipPath createRenderObject(BuildContext context) {
+    return RenderFreeHitClipPath(
+      clipper: clipper,
+      clipBehavior: clipBehavior,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+      BuildContext context, covariant RenderFreeHitClipPath renderObject) {
+    renderObject
+      ..clipper = clipper
+      ..clipBehavior = clipBehavior;
+  }
+}
+
+class RenderFreeHitClipPath extends RenderProxyBox {
+  RenderFreeHitClipPath({
+    required CustomClipper<Path> clipper,
+    Clip clipBehavior = Clip.hardEdge,
+  })  : _clipper = clipper,
+        _clipBehavior = clipBehavior;
+
+  CustomClipper<Path> get clipper => _clipper;
+  CustomClipper<Path> _clipper;
+  set clipper(CustomClipper<Path> value) {
+    if (_clipper == value) {
+      return;
+    }
+    final CustomClipper<Path> oldClipper = _clipper;
+    _clipper = value;
+    if (value.runtimeType != oldClipper.runtimeType ||
+        value.shouldReclip(oldClipper)) {
+      _markNeedsClip();
+    }
+    if (attached) {
+      oldClipper.removeListener(_markNeedsClip);
+      value.addListener(_markNeedsClip);
+    }
+  }
+
+  Clip get clipBehavior => _clipBehavior;
+  set clipBehavior(Clip value) {
+    if (value != _clipBehavior) {
+      _clipBehavior = value;
+      markNeedsPaint();
+    }
+  }
+
+  Clip _clipBehavior;
+
+  Path? _clip;
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _clipper.addListener(_markNeedsClip);
+  }
+
+  @override
+  void detach() {
+    _clipper.removeListener(_markNeedsClip);
+    super.detach();
+  }
+
+  void _markNeedsClip() {
+    _clip = null;
+    markNeedsPaint();
+    markNeedsSemanticsUpdate();
+  }
+
+  void _updateClip() {
+    _clip ??= _clipper.getClip(size);
+  }
+
+  @override
+  Rect? describeApproximatePaintClip(RenderObject child) {
+    switch (clipBehavior) {
+      case Clip.none:
+        return null;
+      case Clip.hardEdge:
+      case Clip.antiAlias:
+      case Clip.antiAliasWithSaveLayer:
+        return _clip?.getBounds();
+    }
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    _updateClip();
+    assert(_clip != null);
+    if (clipBehavior != Clip.none && !_clip!.contains(position)) {
+      return false;
+    }
+    if (hitTestChildren(result, position: position) || hitTestSelf(position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child != null) {
+      if (clipBehavior != Clip.none) {
+        _updateClip();
+        layer = context.pushClipPath(
+          needsCompositing,
+          offset,
+          _clip!.getBounds(),
+          _clip!,
+          super.paint,
+          clipBehavior: clipBehavior,
+          oldLayer: layer as ClipPathLayer?,
+        );
+      } else {
+        context.paintChild(child!, offset);
+        layer = null;
+      }
+    } else {
+      layer = null;
+    }
+  }
+}
+
+class FreeHitOpacity extends SingleChildRenderObjectWidget {
+  const FreeHitOpacity({
+    super.key,
+    required this.opacity,
+    super.child,
+  });
+
+  final double opacity;
+
+  @override
+  RenderFreeHitOpacity createRenderObject(BuildContext context) {
+    return RenderFreeHitOpacity(opacity: opacity);
+  }
+
+  @override
+  void updateRenderObject(
+      BuildContext context, covariant RenderFreeHitOpacity renderObject) {
+    renderObject.opacity = opacity;
+  }
+}
+
+class RenderFreeHitOpacity extends RenderProxyBox {
+  RenderFreeHitOpacity(
+      {double opacity = 1.0,
+      bool alwaysIncludeSemantics = false,
+      RenderBox? child})
+      : assert(opacity >= 0.0 && opacity <= 1.0),
+        _opacity = opacity,
+        _alwaysIncludeSemantics = alwaysIncludeSemantics,
+        _alpha = ui.Color.getAlphaFromOpacity(opacity),
+        super(child);
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (_alpha == 0) {
+      return false;
+    }
+    if (hitTestChildren(result, position: position) || hitTestSelf(position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
+  }
+
+  @override
+  bool get alwaysNeedsCompositing => child != null && _alpha > 0;
+
+  @override
+  bool get isRepaintBoundary => alwaysNeedsCompositing;
+
+  int _alpha;
+  double get opacity => _opacity;
+  double _opacity;
+  set opacity(double value) {
+    assert(value >= 0.0 && value <= 1.0);
+    if (_opacity == value) {
+      return;
+    }
+    final bool didNeedCompositing = alwaysNeedsCompositing;
+    final bool wasVisible = _alpha != 0;
+    _opacity = value;
+    _alpha = ui.Color.getAlphaFromOpacity(_opacity);
+    if (didNeedCompositing != alwaysNeedsCompositing) {
+      markNeedsCompositingBitsUpdate();
+    }
+    markNeedsCompositedLayerUpdate();
+    if (wasVisible != (_alpha != 0) && !alwaysIncludeSemantics) {
+      markNeedsSemanticsUpdate();
+    }
+  }
+
+  bool get alwaysIncludeSemantics => _alwaysIncludeSemantics;
+  bool _alwaysIncludeSemantics;
+  set alwaysIncludeSemantics(bool value) {
+    if (value == _alwaysIncludeSemantics) {
+      return;
+    }
+    _alwaysIncludeSemantics = value;
+    markNeedsSemanticsUpdate();
+  }
+
+  @override
+  bool paintsChild(RenderBox child) {
+    assert(child.parent == this);
+    return _alpha > 0;
+  }
+
+  @override
+  OffsetLayer updateCompositedLayer(
+      {required covariant OpacityLayer? oldLayer}) {
+    final OpacityLayer layer = oldLayer ?? OpacityLayer();
+    layer.alpha = _alpha;
+    return layer;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child == null || _alpha == 0) {
+      return;
+    }
+    super.paint(context, offset);
+  }
+}
+
 class NonOpaqueMetaData extends MetaData {
   const NonOpaqueMetaData({
     super.key,
@@ -480,11 +722,21 @@ class PathClipper extends CustomClipper<Path> {
 }
 
 class GroupWidget extends MultiChildRenderObjectWidget {
-  const GroupWidget({super.key, super.children});
+  final bool passthrough;
+  const GroupWidget({super.key, super.children, this.passthrough = false});
 
   @override
   RenderGroup createRenderObject(BuildContext context) {
-    return RenderGroup();
+    return RenderGroup(passthrough: passthrough);
+  }
+
+  @override
+  void updateRenderObject(
+      BuildContext context, covariant RenderGroup renderObject) {
+    if (renderObject.passthrough != passthrough) {
+      renderObject.passthrough = passthrough;
+      renderObject.markNeedsLayout();
+    }
   }
 }
 
@@ -494,6 +746,10 @@ class RenderGroup extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, GroupParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, GroupParentData> {
+  bool passthrough;
+
+  RenderGroup({required this.passthrough});
+
   @override
   void setupParentData(covariant RenderObject child) {
     if (child.parentData is! GroupParentData) {
@@ -507,7 +763,7 @@ class RenderGroup extends RenderBox
     while (child != null) {
       final GroupParentData childParentData =
           child.parentData as GroupParentData;
-      child.layout(const BoxConstraints());
+      child.layout(passthrough ? constraints : const BoxConstraints());
       child = childParentData.nextSibling;
     }
 

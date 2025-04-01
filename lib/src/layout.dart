@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/extra.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:canvas/src/selection/selection.dart';
@@ -84,22 +85,6 @@ class IntrinsicSizeConstraint implements SizeConstraint {
   }
 }
 
-abstract class DragResult {
-  static const DragResult doNothing = DoNothingDragResult();
-  const DragResult();
-}
-
-class DoNothingDragResult extends DragResult {
-  const DoNothingDragResult();
-}
-
-class ReInsertDragResult extends DragResult {
-  final CanvasItemState? beforeThis; // if null, then insert at the end
-  final Axis direction;
-
-  const ReInsertDragResult(this.beforeThis, this.direction);
-}
-
 abstract class CanvasLayout {
   const CanvasLayout();
   CanvasParentData setupParentData(CanvasObjectState state,
@@ -115,10 +100,13 @@ abstract class CanvasLayout {
     child.markNeedsLayout();
   }
 
-  DragResult handleDragAttempt(CanvasObjectState item, CanvasItemState dragged,
-      CanvasItemState target, Offset localPosition) {
-    return DragResult.doNothing;
-  }
+  // DragResult handleDragAttempt(CanvasObjectState item, CanvasItemState dragged,
+  //     CanvasItemState target, Offset localPosition) {
+  //   return DragResult.doNothing;
+  // }
+
+  void handleDrag(CanvasObjectState parent, CanvasItemState dragged,
+      EditorControlDelta delta) {}
 
   Iterable<ExtraTransformationControl> buildControls({
     required CanvasEditorState editor,
@@ -363,33 +351,6 @@ class FlexLayout extends CanvasLayout {
     this.spacing = 0,
     this.padding = EdgeInsets.zero,
   });
-
-  @override
-  DragResult handleDragAttempt(CanvasObjectState item, CanvasItemState dragged,
-      CanvasItemState target, Offset localPosition) {
-    if (dragged == target ||
-        target == item ||
-        !(nonAbsoluteChild(dragged) && nonAbsoluteChild(target))) {
-      return DragResult.doNothing;
-    }
-
-    CanvasItemState? beforeThis;
-    var size = target.size;
-    switch (direction) {
-      case Axis.horizontal:
-        beforeThis = localPosition.dx < size.width / 2
-            ? target
-            : nextNonAbsoluteChild(target);
-        break;
-      case Axis.vertical:
-        beforeThis = localPosition.dy < size.height / 2
-            ? target
-            : nextNonAbsoluteChild(target);
-        break;
-    }
-
-    return ReInsertDragResult(beforeThis, direction);
-  }
 
   @override
   void visitRelayout(CanvasItemState item, CanvasItemState child) {

@@ -48,7 +48,7 @@ class _SampleState extends State<Sample> {
       ),
       layoutData: AbsoluteLayoutData(
         top: 0,
-        left: 0,
+        left: 500,
         width: 1200,
         height: 500,
         // rotation: _rotation * pi / 180,
@@ -85,11 +85,12 @@ class _SampleState extends State<Sample> {
     CanvasObject ch2 = CanvasObject(
         debugLabel: 'child2',
         borderRadius: BorderRadius.circular(25),
-        layoutData: FlexLayoutData(
-          flex: 3,
-          min: 150,
-          max: 204,
-          cross: SizeConstraint.fixed(150),
+        layoutData: FixedLayoutData(
+          // flex: 3,
+          // min: 150,
+          // max: 204,
+          width: SizeConstraint.fixed(450),
+          height: SizeConstraint.fixed(150),
           shear: Offset(30 * pi / 180, -60 * pi / 180),
         ),
         layoutGrids: [
@@ -132,16 +133,62 @@ class _SampleState extends State<Sample> {
     );
     par.children = [
       ch1,
-      ch2,
       ch3,
+      ch2,
       ch4,
       ch6,
       ch5,
     ];
 
     parent = par;
+
+    CanvasObject par2 = CanvasObject(
+      layoutData: const AbsoluteLayoutData(
+        shear: Offset(30 * pi / 180, -60 * pi / 180),
+        top: 700,
+        width: 300,
+        height: 500,
+      ),
+    );
+
+    CanvasObject ch7 = CanvasObject(
+      debugLabel: 'child7',
+      clipContent: false,
+      layoutData: const AbsoluteLayoutData(
+        top: 150,
+        left: 200,
+        width: 300,
+        height: 300,
+        shear: Offset(-30 * pi / 180, 60 * pi / 180),
+      ),
+    );
+
+    CanvasObject ch8 = CanvasObject(
+      debugLabel: 'child8',
+      layoutData: const AbsoluteLayoutData(
+        top: 50,
+        left: 0,
+        width: 300,
+        height: 300,
+        shear: Offset(-30 * pi / 180, 60 * pi / 180),
+      ),
+    );
+
+    par2.children = [
+      ch7,
+    ];
+
+    ch7.children = [
+      ch8,
+    ];
+
+    ch2.children = [
+      ch8,
+    ];
+
     root = CanvasRoot(children: [
       parent,
+      par2,
     ], debugLabel: 'root');
   }
 

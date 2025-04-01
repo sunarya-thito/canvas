@@ -216,43 +216,69 @@ class SelectionMoveControlSession extends EditorControlSession {
     // }
   }
 
+  CanvasObjectState? _parentStart;
+  CanvasObjectState? _parentEnd;
+
   @override
   void onStart() {
+    CanvasItemState? targetHit = editor.findItemAtPosition(delta.start);
+    while (targetHit != null) {
+      if (targetHit is CanvasObjectState &&
+          !selection.containsOrDescendant(targetHit)) {
+        _parentStart = targetHit;
+        break;
+      }
+      targetHit = targetHit.parent;
+    }
     for (var group in selection.groups.value) {
       for (var item in group.selectedItems) {
-        item.item.editorOffset =
-            Offset.zero; // this prevents snapping for the item
+        item.editorOffset = Offset.zero; // this prevents snapping for the item
       }
     }
+    print('parentStart: $_parentStart');
   }
 
   @override
   void onUpdate() {
+    CanvasItemState targetHit = editor.findItemAtPosition(delta.end);
     selection.editorOffset.value = delta;
+    CanvasObjectState? targetReparent;
+    if (targetHit is CanvasObjectState && targetHit != _parentStart) {
+      targetReparent = targetHit;
+    }
+    _parentEnd?.targetDrop.value = null;
+    _parentEnd = targetReparent;
+    _parentEnd?.targetDrop.value = selection;
+    print('target: $targetReparent');
     for (var group in selection.groups.value) {
       for (var item in group.selectedItems) {
         var transform = Matrix4.inverted(item.globalTransform);
         var transformedDelta = delta.transform(transform);
-        item.item.editorOffset = transformedDelta.delta;
+        item.editorOffset = transformedDelta.delta;
+        item.targetReparent = targetReparent;
       }
     }
   }
 
   @override
   void onApply() {
+    print('apply');
     _resetEditorOffset();
   }
 
   @override
   void onCancel() {
+    print('cancel');
     _resetEditorOffset();
   }
 
   void _resetEditorOffset() {
+    _parentEnd?.targetDrop.value = null;
     selection.editorOffset.value = EditorControlDelta.zero;
     for (var group in selection.groups.value) {
       for (var item in group.selectedItems) {
-        item.item.editorOffset = null;
+        item.editorOffset = null;
+        item.targetReparent = null;
       }
     }
   }
