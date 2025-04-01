@@ -174,7 +174,9 @@ class CanvasEditorState extends State<CanvasEditor>
     var renderBox =
         _viewportKey.currentContext!.findRenderObject() as RenderBox;
     globalEnd = renderBox.globalToLocal(globalEnd);
-    _handleDrag(globalEnd);
+    if (session.shiftViewport) {
+      _handleDrag(globalEnd);
+    }
     globalEnd = transformOffset(globalEnd, getGlobalToLocalTransform());
     session.update(globalEnd);
     if (!snappingConfiguration.enableSnapping) {

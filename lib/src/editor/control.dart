@@ -61,6 +61,8 @@ abstract class EditorControlSession {
     onStart();
   }
 
+  bool get shiftViewport => true;
+
   void update(Offset end) {
     _delta = _delta.copyWith(end: end);
     // onUpdate is called manually after the end is snapped
@@ -82,6 +84,9 @@ abstract class EditorControlSession {
 
 abstract class RulerSnappingControlSession extends EditorControlSession {
   CanvasRulerSnappingPoint get snappingPoint;
+
+  @override
+  bool get shiftViewport => false;
 }
 
 class RulerCreateSnappingPointControlSession
