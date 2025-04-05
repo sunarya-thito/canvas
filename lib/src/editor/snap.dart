@@ -1,11 +1,47 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/control.dart';
+import 'package:canvas/src/editor/ruler.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
 
 typedef SnappingLineVisitor = bool Function(SnappingLine line);
-typedef SnappingPointVisitor = bool Function(SnappingPoint point);
+typedef SnapAnchorVisitor = bool Function(SnapAnchor point);
+typedef SnappingPointVisitor = bool Function(Offset point);
+
+class SnappingEntry {
+  final SnapAnchor sourceAnchor;
+  final SnappingLine sourceLine;
+  final SnapAnchor targetAnchor;
+  final SnappingLine targetLine;
+  final Offset snapDelta; // delta to move the source to the target
+  final double distance; // distance between the source and target lines
+
+  const SnappingEntry({
+    required this.sourceAnchor,
+    required this.sourceLine,
+    required this.targetAnchor,
+    required this.targetLine,
+    required this.snapDelta,
+    required this.distance,
+  });
+
+  @override
+  String toString() {
+    return 'SnappingEntry{sourceAnchor: $sourceAnchor, sourceLine: $sourceLine, targetAnchor: $targetAnchor, targetLine: $targetLine, snapDelta: $snapDelta, distance: $distance}';
+  }
+}
+
+class SnappingResult {
+  final List<SnappingEntry> entries;
+  final Offset snapDelta;
+
+  const SnappingResult({
+    required this.entries,
+    required this.snapDelta,
+  });
+}
 
 class SnappingConfiguration {
   static const List<double> defaultAngleSnapping = [
@@ -34,188 +70,159 @@ class SnappingConfiguration {
   });
 }
 
-class SnappingResult {
-  final Offset newOffset;
-  final double angle;
-
-  const SnappingResult({
-    required this.newOffset,
-    this.angle = 0,
-  });
-}
-
 class SnappingLine {
-  final Offset point;
-  final double angle;
+  final double offset;
+  final Axis direction; // horizontal = left to right, vertical = top to bottom
 
   const SnappingLine({
-    required this.point,
-    required this.angle,
+    required this.offset,
+    required this.direction,
   });
 
-  double distanceTo(Offset target, [double? angle]) {
-    if (angle != null && angle != this.angle) {
+  double distanceTo(SnappingLine line) {
+    if (direction == line.direction) {
+      return (offset - line.offset).abs();
+    } else {
       return double.infinity;
     }
-    double dx = target.dx - point.dx;
-    double dy = target.dy - point.dy;
-
-    double t = dx * cos(this.angle) + dy * sin(this.angle);
-
-    double snappedX = point.dx + t * cos(this.angle);
-    double snappedY = point.dy + t * sin(this.angle);
-
-    return sqrt(pow(snappedX - target.dx, 2) + pow(snappedY - target.dy, 2));
   }
 
-  Offset snapToLine(Offset target) {
-    double dx = target.dx - point.dx;
-    double dy = target.dy - point.dy;
-
-    double t = dx * cos(angle) + dy * sin(angle);
-
-    double snappedX = point.dx + t * cos(angle);
-    double snappedY = point.dy + t * sin(angle);
-
-    return Offset(snappedX, snappedY);
-  }
-}
-
-abstract class SnappingPoint {
-  const SnappingPoint();
-
-  // point is in global viewport coordinates (not app global coordinates)
-  SnappingResult? computeSnapping(
-    CanvasEditorHandler editor,
-    SnappingPoint other,
-    SnappingConfiguration configuration,
-  );
-
-  void visitLines(SnappingLineVisitor visitor);
-
-  SnappingPoint shift(Offset offset);
-}
-
-class AbsoluteSnappingPoint extends SnappingPoint {
-  // point is in global viewport coordinates (local to root)
-  final Offset point;
-  // angle is maxed out at 90deg (one quadrant)
-  // angle is in radians
-  final double angle;
-
-  const AbsoluteSnappingPoint({
-    required this.point,
-    this.angle = 0,
-  });
-
-  @override
-  SnappingPoint shift(Offset offset) {
-    return AbsoluteSnappingPoint(
-      point: point + offset,
-      angle: angle,
-    );
-  }
-
-  @override
-  void visitLines(SnappingLineVisitor visitor) {
-    if (!visitor(SnappingLine(point: point, angle: 0))) return;
-    if (!visitor(SnappingLine(point: point, angle: angle % pi))) return;
-    if (angle != 0) {
-      if (!visitor(SnappingLine(point: point, angle: (angle + pi / 2) % pi))) {
-        return;
+  // RETURNS DELTA
+  Offset snapToLine(SnappingLine line) {
+    if (direction == line.direction) {
+      double delta = offset - line.offset;
+      if (direction == Axis.vertical) {
+        return Offset(delta, 0);
+      } else {
+        return Offset(0, delta);
       }
-      visitor(SnappingLine(point: point, angle: (angle + pi) % pi));
-    }
-  }
-
-  @override
-  SnappingResult? computeSnapping(
-    CanvasEditorHandler editor,
-    SnappingPoint other,
-    SnappingConfiguration configuration,
-  ) {
-    double targetDistance =
-        configuration.snappingDistance / editor.transform.zoom;
-    SnappingResult? result;
-    other.visitLines(
-      (line) {
-        if (line.angle != 0 && !configuration.rotatedSnap) {
-          return true;
-        }
-        double distance = line.distanceTo(point);
-        if (distance <= targetDistance) {
-          result = SnappingResult(
-            newOffset: line.snapToLine(point),
-            angle: line.angle,
-          );
-          return false;
-        }
-        return true;
-      },
-    );
-    return result;
-  }
-}
-
-class CanvasItemSnappingPoint extends AbsoluteSnappingPoint {
-  final CanvasItemState item;
-
-  const CanvasItemSnappingPoint({
-    required this.item,
-    required super.point,
-    super.angle,
-  });
-
-  @override
-  SnappingPoint shift(Offset offset) {
-    return CanvasItemSnappingPoint(
-      item: item,
-      point: point + offset,
-      angle: angle,
-    );
-  }
-
-  @override
-  SnappingResult? computeSnapping(CanvasEditorHandler editor,
-      SnappingPoint other, SnappingConfiguration configuration) {
-    if (other is CanvasItemSnappingPoint && angle != 0) {
-      var otherParent = other.item.parent;
-      if (otherParent != item.parent) {
-        return null;
-      }
-    }
-    return super.computeSnapping(editor, other, configuration);
-  }
-
-  @override
-  void visitLines(SnappingLineVisitor visitor) {
-    if (!visitor(SnappingLine(point: point, angle: 0))) return;
-    if (!visitor(SnappingLine(point: point, angle: pi / 2))) return;
-    if (angle != 0) {
-      visitor(SnappingLine(point: point, angle: angle % pi));
+    } else {
+      return Offset.zero;
     }
   }
 
   @override
   String toString() {
-    return 'CanvasItemSnappingPoint{item: $item, point: $point, angle: $angle}';
+    return 'SnappingLine{offset: $offset, direction: $direction}';
   }
 }
 
-// class SelectionSnappingPoint extends AbsoluteSnappingPoint {
-//   final SelectionGroup group;
+abstract class SnapAnchor {
+  const SnapAnchor();
 
-//   const SelectionSnappingPoint({
-//     required this.group,
-//     required super.point,
-//   });
+  String? get debugOwner => null;
 
-//   @override
-//   SnappingPoint shift(Offset offset) {
-//     return SelectionSnappingPoint(
-//       group: group,
-//       point: point + offset,
-//     );
-//   }
-// }
-// IT SHOULD BE RESIZE NOT SELECTION DRAG
+  void visitLines(SnappingLineVisitor visitor);
+
+  SnapAnchor shift(Offset offset);
+
+  bool canSnapInto(SnapAnchor other) => true;
+}
+
+class AbsoluteSnapAnchor extends SnapAnchor {
+  // point is in global viewport coordinates (local to root)
+  final Offset point;
+  @override
+  final String? debugOwner;
+
+  const AbsoluteSnapAnchor({
+    required this.point,
+    this.debugOwner,
+  });
+
+  @override
+  SnapAnchor shift(Offset offset) {
+    return AbsoluteSnapAnchor(
+      point: point + offset,
+    );
+  }
+
+  @override
+  void visitLines(SnappingLineVisitor visitor) {
+    if (!visitor(SnappingLine(offset: point.dy, direction: Axis.horizontal))) {
+      return;
+    }
+    if (!visitor(SnappingLine(offset: point.dx, direction: Axis.vertical))) {
+      return;
+    }
+  }
+}
+
+class CanvasItemSnapAnchor extends AbsoluteSnapAnchor {
+  final CanvasItemState item;
+
+  const CanvasItemSnapAnchor({
+    required this.item,
+    required super.point,
+  });
+
+  @override
+  SnapAnchor shift(Offset offset) {
+    return CanvasItemSnapAnchor(
+      item: item,
+      point: point + offset,
+    );
+  }
+
+  @override
+  String? get debugOwner => item.item.debugLabel;
+
+  @override
+  String toString() {
+    return 'CanvasItemSnapAnchor{item: $item, point: $point}';
+  }
+}
+
+class SelectionSnapAnchor extends AbsoluteSnapAnchor {
+  final SelectionGroup group;
+
+  const SelectionSnapAnchor({
+    required this.group,
+    required super.point,
+  });
+
+  @override
+  SnapAnchor shift(Offset offset) {
+    return SelectionSnapAnchor(
+      group: group,
+      point: point + offset,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'SelectionSnapAnchor{group: $group, point: $point}';
+  }
+}
+
+class CanvasRulerSnapAnchor extends SnapAnchor {
+  final double offset;
+  final Axis direction;
+  final CanvasRulerCrossLineVisitor? crossLineVisitor;
+
+  const CanvasRulerSnapAnchor({
+    required this.offset,
+    required this.direction,
+    this.crossLineVisitor, // only needed for one axis
+  });
+
+  @override
+  SnapAnchor shift(Offset offset) {
+    return CanvasRulerSnapAnchor(
+      offset:
+          this.offset + (direction == Axis.horizontal ? offset.dy : offset.dx),
+      direction: direction,
+      crossLineVisitor: crossLineVisitor,
+    );
+  }
+
+  @override
+  void visitLines(SnappingLineVisitor visitor) {
+    visitor(SnappingLine(offset: offset, direction: direction));
+  }
+
+  @override
+  bool canSnapInto(SnapAnchor other) {
+    return other is! CanvasRulerSnapAnchor;
+  }
+}

@@ -52,6 +52,54 @@ class EditorControlDelta {
       end: transformOffset(end, transform),
     );
   }
+
+  @override
+  String toString() {
+    return 'EditorControlDelta(start: $start, end: $end)';
+  }
+}
+
+class EditorResizeDelta {
+  final Offset delta;
+  final Alignment alignment;
+
+  const EditorResizeDelta({
+    required this.delta,
+    required this.alignment,
+  });
+
+  EditorResizeDelta symmetric() {
+    return EditorResizeDelta(
+      delta: delta,
+      alignment: Alignment.center,
+    );
+  }
+
+  EditorResizeDelta proportional() {
+    final dominant = delta.dx.abs() > delta.dy.abs() ? delta.dx : delta.dy;
+    final proportionalDelta = Offset(
+      dominant * delta.dx.sign,
+      dominant * delta.dy.sign,
+    );
+    return EditorResizeDelta(
+      delta: proportionalDelta,
+      alignment: alignment,
+    );
+  }
+
+  Offset get positionDelta {
+    return Offset(
+      -delta.dx * 0.5 * alignment.x,
+      -delta.dy * 0.5 * alignment.y,
+    );
+  }
+
+  Size get sizeDelta {
+    return Size(
+      delta.dx * alignment.x.abs() + (-delta.dx * 0.5 * alignment.x),
+      delta.dy * alignment.y.abs() + (-delta.dy * 0.5 * alignment.y),
+    );
+  }
 }
 
 abstract class EditorControlSession {
@@ -80,123 +128,151 @@ abstract class EditorControlSession {
   void onApply() {}
   void onUpdateEditor(CanvasEditorHandler editor) {}
 
-  void visitTransformedSnappingPoint(SnappingPointVisitor visitor) {}
+  void visitTransformedSnapAnchor(SnapAnchorVisitor visitor) {}
 }
 
 abstract class RulerSnappingControlSession extends EditorControlSession {
-  CanvasRulerSnappingPoint get snappingPoint;
+  CanvasSnapGuideline get snapAnchor;
 
   @override
   bool get shiftViewport => false;
 }
 
-class RulerCreateSnappingPointControlSession
-    extends RulerSnappingControlSession {
+class RulerCreateSnapAnchorControlSession extends RulerSnappingControlSession {
   final CanvasEditorHandler editor;
   final Axis direction;
-  RulerCreateSnappingPointControlSession(this.editor, this.direction);
+  RulerCreateSnapAnchorControlSession(this.editor, this.direction);
 
-  late CanvasRulerSnappingPoint _snappingPoint;
-
-  @override
-  CanvasRulerSnappingPoint get snappingPoint => _snappingPoint;
+  late CanvasSnapGuideline _snapAnchor;
 
   @override
-  void visitTransformedSnappingPoint(SnappingPointVisitor visitor) {
-    visitor(CanvasRulerSnappingPoint(
-      offset: direction == Axis.horizontal ? delta.startY : delta.startX,
-      axis: direction,
-    ));
+  CanvasSnapGuideline get snapAnchor => _snapAnchor;
+
+  @override
+  void visitTransformedSnapAnchor(SnapAnchorVisitor visitor) {
+    int index = 0;
+    var list = editor.rulerGuidelines;
+    visitor(CanvasRulerSnapAnchor(
+        offset: snapAnchor.axis == Axis.horizontal ? delta.endY : delta.endX,
+        direction: snapAnchor.axis,
+        crossLineVisitor: () {
+          while (index < list.length) {
+            var line = list[index++];
+            if (line.axis != snapAnchor.axis) {
+              return line.offset;
+            }
+          }
+          return null;
+        }));
   }
 
   @override
   void onStart() {
-    _snappingPoint = editor.createRulerSnappingPoint(
+    _snapAnchor = editor.createRulerSnapAnchor(
         direction == Axis.horizontal ? delta.startY : delta.startX, direction);
   }
 
   @override
   void onUpdate() {
-    _snappingPoint.offset =
-        direction == Axis.horizontal ? delta.endY : delta.endX;
+    _snapAnchor.offset = direction == Axis.horizontal ? delta.endY : delta.endX;
   }
 
   @override
   void onApply() {
     if (!this.delta.hasChanged) {
-      editor.removeRulerSnappingPoint(_snappingPoint);
+      editor.removeRulerSnapAnchor(_snapAnchor);
       return;
     }
-    double delta = snappingPoint.axis == Axis.horizontal
+    double delta = snapAnchor.axis == Axis.horizontal
         ? this.delta.deltaY
         : this.delta.deltaX;
     if (delta < 1) {
-      editor.removeRulerSnappingPoint(snappingPoint);
+      editor.removeRulerSnapAnchor(snapAnchor);
       return;
     }
-    double offset = snappingPoint.offset * editor.transform.zoom +
-        (snappingPoint.axis == Axis.horizontal
+    double offset = snapAnchor.offset * editor.transform.zoom +
+        (snapAnchor.axis == Axis.horizontal
             ? (editor.viewportSize.height / 2 * editor.transform.zoom +
                 editor.transform.offset.dy)
             : (editor.viewportSize.width / 2 * editor.transform.zoom +
                 editor.transform.offset.dx));
     if (offset < 0 ||
-        (snappingPoint.axis == Axis.horizontal &&
+        (snapAnchor.axis == Axis.horizontal &&
             offset > editor.viewportSize.height) ||
-        (snappingPoint.axis == Axis.vertical &&
+        (snapAnchor.axis == Axis.vertical &&
             offset > editor.viewportSize.width)) {
-      editor.removeRulerSnappingPoint(snappingPoint);
+      editor.removeRulerSnapAnchor(snapAnchor);
       return;
     }
-    editor.sendNotification(CanvasRulerSnappingPointCreatedNotification(
-        point: _snappingPoint, editor: editor));
+    editor.sendNotification(CanvasRulerSnapAnchorCreatedNotification(
+        point: _snapAnchor, editor: editor));
   }
 
   @override
   void onCancel() {
-    editor.removeRulerSnappingPoint(_snappingPoint);
+    editor.removeRulerSnapAnchor(_snapAnchor);
   }
 }
 
-class RulerUpdateSnappingPointControlSession
-    extends RulerSnappingControlSession {
+class RulerUpdateSnapAnchorControlSession extends RulerSnappingControlSession {
   final CanvasEditorHandler editor;
   @override
-  final CanvasRulerSnappingPoint snappingPoint;
-  RulerUpdateSnappingPointControlSession(this.editor, this.snappingPoint);
+  final CanvasSnapGuideline snapAnchor;
+  RulerUpdateSnapAnchorControlSession(this.editor, this.snapAnchor);
+
+  @override
+  void visitTransformedSnapAnchor(SnapAnchorVisitor visitor) {
+    int index = 0;
+    var list = editor.rulerGuidelines;
+    visitor(CanvasRulerSnapAnchor(
+      offset: snapAnchor.axis == Axis.horizontal ? delta.endY : delta.endX,
+      direction: snapAnchor.axis,
+      crossLineVisitor: snapAnchor.axis == Axis.horizontal
+          ? () {
+              while (index < list.length) {
+                var line = list[index++];
+                if (line.axis != snapAnchor.axis) {
+                  return line.offset;
+                }
+              }
+              return null;
+            }
+          : null,
+    ));
+  }
 
   @override
   void onUpdate() {
-    snappingPoint.offset =
-        snappingPoint.axis == Axis.horizontal ? delta.endY : delta.endX;
+    snapAnchor.offset =
+        snapAnchor.axis == Axis.horizontal ? delta.endY : delta.endX;
   }
 
   @override
   void onApply() {
-    double offset = snappingPoint.offset * editor.transform.zoom +
-        (snappingPoint.axis == Axis.horizontal
+    double offset = snapAnchor.offset * editor.transform.zoom +
+        (snapAnchor.axis == Axis.horizontal
             ? (editor.viewportSize.height / 2 * editor.transform.zoom +
                 editor.transform.offset.dy)
             : (editor.viewportSize.width / 2 * editor.transform.zoom +
                 editor.transform.offset.dx));
     if (offset < 0 ||
-        (snappingPoint.axis == Axis.horizontal &&
+        (snapAnchor.axis == Axis.horizontal &&
             offset > editor.viewportSize.height) ||
-        (snappingPoint.axis == Axis.vertical &&
+        (snapAnchor.axis == Axis.vertical &&
             offset > editor.viewportSize.width)) {
-      editor.removeRulerSnappingPoint(snappingPoint);
+      editor.removeRulerSnapAnchor(snapAnchor);
       return;
     }
-    editor.sendNotification(CanvasRulerSnappingPointUpdatedNotification(
-        editor: editor, point: snappingPoint));
+    editor.sendNotification(CanvasRulerSnapAnchorUpdatedNotification(
+        editor: editor, point: snapAnchor));
   }
 
   @override
   void onCancel() {
-    double delta = snappingPoint.axis == Axis.horizontal
+    double delta = snapAnchor.axis == Axis.horizontal
         ? this.delta.deltaY
         : this.delta.deltaX;
-    snappingPoint.offset -= delta;
+    snapAnchor.offset -= delta;
   }
 }
 
@@ -207,19 +283,58 @@ class SelectionMoveControlSession extends EditorControlSession {
   SelectionMoveControlSession(this.selection, this.editor);
 
   @override
-  void visitTransformedSnappingPoint(SnappingPointVisitor visitor) {
-    // for (var group in selection.groups.value) {
-    //   for (var item in group.selectedItems) {
-    //     if (!item.visitSnappingPoint(
-    //       (point) {
-    //         return visitor(point.shift(delta.delta));
-    //       },
-    //       transform: item.globalTransform,
-    //     )) {
-    //       return;
-    //     }
-    //   }
-    // }
+  void visitTransformedSnapAnchor(SnapAnchorVisitor visitor) {
+    var offset = delta.delta;
+    for (var group in selection.groups.value) {
+      var box = group.getTransformControlBox();
+      var transform = box.transform;
+      var size = box.size;
+      var topLeft = transformOffset(Offset.zero, transform) + offset;
+      var topRight = transformOffset(Offset(size.width, 0), transform) + offset;
+      var bottomLeft =
+          transformOffset(Offset(0, size.height), transform) + offset;
+      var bottomRight =
+          transformOffset(Offset(size.width, size.height), transform) + offset;
+      var center =
+          transformOffset(Offset(size.width / 2, size.height / 2), transform) +
+              offset;
+
+      // top left
+      if (!visitor(SelectionSnapAnchor(
+        group: group,
+        point: topLeft,
+      ))) {
+        return;
+      }
+      // top right
+      if (!visitor(SelectionSnapAnchor(
+        group: group,
+        point: topRight,
+      ))) {
+        return;
+      }
+      // bottom left
+      if (!visitor(SelectionSnapAnchor(
+        group: group,
+        point: bottomLeft,
+      ))) {
+        return;
+      }
+      // bottom right
+      if (!visitor(SelectionSnapAnchor(
+        group: group,
+        point: bottomRight,
+      ))) {
+        return;
+      }
+      // center
+      if (!visitor(SelectionSnapAnchor(
+        group: group,
+        point: center,
+      ))) {
+        return;
+      }
+    }
   }
 
   CanvasObjectState? _parentStart;
@@ -328,5 +443,56 @@ class SelectionMoveControlSession extends EditorControlSession {
       }
     }
     _stopReparenting();
+  }
+}
+
+class _SelectionTransformSession {
+  final CanvasItemState item;
+  final CanvasLayoutData initialLayoutData;
+  final Alignment? alignment; // null when the item is a singular selection
+
+  _SelectionTransformSession({
+    required this.item,
+    required this.initialLayoutData,
+    required this.alignment,
+  });
+}
+
+class SelectionResizeControlSession extends EditorControlSession {
+  final CanvasEditorHandler editor;
+  final Selection selection;
+  late List<_SelectionTransformSession> _sessions;
+
+  SelectionResizeControlSession(
+    this.editor,
+    this.selection,
+  );
+
+  @override
+  void onStart() {
+    _sessions = [];
+    var singularSelection = selection.singleSelection;
+    if (singularSelection != null) {
+      _sessions = [
+        _SelectionTransformSession(
+          item: singularSelection,
+          initialLayoutData: singularSelection.item.layoutData,
+          alignment: null,
+        )
+      ];
+    } else {
+      for (var group in selection.groups.value) {
+        for (var item in group.selectedItems) {
+          var layoutData = item.item.layoutData;
+          var size = item.size;
+          var transform = item.globalEditorTransform;
+          // _sessions.add(_SelectionTransformSession(
+          //   item: item,
+          //   initialLayoutData: layoutData,
+          //   alignment: item.getTransformControlAlignment(),
+          // ));
+        }
+      }
+    }
   }
 }

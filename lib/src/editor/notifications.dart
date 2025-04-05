@@ -2,31 +2,31 @@ import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/ruler.dart';
 import 'package:flutter/widgets.dart';
 
-class CanvasRulerSnappingPointCreatedNotification extends Notification {
-  final CanvasRulerSnappingPoint point;
+class CanvasRulerSnapAnchorCreatedNotification extends Notification {
+  final CanvasSnapGuideline point;
   final CanvasEditorHandler editor;
 
-  const CanvasRulerSnappingPointCreatedNotification({
+  const CanvasRulerSnapAnchorCreatedNotification({
     required this.point,
     required this.editor,
   });
 }
 
-class CanvasRulerSnappingPointRemovedNotification extends Notification {
-  final CanvasRulerSnappingPoint point;
+class CanvasRulerSnapAnchorRemovedNotification extends Notification {
+  final CanvasSnapGuideline point;
   final CanvasEditorHandler editor;
 
-  const CanvasRulerSnappingPointRemovedNotification({
+  const CanvasRulerSnapAnchorRemovedNotification({
     required this.point,
     required this.editor,
   });
 }
 
-class CanvasRulerSnappingPointUpdatedNotification extends Notification {
-  final CanvasRulerSnappingPoint point;
+class CanvasRulerSnapAnchorUpdatedNotification extends Notification {
+  final CanvasSnapGuideline point;
   final CanvasEditorHandler editor;
 
-  const CanvasRulerSnappingPointUpdatedNotification({
+  const CanvasRulerSnapAnchorUpdatedNotification({
     required this.point,
     required this.editor,
   });

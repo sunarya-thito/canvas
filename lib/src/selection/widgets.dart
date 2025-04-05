@@ -130,12 +130,16 @@ class _SelectionTransformControlWidgetState
           print('onTap: ${widget.selectionGroup}');
         },
         onPanUpdate: (details) {},
-        child: DecoratedPolygon(
-          polygon: polygon,
-          fillColor: fill ? theme.transformControl.controlColor : null,
-          strokeColor: fill ? theme.transformControl.controlBorderColor : null,
-          strokeWidth: fill ? theme.transformControl.controlBorderWidth : 0,
-        ),
+        child: widget.selection.editorOffset.value.delta == Offset.zero
+            ? DecoratedPolygon(
+                polygon: polygon,
+                fillColor: fill ? theme.transformControl.controlColor : null,
+                strokeColor:
+                    fill ? theme.transformControl.controlBorderColor : null,
+                strokeWidth:
+                    fill ? theme.transformControl.controlBorderWidth : 0,
+              )
+            : null,
       ),
     );
   }
@@ -177,7 +181,10 @@ class _SelectionTransformControlWidgetState
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.selection.editorOffset,
+      listenable: Listenable.merge([
+        widget.selection.editorOffset,
+        ...widget.selectionGroup.selectedItems,
+      ]),
       builder: (context, child) {
         var delta = widget.selection.editorOffset.value;
         var parentTransform = Matrix4.copy(widget.parentTransform);
@@ -246,13 +253,16 @@ class _SelectionTransformControlWidgetState
                   Polygon polygon =
                       Polygon.fromRect(Offset.zero & item.innerSize);
                   polygon = polygon.transform(globalTransform);
-                  return DecoratedPolygon(
-                    polygon: polygon,
-                    strokeColor:
-                        theme.transformControl.controlBoundaryBorderColor,
-                    strokeWidth:
-                        theme.transformControl.controlBoundaryBorderWidth,
-                  );
+                  return widget.selection.editorOffset.value.delta ==
+                          Offset.zero
+                      ? DecoratedPolygon(
+                          polygon: polygon,
+                          strokeColor:
+                              theme.transformControl.controlBoundaryBorderColor,
+                          strokeWidth:
+                              theme.transformControl.controlBoundaryBorderWidth,
+                        )
+                      : SizedBox.shrink();
                 },
               ),
             GestureDetector(
@@ -282,11 +292,15 @@ class _SelectionTransformControlWidgetState
                   editor.cancelControlSession(_moveSession!);
                 }
               },
-              child: DecoratedPolygon(
-                polygon: polygon,
-                strokeColor: theme.transformControl.controlBoundaryBorderColor,
-                strokeWidth: theme.transformControl.controlBoundaryBorderWidth,
-              ),
+              child: widget.selection.editorOffset.value.delta == Offset.zero
+                  ? DecoratedPolygon(
+                      polygon: polygon,
+                      strokeColor:
+                          theme.transformControl.controlBoundaryBorderColor,
+                      strokeWidth:
+                          theme.transformControl.controlBoundaryBorderWidth,
+                    )
+                  : null,
             ),
             // extra controls
             for (var control in _extraControls)

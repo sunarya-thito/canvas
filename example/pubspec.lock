@@ -5,18 +5,18 @@ packages:
     dependency: transitive
     description:
       name: archive
-      sha256: "0c64e928dcbefddecd234205422bcfc2b5e6d31be0b86fef0d0dd48d7b4c9742"
+      sha256: "7dcbd0f87fe5f61cb28da39a1a8b70dbc106e2fe0516f7836eb7bb2948481a12"
       url: "https://pub.dev"
     source: hosted
-    version: "4.0.4"
+    version: "4.0.5"
   args:
     dependency: transitive
     description:
       name: args
-      sha256: bf9f5caeea8d8fe6721a9c358dd8a5c1947b27f1cfaa18b39c301273594919e6
+      sha256: d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04
       url: "https://pub.dev"
     source: hosted
-    version: "2.6.0"
+    version: "2.7.0"
   async:
     dependency: transitive
     description:
@@ -128,6 +128,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.0"
+  expressions:
+    dependency: transitive
+    description:
+      name: expressions
+      sha256: "308a621b602923dd8a0cf3072793b24850d06453eb49c6b698cbda41a282e904"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.5+2"
   fake_async:
     dependency: transitive
     description:
@@ -190,10 +198,10 @@ packages:
     dependency: transitive
     description:
       name: image
-      sha256: "13d3349ace88f12f4a0d175eb5c12dcdd39d35c4c109a8a13dfeb6d0bd9e31c3"
+      sha256: "4e973fcf4caae1a4be2fa0a13157aa38a8f9cb049db6529aa00b4d71abc4d928"
       url: "https://pub.dev"
     source: hosted
-    version: "4.5.3"
+    version: "4.5.4"
   jovial_misc:
     dependency: transitive
     description:
@@ -294,10 +302,10 @@ packages:
     dependency: transitive
     description:
       name: phonecodes
-      sha256: "094a76b0ba3d8f9c1c83044ae8783d46e6906703c86eb08facd876844c264bf5"
+      sha256: d963c19d35914cd83620e64125689a0c09047e25046639f2a124142ccf5868bb
       url: "https://pub.dev"
     source: hosted
-    version: "0.0.3"
+    version: "0.0.4"
   posix:
     dependency: transitive
     description:
@@ -306,15 +314,31 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.1"
+  quiver:
+    dependency: transitive
+    description:
+      name: quiver
+      sha256: ea0b925899e64ecdfbf9c7becb60d5b50e706ade44a85b2363be2a22d88117d2
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.2.2"
+  rxdart:
+    dependency: transitive
+    description:
+      name: rxdart
+      sha256: "5c3004a4a8dbb94bd4bf5412a4def4acdaa12e12f269737a5751369e12d1a962"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.28.0"
   shadcn_flutter:
     dependency: "direct main"
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "62b24a0bb2daa57052b5673fb09bc608dd3320f3"
+      resolved-ref: "4eca5e95a99d48de7a660d1a5899cd929c22f9f9"
       url: "https://github.com/sunarya-thito/shadcn_flutter.git"
     source: git
-    version: "0.0.28"
+    version: "0.0.34"
   skeletonizer:
     dependency: transitive
     description:

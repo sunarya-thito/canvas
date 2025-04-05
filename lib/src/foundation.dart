@@ -292,15 +292,16 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
 
   Matrix4 get globalEditorTransform {
     Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
-    var editorOffset = this.editorOffset;
-    if (editorOffset != null) {
-      transform.translate(editorOffset.dx, editorOffset.dy);
-    }
+
     CanvasItemState? current = parent;
     while (current != null) {
       transform =
           current.item.layoutData.computeTranslatedMatrix(current) * transform;
       current = current.parent;
+    }
+    var editorOffset = this.editorOffset;
+    if (editorOffset != null) {
+      transform.translate(editorOffset.dx, editorOffset.dy);
     }
     return transform;
   }
@@ -363,15 +364,11 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     return null;
   }
 
-  bool visitSnappingPoint(SnappingPointVisitor visitor,
+  bool visitSnapAnchor(SnapAnchorVisitor visitor,
       {Matrix4? parentTransform, Matrix4? transform}) {
     // if this object or its ascendant is being dragged, then do not snap!
-    CanvasItemState? currentTest = this;
-    while (currentTest != null) {
-      if (currentTest.editorOffset != null) {
-        return true;
-      }
-      currentTest = currentTest.parent;
+    if (editorOffset != null) {
+      return true;
     }
     transform ??= item.layoutData.computeTranslatedMatrix(this);
     if (parentTransform != null) {
@@ -379,62 +376,26 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     }
     var innerSize = this.innerSize;
     Offset topLeft = transformOffset(Offset.zero, transform);
+    if (!visitor(CanvasItemSnapAnchor(item: this, point: topLeft))) {
+      return false;
+    }
     Offset topRight = transformOffset(Offset(innerSize.width, 0), transform);
-    double horizontalAngle = (topRight - topLeft).direction;
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: topLeft, angle: horizontalAngle))) {
-      return false;
-    }
-    Offset bottomLeft = transformOffset(Offset(0, innerSize.height), transform);
-    double verticalAngle = (bottomLeft - topLeft).direction;
-    double bottomLeftVerticalAngle = verticalAngle;
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: topLeft, angle: verticalAngle))) {
-      return false;
-    }
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: topRight, angle: horizontalAngle))) {
+    if (!visitor(CanvasItemSnapAnchor(item: this, point: topRight))) {
       return false;
     }
     Offset bottomRight =
         transformOffset(Offset(innerSize.width, innerSize.height), transform);
-    verticalAngle = (bottomRight - topRight).direction;
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: topRight, angle: verticalAngle))) {
+    if (!visitor(CanvasItemSnapAnchor(item: this, point: bottomRight))) {
       return false;
     }
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: bottomRight, angle: verticalAngle))) {
-      return false;
-    }
-    horizontalAngle = (bottomLeft - bottomRight).direction;
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: bottomRight, angle: horizontalAngle))) {
-      return false;
-    }
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: bottomLeft, angle: horizontalAngle))) {
-      return false;
-    }
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: bottomLeft, angle: bottomLeftVerticalAngle))) {
+    Offset bottomLeft = transformOffset(Offset(0, innerSize.height), transform);
+    if (!visitor(CanvasItemSnapAnchor(item: this, point: bottomLeft))) {
       return false;
     }
     // center
     Offset center = transformOffset(
         Offset(innerSize.width / 2, innerSize.height / 2), transform);
-    Offset topCenter =
-        transformOffset(Offset(innerSize.width / 2, 0), transform);
-    verticalAngle = (topCenter - center).direction;
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: center, angle: verticalAngle))) {
-      return false;
-    }
-    Offset centerLeft =
-        transformOffset(Offset(0, innerSize.height / 2), transform);
-    horizontalAngle = (centerLeft - center).direction;
-    if (!visitor(CanvasItemSnappingPoint(
-        item: this, point: center, angle: horizontalAngle))) {
+    if (!visitor(CanvasItemSnapAnchor(item: this, point: center))) {
       return false;
     }
     return true;
@@ -803,35 +764,19 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
     }
   }
 
-  bool get descendantHasEditorOffset {
-    for (var item in children) {
-      if (item.editorOffset != null) {
-        return true;
-      }
-      if (item is CanvasObjectState && item.descendantHasEditorOffset) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   @override
-  bool visitSnappingPoint(SnappingPointVisitor visitor,
+  bool visitSnapAnchor(SnapAnchorVisitor visitor,
       {Matrix4? parentTransform, Matrix4? transform}) {
-    if (descendantHasEditorOffset) {
-      return true;
-    }
-    transform ??= item.layoutData
-        .computeTranslatedMatrix(this, parentMatrix: parentTransform);
+    transform ??= item.layoutData.computeTranslatedMatrix(this);
     if (parentTransform != null) {
       transform = (parentTransform * transform) as Matrix4;
     }
-    if (!super.visitSnappingPoint(visitor,
+    if (!super.visitSnapAnchor(visitor,
         parentTransform: null, transform: transform)) {
       return false;
     }
     for (var child in children) {
-      if (!child.visitSnappingPoint(visitor, parentTransform: transform)) {
+      if (!child.visitSnapAnchor(visitor, parentTransform: transform)) {
         return false;
       }
     }
@@ -1022,10 +967,10 @@ class CanvasRootState extends CanvasObjectState {
   }
 
   @override
-  bool visitSnappingPoint(SnappingPointVisitor visitor,
+  bool visitSnapAnchor(SnapAnchorVisitor visitor,
       {Matrix4? parentTransform, Matrix4? transform}) {
     for (var child in children) {
-      if (!child.visitSnappingPoint(visitor, parentTransform: transform)) {
+      if (!child.visitSnapAnchor(visitor, parentTransform: transform)) {
         return false;
       }
     }

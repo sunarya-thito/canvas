@@ -34,6 +34,8 @@ class CanvasEditor extends StatefulWidget {
   final double minZoom;
   final double maxZoom;
   final bool allowReparenting;
+  final bool symmetricResize;
+  final bool proportionalResize;
 
   const CanvasEditor({
     super.key,
@@ -50,7 +52,9 @@ class CanvasEditor extends StatefulWidget {
     this.maxOffset = const Offset(10000, 10000),
     this.minZoom = 0.01,
     this.maxZoom = 100,
-    this.allowReparenting = true,
+    this.allowReparenting = false,
+    this.symmetricResize = false,
+    this.proportionalResize = false,
   });
 
   @override
@@ -72,10 +76,11 @@ class CanvasEditorState extends State<CanvasEditor>
   Duration? _lastDragTick;
 
   Offset? _dragStart;
-  final MutableNotifier<List<CanvasRulerSnappingPoint>> _rulerSnappingPoints =
+  final MutableNotifier<List<CanvasSnapGuideline>> _rulerSnapAnchors =
       MutableNotifier([]);
-  final ValueNotifier<CanvasRulerSnappingPoint?> _selectedRulerSnappingPoint =
+  final ValueNotifier<CanvasSnapGuideline?> _selectedRulerSnapAnchor =
       ValueNotifier(null);
+  final ValueNotifier<SnappingResult?> _activeSnapAnchor = ValueNotifier(null);
 
   EditorControlSession? _controlSession;
 
@@ -87,6 +92,12 @@ class CanvasEditorState extends State<CanvasEditor>
 
   @override
   bool get allowReparenting => widget.allowReparenting;
+
+  @override
+  bool get symmetricResize => widget.symmetricResize;
+
+  @override
+  bool get proportionalResize => widget.proportionalResize;
 
   void _handleDrag(Offset position) {
     // position is local to the editor widget
@@ -135,7 +146,7 @@ class CanvasEditorState extends State<CanvasEditor>
     if (shift != null) {
       shift = Offset(shift.dx * delta.inMilliseconds / 2,
           shift.dy * delta.inMilliseconds / 2);
-      shiftViewport(shift);
+      dragViewport(shift);
       var controlSession = _controlSession;
       if (controlSession != null) {
         controlSession.shift(-shift / transform.zoom);
@@ -188,11 +199,17 @@ class CanvasEditorState extends State<CanvasEditor>
       session.onUpdate();
       return session;
     }
-    var snappingResult = snap(session.visitTransformedSnappingPoint);
+    session.visitTransformedSnapAnchor(
+      (point) {
+        return true;
+      },
+    );
+    var snappingResult = snap(session.visitTransformedSnapAnchor);
     if (snappingResult != null) {
-      globalEnd = snappingResult.newOffset;
+      globalEnd -= snappingResult.snapDelta;
       session.update(globalEnd);
     }
+    _activeSnapAnchor.value = snappingResult;
     session.onUpdate();
     return session;
   }
@@ -200,6 +217,7 @@ class CanvasEditorState extends State<CanvasEditor>
   @override
   void endControlSession(EditorControlSession session) {
     if (_controlSession == session) {
+      _activeSnapAnchor.value = null;
       _controlSession = null;
       session.onApply();
     }
@@ -209,42 +227,83 @@ class CanvasEditorState extends State<CanvasEditor>
   @override
   void cancelControlSession(EditorControlSession session) {
     if (_controlSession == session) {
+      _activeSnapAnchor.value = null;
       _controlSession = null;
       session.onCancel();
     }
     _stopDragTicker();
   }
 
-  // @override
-  // SnappingResult? snap(SnappingPoint point) {
-  //   SnappingResult? result;
-  //   visitSnappingPoint(
-  //     (other) {
-  //       result = point.computeSnapping(this, other, snappingConfiguration);
-  //       if (result != null) {
-  //         return false;
-  //       }
-  //       return true;
-  //     },
-  //   );
-  //   return result;
-  // }
-
   @override
-  SnappingResult? snap(SnappingPointHost host) {
-    SnappingResult? result;
-    host(
-      (point) {
-        visitSnappingPoint(
-          (other) {
-            result = point.computeSnapping(this, other, snappingConfiguration);
-            return result == null;
+  SnappingResult? snap(SnapAnchorHost host) {
+    if (!snappingConfiguration.enableSnapping) {
+      return null;
+    }
+    // first phase: collect candidate snap anchors
+    List<SnappingEntry> candidates = [];
+    host((point) {
+      visitSnapAnchor((other) {
+        if (!point.canSnapInto(other)) {
+          return true;
+        }
+        point.visitLines(
+          (line) {
+            other.visitLines(
+              (otherLine) {
+                double distance = line.distanceTo(otherLine);
+                if (distance < snappingConfiguration.snappingDistance) {
+                  candidates.add(
+                    SnappingEntry(
+                      sourceAnchor: point,
+                      sourceLine: line,
+                      targetAnchor: other,
+                      targetLine: otherLine,
+                      snapDelta: line.snapToLine(otherLine),
+                      distance: distance,
+                    ),
+                  );
+                }
+                return true;
+              },
+            );
+            return true;
           },
         );
-        return result == null;
-      },
+        return true;
+      });
+      return true;
+    });
+    // second phase: find the closest distance
+    double minHorizontalDistance = double.infinity;
+    double minVerticalDistance = double.infinity;
+    double horizontalSnap = 0;
+    double verticalSnap = 0;
+    for (var entry in candidates) {
+      if (entry.sourceLine.direction == Axis.horizontal) {
+        if (entry.distance < minHorizontalDistance) {
+          minHorizontalDistance = entry.distance;
+          horizontalSnap = entry.snapDelta.dy;
+        }
+      } else if (entry.sourceLine.direction == Axis.vertical) {
+        if (entry.distance < minVerticalDistance) {
+          minVerticalDistance = entry.distance;
+          verticalSnap = entry.snapDelta.dx;
+        }
+      }
+    }
+    Offset delta = Offset(verticalSnap, horizontalSnap);
+    if (delta == Offset.zero) {
+      return null;
+    }
+    List<SnappingEntry> entries = candidates
+        .where((entry) => entry.sourceLine.direction == Axis.horizontal
+            ? entry.snapDelta.dy == horizontalSnap
+            : entry.snapDelta.dx == verticalSnap)
+        .toList();
+    return SnappingResult(
+      entries: entries,
+      snapDelta: delta,
     );
-    return result;
   }
 
   @override
@@ -307,14 +366,18 @@ class CanvasEditorState extends State<CanvasEditor>
   }
 
   @override
-  ValueListenable<CanvasRulerSnappingPoint?>
-      get selectedSnappingPointListenable =>
-          ValueNotifierUnmodifiableView(_selectedRulerSnappingPoint);
+  ValueListenable<CanvasSnapGuideline?> get selectedSnapAnchorListenable =>
+      ValueNotifierUnmodifiableView(_selectedRulerSnapAnchor);
 
   @override
-  set selectedSnappingPoint(CanvasRulerSnappingPoint? point) {
-    _selectedRulerSnappingPoint.value = point;
+  set selectedSnapAnchor(CanvasSnapGuideline? point) {
+    _selectedRulerSnapAnchor.value = point;
   }
+
+  @override
+  List<CanvasSnapGuideline> get rulerGuidelines => List.unmodifiable(
+        _rulerSnapAnchors.value,
+      );
 
   @override
   Rect computeViewportBounds() {
@@ -325,16 +388,21 @@ class CanvasEditorState extends State<CanvasEditor>
   }
 
   @override
-  bool visitSnappingPoint(SnappingPointVisitor visitor) {
-    return _rootState.visitSnappingPoint(visitor);
+  bool visitSnapAnchor(SnapAnchorVisitor visitor) {
+    for (var rulerSnapAnchor in _rulerSnapAnchors.value) {
+      if (!visitor(CanvasRulerSnapAnchor(
+          offset: rulerSnapAnchor.offset, direction: rulerSnapAnchor.axis))) {
+        return false;
+      }
+    }
+    return _rootState.visitSnapAnchor(visitor);
   }
 
   @override
-  CanvasRulerSnappingPoint createRulerSnappingPoint(
-      double offset, Axis direction) {
-    CanvasRulerSnappingPoint point =
-        CanvasRulerSnappingPoint(offset: offset, axis: direction);
-    _rulerSnappingPoints.mutate(
+  CanvasSnapGuideline createRulerSnapAnchor(double offset, Axis direction) {
+    CanvasSnapGuideline point =
+        CanvasSnapGuideline(offset: offset, axis: direction);
+    _rulerSnapAnchors.mutate(
       (value) {
         value.add(point);
       },
@@ -343,14 +411,14 @@ class CanvasEditorState extends State<CanvasEditor>
   }
 
   @override
-  void removeRulerSnappingPoint(CanvasRulerSnappingPoint point) {
-    _rulerSnappingPoints.mutate(
+  void removeRulerSnapAnchor(CanvasSnapGuideline point) {
+    _rulerSnapAnchors.mutate(
       (value) {
         value.remove(point);
       },
     );
-    if (selectedSnappingPoint == point) {
-      selectedSnappingPoint = null;
+    if (selectedSnapAnchor == point) {
+      selectedSnapAnchor = null;
     }
   }
 
@@ -438,17 +506,17 @@ class CanvasEditorState extends State<CanvasEditor>
           defaultAction: CanvasUpdateChildrenAction(),
           context: context,
         ),
-        CanvasRemoveRulerSnappingPointIntent: Action.overridable(
-          defaultAction: CanvasRemoveRulerSnappingPointAction(),
+        CanvasRemoveRulerSnapAnchorIntent: Action.overridable(
+          defaultAction: CanvasRemoveRulerSnapAnchorAction(),
           context: context,
         ),
-        CanvasCreateRulerSnappingPointIntent: Action.overridable(
-          defaultAction: CanvasCreateRulerSnappingPointAction(),
+        CanvasCreateRulerSnapAnchorIntent: Action.overridable(
+          defaultAction: CanvasCreateRulerSnapAnchorAction(),
           context: context,
         ),
       },
       child: ListenableBuilder(
-        listenable: Listenable.merge([_rulerSnappingPoints, widget.controller]),
+        listenable: Listenable.merge([_rulerSnapAnchors, widget.controller]),
         builder: (context, child) {
           return LayoutBuilder(builder: (context, constraints) {
             if (widget.showRuler) {
@@ -470,7 +538,7 @@ class CanvasEditorState extends State<CanvasEditor>
                     controller: widget.controller,
                     editor: this,
                     showRuler: widget.showRuler,
-                    snappingPoints: _rulerSnappingPoints.value,
+                    snapAnchors: _rulerSnapAnchors.value,
                     selection: localSelection,
                     editorTransform: transform,
                     child: CanvasEditorScrollable(
@@ -590,8 +658,28 @@ class CanvasEditorState extends State<CanvasEditor>
                                   selectionBox: selection,
                                 ),
                               ),
-                            // SnappingPointRenderer(
-                            //     editor: this, parentTransform: transform),
+                            ListenableBuilder(
+                              listenable: _activeSnapAnchor,
+                              builder: (context, child) {
+                                var active = _activeSnapAnchor.value;
+                                if (active == null) {
+                                  return const SizedBox.shrink();
+                                }
+                                return CustomPaint(
+                                  painter: _ActiveSnapAnchorPainter(
+                                    result: active,
+                                    offset: widget.controller.value.offset,
+                                    zoom: widget.controller.value.zoom,
+                                    borderColor:
+                                        theme.snap.activeSnapBorderColor,
+                                    borderWidth:
+                                        theme.snap.activeSnapBorderWidth,
+                                    indicatorSize: theme.snap.indicatorSize,
+                                    viewportSize: _editorSize,
+                                  ),
+                                );
+                              },
+                            ),
                             Listener(
                               behavior: HitTestBehavior.translucent,
                               onPointerSignal: (event) {
@@ -841,9 +929,90 @@ class CanvasEditorState extends State<CanvasEditor>
     Matrix4 transform = getLocalToGlobalTransform();
     return MatrixUtils.transformPoint(transform, position);
   }
+}
+
+class _ActiveSnapAnchorPainter extends CustomPainter {
+  final Color borderColor;
+  final double borderWidth;
+  final double indicatorSize;
+  final SnappingResult result;
+  final Offset offset;
+  final double zoom;
+  final Size viewportSize;
+
+  const _ActiveSnapAnchorPainter({
+    required this.offset,
+    required this.result,
+    required this.borderColor,
+    required this.indicatorSize,
+    required this.borderWidth,
+    required this.zoom,
+    required this.viewportSize,
+  });
+
+  void _drawX(Offset offset, Canvas canvas, Paint paint) {
+    Offset halfSize = Offset(indicatorSize / 2, indicatorSize / 2);
+    Offset topLeft = offset - halfSize;
+    Offset bottomRight = offset + halfSize;
+    canvas.drawLine(topLeft, bottomRight, paint);
+    canvas.drawLine(Offset(topLeft.dx, bottomRight.dy),
+        Offset(bottomRight.dx, topLeft.dy), paint);
+  }
 
   @override
-  void shiftViewport(Offset delta) {
-    dragViewport(delta);
+  void paint(Canvas canvas, Size size) {
+    // canvas.translate(offset.dx + viewportSize.width / 2 * zoom,
+    //     offset.dy + viewportSize.height / 2 * zoom);
+
+    Paint paint = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = borderWidth;
+
+    for (var entry in result.entries) {
+      var sourceAnchor = entry.sourceAnchor;
+      var targetAnchor = entry.targetAnchor;
+      if (sourceAnchor is AbsoluteSnapAnchor &&
+          targetAnchor is AbsoluteSnapAnchor) {
+        var sourcePoint = sourceAnchor.point - result.snapDelta;
+        var targetPoint = targetAnchor.point;
+        sourcePoint = offset +
+            viewportSize.center(Offset.zero) * zoom +
+            sourcePoint * zoom;
+        targetPoint = offset +
+            viewportSize.center(Offset.zero) * zoom +
+            targetPoint * zoom;
+        _drawX(targetPoint, canvas, paint);
+        _drawX(sourcePoint, canvas, paint);
+        canvas.drawLine(sourcePoint, targetPoint, paint);
+      } else {
+        var direction = entry.targetLine.direction;
+        var offset = entry.targetLine.offset;
+        if (direction == Axis.vertical) {
+          offset =
+              this.offset.dx + viewportSize.width / 2 * zoom + offset * zoom;
+        } else {
+          offset =
+              this.offset.dy + viewportSize.height / 2 * zoom + offset * zoom;
+        }
+        var start =
+            direction == Axis.vertical ? Offset(offset, 0) : Offset(0, offset);
+        var end = direction == Axis.vertical
+            ? Offset(offset, viewportSize.height)
+            : Offset(viewportSize.width, offset);
+        canvas.drawLine(start, end, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ActiveSnapAnchorPainter oldDelegate) {
+    return result != oldDelegate.result ||
+        borderColor != oldDelegate.borderColor ||
+        borderWidth != oldDelegate.borderWidth ||
+        indicatorSize != oldDelegate.indicatorSize ||
+        offset != oldDelegate.offset ||
+        zoom != oldDelegate.zoom ||
+        viewportSize != oldDelegate.viewportSize;
   }
 }

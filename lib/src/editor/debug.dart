@@ -4,11 +4,21 @@ import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/snap.dart';
 import 'package:flutter/widgets.dart';
 
-class SnappingPointRenderer extends StatelessWidget {
+class _DebugSnappingLine {
+  final SnapAnchor point;
+  final SnappingLine line;
+
+  const _DebugSnappingLine({
+    required this.point,
+    required this.line,
+  });
+}
+
+class SnapAnchorRenderer extends StatelessWidget {
   final CanvasEditorHandler editor;
   final Matrix4 parentTransform;
 
-  const SnappingPointRenderer({
+  const SnapAnchorRenderer({
     super.key,
     required this.editor,
     required this.parentTransform,
@@ -16,12 +26,15 @@ class SnappingPointRenderer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    List<SnappingLine> snappingLines = [];
-    editor.visitSnappingPoint(
+    List<_DebugSnappingLine> snappingLines = [];
+    editor.visitSnapAnchor(
       (point) {
         point.visitLines(
           (line) {
-            snappingLines.add(line);
+            snappingLines.add(_DebugSnappingLine(
+              point: point,
+              line: line,
+            ));
             return true;
           },
         );
@@ -37,7 +50,7 @@ class SnappingPointRenderer extends StatelessWidget {
 }
 
 class _SnappingLinesPainter extends CustomPainter {
-  final List<SnappingLine> lines;
+  final List<_DebugSnappingLine> lines;
 
   const _SnappingLinesPainter({
     required this.lines,
@@ -47,22 +60,46 @@ class _SnappingLinesPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     for (var line in lines) {
       final paint = Paint()
-        ..color = Color(0xFF0000FF)
+        ..color = Color.fromARGB(123, 0, 0, 255)
         ..strokeWidth = 1
         ..style = PaintingStyle.stroke;
 
-      var point = line.point;
-      var angle = line.angle;
-      const lineLength = 1000000.0;
-      var startPoint = Offset(
-        point.dx - lineLength * cos(angle),
-        point.dy - lineLength * sin(angle),
-      );
-      var endPoint = Offset(
-        point.dx + lineLength * cos(angle),
-        point.dy + lineLength * sin(angle),
-      );
-      canvas.drawLine(startPoint, endPoint, paint);
+      var point = line.line.offset;
+      var direction = line.line.direction;
+      // const lineLength = 1000000.0;
+      // var startPoint = Offset(
+      //   point.dx - lineLength * cos(angle),
+      //   point.dy - lineLength * sin(angle),
+      // );
+      // var endPoint = Offset(
+      //   point.dx + lineLength * cos(angle),
+      //   point.dy + lineLength * sin(angle),
+      // );
+      // canvas.drawLine(startPoint, endPoint, paint);
+      // canvas.drawCircle(
+      //     point, 5, paint..color = Color.fromARGB(255, 0, 0, 255));
+      // var startPoint = Offset
+      // String? debugOwner = line.point.debugOwner;
+      // if (debugOwner != null) {
+      //   var textPainter = TextPainter(
+      //     text: TextSpan(
+      //       text: debugOwner,
+      //       style: const TextStyle(
+      //         color: Color.fromARGB(255, 0, 0, 255),
+      //         fontSize: 12,
+      //         fontWeight: FontWeight.w400,
+      //       ),
+      //     ),
+      //     textDirection: TextDirection.ltr,
+      //   );
+      //   textPainter.layout();
+      //   var textOffset = Offset(
+      //     point.dx + 8,
+      //     point.dy - textPainter.height / 2,
+      //   );
+      //   textPainter.paint(canvas, textOffset);
+      //   textPainter.dispose();
+      // }
     }
   }
 

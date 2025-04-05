@@ -16,10 +16,12 @@ enum CanvasSelectionMode {
   multiple,
 }
 
-typedef SnappingPointHost = Function(SnappingPointVisitor visitor);
+typedef SnapAnchorHost = Function(SnapAnchorVisitor visitor);
 typedef CanvasHitTestPredicate = bool Function(CanvasItemState item);
 mixin CanvasEditorHandler {
   bool get allowReparenting;
+  bool get symmetricResize;
+  bool get proportionalResize;
   CanvasRootState get rootState;
   void sendNotification(Notification notification);
   EditorControlSession? get controlSession;
@@ -64,16 +66,15 @@ mixin CanvasEditorHandler {
   Rect computeViewportBounds();
   void handleItemClick(CanvasItemState item);
   Selection? getSelectionForItem(CanvasItemState item);
-  CanvasRulerSnappingPoint createRulerSnappingPoint(
-      double offset, Axis direction);
-  void removeRulerSnappingPoint(CanvasRulerSnappingPoint point);
-  CanvasRulerSnappingPoint? get selectedSnappingPoint =>
-      selectedSnappingPointListenable.value;
-  set selectedSnappingPoint(CanvasRulerSnappingPoint? point);
-  ValueListenable<CanvasRulerSnappingPoint?>
-      get selectedSnappingPointListenable;
-  // SnappingResult? snap(SnappingPoint point);
-  SnappingResult? snap(SnappingPointHost host);
+  CanvasSnapGuideline createRulerSnapAnchor(double offset, Axis direction);
+  void removeRulerSnapAnchor(CanvasSnapGuideline point);
+  List<CanvasSnapGuideline> get rulerGuidelines;
+  CanvasSnapGuideline? get selectedSnapAnchor =>
+      selectedSnapAnchorListenable.value;
+  set selectedSnapAnchor(CanvasSnapGuideline? point);
+  ValueListenable<CanvasSnapGuideline?> get selectedSnapAnchorListenable;
+  // SnappingResult? snap(SnapAnchor point);
+  SnappingResult? snap(SnapAnchorHost host);
 
   SnappingConfiguration get snappingConfiguration;
 
@@ -91,7 +92,7 @@ mixin CanvasEditorHandler {
     return rootState;
   }
 
-  bool visitSnappingPoint(SnappingPointVisitor visitor);
+  bool visitSnapAnchor(SnapAnchorVisitor visitor);
 }
 
 class CanvasEditorTransform {

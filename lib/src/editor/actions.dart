@@ -3,43 +3,42 @@ import 'package:canvas/src/editor/ruler.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
 
-class CanvasCreateRulerSnappingPointIntent extends Intent {
+class CanvasCreateRulerSnapAnchorIntent extends Intent {
   final double offset;
   final Axis direction;
   final CanvasEditorHandler editor;
 
-  const CanvasCreateRulerSnappingPointIntent({
+  const CanvasCreateRulerSnapAnchorIntent({
     required this.offset,
     required this.direction,
     required this.editor,
   });
 }
 
-class CanvasCreateRulerSnappingPointAction
-    extends Action<CanvasCreateRulerSnappingPointIntent> {
+class CanvasCreateRulerSnapAnchorAction
+    extends Action<CanvasCreateRulerSnapAnchorIntent> {
   @override
-  CanvasRulerSnappingPoint invoke(
-      covariant CanvasCreateRulerSnappingPointIntent intent) {
-    return intent.editor
-        .createRulerSnappingPoint(intent.offset, intent.direction);
+  CanvasSnapGuideline invoke(
+      covariant CanvasCreateRulerSnapAnchorIntent intent) {
+    return intent.editor.createRulerSnapAnchor(intent.offset, intent.direction);
   }
 }
 
-class CanvasRemoveRulerSnappingPointIntent extends Intent {
-  final CanvasRulerSnappingPoint point;
+class CanvasRemoveRulerSnapAnchorIntent extends Intent {
+  final CanvasSnapGuideline point;
   final CanvasEditorHandler editor;
 
-  const CanvasRemoveRulerSnappingPointIntent({
+  const CanvasRemoveRulerSnapAnchorIntent({
     required this.point,
     required this.editor,
   });
 }
 
-class CanvasRemoveRulerSnappingPointAction
-    extends Action<CanvasRemoveRulerSnappingPointIntent> {
+class CanvasRemoveRulerSnapAnchorAction
+    extends Action<CanvasRemoveRulerSnapAnchorIntent> {
   @override
-  void invoke(covariant CanvasRemoveRulerSnappingPointIntent intent) {
-    intent.editor.removeRulerSnappingPoint(intent.point);
+  void invoke(covariant CanvasRemoveRulerSnapAnchorIntent intent) {
+    intent.editor.removeRulerSnapAnchor(intent.point);
   }
 }
 

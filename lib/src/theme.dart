@@ -167,12 +167,18 @@ class CanvasSnapThemeData {
   final Color selectedStrokeColor;
   final Color hoveredStrokeColor;
   final TextStyle textStyle;
+  final Color activeSnapBorderColor;
+  final double activeSnapBorderWidth;
+  final double indicatorSize;
 
   const CanvasSnapThemeData({
     this.strokeWidth = 1,
     this.strokeColor = const Color.fromARGB(122, 232, 25, 25),
     this.hoveredStrokeColor = const Color.fromARGB(255, 232, 25, 25),
     this.selectedStrokeColor = const Color.fromARGB(255, 110, 144, 225),
+    this.activeSnapBorderColor = const Color.fromARGB(255, 232, 25, 25),
+    this.activeSnapBorderWidth = 1,
+    this.indicatorSize = 6,
     this.textStyle = const TextStyle(
       color: Color.fromARGB(255, 232, 25, 25),
       fontSize: 12,

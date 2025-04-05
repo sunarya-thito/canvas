@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:flutter/widgets.dart';
 
@@ -22,6 +23,8 @@ abstract class CanvasLayoutData {
     this.shear,
     this.scale,
   });
+
+  CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta);
 
   // dropTarget is local to the target
   CanvasLayoutData transferTo(
@@ -157,12 +160,6 @@ abstract class CanvasLayoutData {
 
   CanvasLayoutData rotate(double delta) => this;
 
-  CanvasLayoutData resize(double delta,
-          {bool symmetric = false,
-          bool preserveAspectRatio = false,
-          required Alignment alignment}) =>
-      this;
-
   CanvasLayoutData rescale(Offset delta,
           {bool symmetric = false,
           bool preserveAspectRatio = false,
@@ -198,6 +195,57 @@ class AbsoluteLayoutData extends CanvasLayoutData {
     this.scaleHorizontal = false,
     this.scaleVertical = false,
   });
+
+  @override
+  CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta) {
+    Offset positionDelta = delta.positionDelta;
+    Size sizeDelta = delta.sizeDelta;
+    double? newTop;
+    double? newLeft;
+    double? newRight;
+    double? newBottom;
+    double? newWidth;
+    double? newHeight;
+    if (left != null && right != null) {
+      double delta = sizeDelta.width / 2;
+      newLeft = left! + delta;
+      newRight = right! - delta;
+    } else {
+      if (left != null) {
+        newLeft = left! + positionDelta.dx;
+      }
+      if (right != null) {
+        newRight = right! - positionDelta.dx;
+      }
+    }
+    if (width != null) {
+      newWidth = width! + sizeDelta.width;
+    }
+    if (top != null && bottom != null) {
+      // equally distribute the delta to top and bottom
+      double delta = sizeDelta.height / 2;
+      newTop = top! + delta;
+      newBottom = bottom! - delta;
+    } else {
+      if (top != null) {
+        newTop = top! + positionDelta.dy;
+      }
+      if (bottom != null) {
+        newBottom = bottom! - positionDelta.dy;
+      }
+    }
+    if (height != null) {
+      newHeight = height! + sizeDelta.height;
+    }
+    return copyWith(
+      top: newTop,
+      left: newLeft,
+      right: newRight,
+      bottom: newBottom,
+      width: newWidth,
+      height: newHeight,
+    );
+  }
 
   @override
   CanvasLayoutData transferTo(
@@ -279,6 +327,35 @@ class FixedLayoutData extends CanvasLayoutData {
   });
 
   @override
+  CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta) {
+    // Offset positionDelta = delta.positionDelta;
+    Size sizeDelta = delta.sizeDelta;
+    double oldWidth = item.size.width;
+    double oldHeight = item.size.height;
+    double newWidth = oldWidth + sizeDelta.width;
+    double newHeight = oldHeight +
+        sizeDelta.height; // TODO: should this be subtracted with positionDelta?
+    return copyWith(
+      width: FixedSizeConstraint(newWidth),
+      height: FixedSizeConstraint(newHeight),
+    );
+  }
+
+  FixedLayoutData copyWith({
+    SizeConstraint? width,
+    SizeConstraint? height,
+    Offset? shear,
+    TextDirection? textDirection,
+  }) {
+    return FixedLayoutData(
+      width: width ?? this.width,
+      height: height ?? this.height,
+      shear: shear ?? this.shear,
+      textDirection: textDirection ?? this.textDirection,
+    );
+  }
+
+  @override
   CanvasLayoutData transferTo(
       CanvasItemState item, CanvasLayout targetLayout, Offset dropTarget) {
     if (targetLayout is FixedLayout) {
@@ -307,6 +384,52 @@ class FlexLayoutData extends CanvasLayoutData {
     super.textDirection,
     super.shear,
   });
+
+  @override
+  CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta) {
+    var parent = item.parent;
+    if (parent is! CanvasObjectState) {
+      return this;
+    }
+    var parentLayout = parent.item.layout;
+    if (parentLayout is! FlexLayout) {
+      return this;
+    }
+    var layoutDirection = parentLayout.direction;
+    // Offset positionDelta = delta.positionDelta;
+    Size sizeDelta = delta.sizeDelta;
+    double oldWidth = item.size.width;
+    double oldHeight = item.size.height;
+    double newWidth = oldWidth + sizeDelta.width;
+    double newHeight = oldHeight +
+        sizeDelta.height; // TODO: should this be subtracted with positionDelta?
+    // current flex ratio is flex / oldSize
+    double newFlex = flex * oldWidth / newWidth;
+    return copyWith(
+      flex: newFlex,
+      cross: layoutDirection == Axis.horizontal
+          ? FixedSizeConstraint(newHeight)
+          : FixedSizeConstraint(newWidth),
+    );
+  }
+
+  FlexLayoutData copyWith({
+    double? flex,
+    double? min,
+    double? max,
+    SizeConstraint? cross,
+    Offset? shear,
+    TextDirection? textDirection,
+  }) {
+    return FlexLayoutData(
+      flex: flex ?? this.flex,
+      min: min ?? this.min,
+      max: max ?? this.max,
+      cross: cross ?? this.cross,
+      shear: shear ?? this.shear,
+      textDirection: textDirection ?? this.textDirection,
+    );
+  }
 
   @override
   CanvasLayoutData transferTo(

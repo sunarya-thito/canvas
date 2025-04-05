@@ -7,12 +7,14 @@ import 'package:canvas/src/editor/util.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
 
-class CanvasRulerSnappingPoint extends SnappingPoint with ChangeNotifier {
+typedef CanvasRulerCrossLineVisitor = double? Function();
+
+class CanvasSnapGuideline with ChangeNotifier {
   double _offset;
   CanvasObjectState? _parent;
   final Axis axis;
 
-  CanvasRulerSnappingPoint({
+  CanvasSnapGuideline({
     required double offset,
     required this.axis,
     CanvasObjectState? parent,
@@ -28,15 +30,6 @@ class CanvasRulerSnappingPoint extends SnappingPoint with ChangeNotifier {
     }
   }
 
-  @override
-  SnappingPoint shift(Offset offset) {
-    return CanvasRulerSnappingPoint(
-      offset: this.offset + (axis == Axis.horizontal ? offset.dy : offset.dx),
-      axis: axis,
-      parent: parent,
-    );
-  }
-
   CanvasObjectState? get parent => _parent;
 
   set parent(CanvasObjectState? parent) {
@@ -48,58 +41,7 @@ class CanvasRulerSnappingPoint extends SnappingPoint with ChangeNotifier {
 
   @override
   String toString() {
-    return 'CanvasRulerSnappingPoint(offset: $offset, axis: $axis)';
-  }
-
-  @override
-  SnappingResult? computeSnapping(CanvasEditorHandler editor,
-      SnappingPoint other, SnappingConfiguration configuration) {
-    SnappingResult? result;
-    double targetDistance =
-        configuration.snappingDistance / editor.transform.zoom;
-    Offset target =
-        axis == Axis.vertical ? Offset(offset, 0) : Offset(0, offset);
-    double angle = axis == Axis.horizontal ? 0 : pi / 2;
-    other.visitLines(
-      (line) {
-        if (line is CanvasRulerSnappingPoint) {
-          return true;
-        }
-        if (line.angle != 0 && !configuration.rotatedSnap) {
-          return true;
-        }
-        if (line.distanceTo(target, angle) <= targetDistance) {
-          result = SnappingResult(
-            newOffset: line.snapToLine(target),
-            angle: axis == Axis.horizontal ? 0 : pi / 2,
-          );
-          return false;
-        }
-        return true;
-      },
-    );
-    return result;
-  }
-
-  @override
-  void visitLines(SnappingLineVisitor visitor) {
-    if (axis == Axis.vertical) {
-      visitor(SnappingLine(
-        point: Offset(
-          offset,
-          0,
-        ),
-        angle: 0,
-      ));
-    } else {
-      visitor(SnappingLine(
-        point: Offset(
-          0,
-          offset,
-        ),
-        angle: pi / 2,
-      ));
-    }
+    return 'CanvasRulerSnapAnchor(offset: $offset, axis: $axis)';
   }
 }
 
@@ -108,7 +50,7 @@ class CanvasRuler extends StatefulWidget {
   final CanvasEditorHandler editor;
   final bool showRuler;
   final Widget child;
-  final List<CanvasRulerSnappingPoint> snappingPoints;
+  final List<CanvasSnapGuideline> snapAnchors;
   final Selection? selection;
   final Matrix4 editorTransform;
 
@@ -117,7 +59,7 @@ class CanvasRuler extends StatefulWidget {
     required this.controller,
     required this.editor,
     required this.showRuler,
-    this.snappingPoints = const [],
+    this.snapAnchors = const [],
     this.selection,
     required this.editorTransform,
     required this.child,
@@ -129,10 +71,10 @@ class CanvasRuler extends StatefulWidget {
 
 class _CanvasRulerState extends State<CanvasRuler> {
   // Axis? _draggingDirection;
-  // CanvasRulerSnappingPoint? _draggingPoint;
+  // CanvasRulerSnapAnchor? _draggingPoint;
   RulerSnappingControlSession? _draggingSession;
   // double? _startOffset;
-  CanvasRulerSnappingPoint? _hoveredPoint;
+  CanvasSnapGuideline? _hoveredPoint;
 
   Widget _buildDraggable(double width, Axis direction) {
     return MouseRegion(
@@ -147,8 +89,7 @@ class _CanvasRulerState extends State<CanvasRuler> {
         onPanStart: (details) {
           setState(() {
             _draggingSession = widget.editor.startControlSession(
-                RulerCreateSnappingPointControlSession(
-                    widget.editor, direction),
+                RulerCreateSnapAnchorControlSession(widget.editor, direction),
                 details.globalPosition);
           });
         },
@@ -186,23 +127,22 @@ class _CanvasRulerState extends State<CanvasRuler> {
                 child: Listener(
                   behavior: HitTestBehavior.translucent,
                   onPointerDown: (event) {
-                    if (widget.editor.selectedSnappingPoint != null) {
+                    if (widget.editor.selectedSnapAnchor != null) {
                       setState(() {
-                        widget.editor.selectedSnappingPoint = null;
+                        widget.editor.selectedSnapAnchor = null;
                       });
                     }
                   },
                 ),
               ),
-              for (var snappingPoint in widget.snappingPoints)
-                _buildSnappingPointDraggable(snappingPoint, width),
+              for (var snapAnchor in widget.snapAnchors)
+                _buildSnapAnchorDraggable(snapAnchor, width),
             ],
           );
         });
   }
 
-  Widget _buildSnappingPointDraggable(
-      CanvasRulerSnappingPoint point, double width) {
+  Widget _buildSnapAnchorDraggable(CanvasSnapGuideline point, double width) {
     var editorTransform = widget.editor.transform;
     return ListenableBuilder(
       listenable: point,
@@ -245,13 +185,13 @@ class _CanvasRulerState extends State<CanvasRuler> {
           behavior: HitTestBehavior.translucent,
           onTap: () {
             setState(() {
-              widget.editor.selectedSnappingPoint = point;
+              widget.editor.selectedSnapAnchor = point;
             });
           },
           onPanStart: (details) {
             setState(() {
               _draggingSession = widget.editor.startControlSession(
-                  RulerUpdateSnappingPointControlSession(widget.editor, point),
+                  RulerUpdateSnapAnchorControlSession(widget.editor, point),
                   details.globalPosition);
             });
           },
@@ -284,9 +224,9 @@ class _CanvasRulerState extends State<CanvasRuler> {
     final width = theme.ruler.rulerWidth;
     return MouseRegion(
       opaque: false,
-      cursor: _draggingSession?.snappingPoint.axis == Axis.horizontal
+      cursor: _draggingSession?.snapAnchor.axis == Axis.horizontal
           ? SystemMouseCursors.resizeUpDown
-          : _draggingSession?.snappingPoint.axis == Axis.vertical
+          : _draggingSession?.snapAnchor.axis == Axis.vertical
               ? SystemMouseCursors.resizeLeftRight
               : MouseCursor.defer,
       child: Stack(
@@ -328,21 +268,21 @@ class _CanvasRulerState extends State<CanvasRuler> {
               child: ListenableBuilder(
                   listenable: Listenable.merge([
                     widget.controller,
-                    widget.editor.selectedSnappingPointListenable,
+                    widget.editor.selectedSnapAnchorListenable,
                   ]),
                   builder: (context, _) {
                     return CustomPaint(
                       painter: _RulerPainter(
                         hovered: _hoveredPoint ??
-                            widget.editor.selectedSnappingPoint ??
-                            _draggingSession?.snappingPoint,
+                            widget.editor.selectedSnapAnchor ??
+                            _draggingSession?.snapAnchor,
                         zoom: widget.controller.value.zoom,
                         offset: widget.controller.value.offset,
                         style: theme.ruler.textStyle,
                         strokeWidth: theme.ruler.strokeWidth,
                         backgroundColor: theme.ruler.backgroundColor,
                         strokeColor: theme.ruler.strokeColor,
-                        snappingPoints: widget.snappingPoints,
+                        snapAnchors: widget.snapAnchors,
                         rulerWidth: widget.showRuler ? width : 0,
                         strokeHeight: theme.ruler.strokeHeight,
                         textDirection: Directionality.of(context),
@@ -351,7 +291,7 @@ class _CanvasRulerState extends State<CanvasRuler> {
                         snapTextStyle: theme.snap.textStyle,
                         pixelGridColor: theme.ruler.pixelGridColor,
                         snapSelectedStrokeColor: theme.snap.selectedStrokeColor,
-                        selected: widget.editor.selectedSnappingPoint,
+                        selected: widget.editor.selectedSnapAnchor,
                         snapHoveredStrokeColor: theme.snap.hoveredStrokeColor,
                         selection: widget.selection,
                         editorTransform: widget.editorTransform,
@@ -393,15 +333,15 @@ class _RulerPainter extends CustomPainter {
   final Color strokeColor;
   final double rulerWidth;
   final TextDirection textDirection;
-  final List<CanvasRulerSnappingPoint> snappingPoints;
+  final List<CanvasSnapGuideline> snapAnchors;
   final Color snapStrokeColor;
   final double snapStrokeWidth;
   final TextStyle snapTextStyle;
   final Color pixelGridColor;
   final Color snapSelectedStrokeColor;
   final Color snapHoveredStrokeColor;
-  final CanvasRulerSnappingPoint? selected;
-  final CanvasRulerSnappingPoint? hovered;
+  final CanvasSnapGuideline? selected;
+  final CanvasSnapGuideline? hovered;
   final Selection? selection;
   final Matrix4 editorTransform;
   final Color selectionColor;
@@ -413,7 +353,7 @@ class _RulerPainter extends CustomPainter {
     required this.strokeWidth,
     required this.backgroundColor,
     required this.strokeColor,
-    required this.snappingPoints,
+    required this.snapAnchors,
     required this.rulerWidth,
     required this.textDirection,
     required this.strokeHeight,
@@ -428,7 +368,7 @@ class _RulerPainter extends CustomPainter {
     required this.selection,
     required this.editorTransform,
     required this.selectionColor,
-  }) : super(repaint: Listenable.merge(snappingPoints));
+  }) : super(repaint: Listenable.merge(snapAnchors));
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -892,29 +832,29 @@ class _RulerPainter extends CustomPainter {
     if (rulerWidth > 0) {
       strokePaint.strokeWidth = snapStrokeWidth;
       // draw the snapping points
-      for (var snappingPoint in snappingPoints) {
-        strokePaint.color = snappingPoint == selected
+      for (var snapAnchor in snapAnchors) {
+        strokePaint.color = snapAnchor == selected
             ? snapSelectedStrokeColor
-            : snappingPoint == hovered
+            : snapAnchor == hovered
                 ? snapHoveredStrokeColor
                 : snapStrokeColor;
-        double snappingPointOffset = snappingPoint.offset * zoom;
-        if (snappingPoint.axis == Axis.vertical) {
-          snappingPointOffset +=
+        double snapAnchorOffset = snapAnchor.offset * zoom;
+        if (snapAnchor.axis == Axis.vertical) {
+          snapAnchorOffset +=
               rulerOffset.dx + offset.dx + editorSize.width / 2 * zoom;
           if (textDirection == TextDirection.ltr &&
-              snappingPointOffset < rulerOffset.dy) {
+              snapAnchorOffset < rulerOffset.dy) {
             continue;
           }
           if (textDirection == TextDirection.rtl &&
-              snappingPointOffset > size.width - rulerOffset.dy) {
+              snapAnchorOffset > size.width - rulerOffset.dy) {
             continue;
           }
-          if (hovered == snappingPoint) {
+          if (hovered == snapAnchor) {
             // draw text next to the line
             TextPainter textPainter = TextPainter(
               text: TextSpan(
-                text: snappingPoint.offset.toStringAsFixed(0),
+                text: snapAnchor.offset.toStringAsFixed(0),
                 style: snapTextStyle.copyWith(
                   color: snapHoveredStrokeColor,
                 ),
@@ -924,30 +864,30 @@ class _RulerPainter extends CustomPainter {
             textPainter.layout();
             textPainter.paint(
                 canvas,
-                Offset(snappingPointOffset + 8,
+                Offset(snapAnchorOffset + 8,
                     rulerWidth / 2 - textPainter.height / 2));
             textPainter.dispose();
           }
           canvas.drawLine(
-            Offset(snappingPointOffset, 0),
-            Offset(snappingPointOffset, size.height),
+            Offset(snapAnchorOffset, 0),
+            Offset(snapAnchorOffset, size.height),
             strokePaint,
           );
         } else {
-          snappingPointOffset +=
+          snapAnchorOffset +=
               rulerOffset.dy + offset.dy + editorSize.height / 2 * zoom;
-          if (snappingPointOffset < rulerOffset.dy) {
+          if (snapAnchorOffset < rulerOffset.dy) {
             continue;
           }
-          if (snappingPointOffset > size.height) {
+          if (snapAnchorOffset > size.height) {
             continue;
           }
-          if (hovered == snappingPoint) {
+          if (hovered == snapAnchor) {
             // draw text next to the line
             canvas.save();
             TextPainter textPainter = TextPainter(
               text: TextSpan(
-                text: snappingPoint.offset.toStringAsFixed(0),
+                text: snapAnchor.offset.toStringAsFixed(0),
                 style: snapTextStyle.copyWith(
                   color: snapHoveredStrokeColor,
                 ),
@@ -957,7 +897,7 @@ class _RulerPainter extends CustomPainter {
             textPainter.layout();
 
             Offset offset = Offset(rulerWidth / 2 - textPainter.width / 2,
-                snappingPointOffset - textPainter.height - 8);
+                snapAnchorOffset - textPainter.height - 8);
 
             // rotate (origin center text)
             canvas.translate(offset.dx + textPainter.width / 2,
@@ -970,8 +910,8 @@ class _RulerPainter extends CustomPainter {
             canvas.restore();
           }
           canvas.drawLine(
-            Offset(0, snappingPointOffset),
-            Offset(size.width, snappingPointOffset),
+            Offset(0, snapAnchorOffset),
+            Offset(size.width, snapAnchorOffset),
             strokePaint,
           );
         }
@@ -986,7 +926,7 @@ class _RulerPainter extends CustomPainter {
         oldDelegate.strokeWidth != strokeWidth ||
         oldDelegate.backgroundColor != backgroundColor ||
         oldDelegate.strokeColor != strokeColor ||
-        oldDelegate.snappingPoints != snappingPoints ||
+        oldDelegate.snapAnchors != snapAnchors ||
         oldDelegate.rulerWidth != rulerWidth ||
         oldDelegate.zoom != zoom ||
         oldDelegate.textDirection != textDirection ||
