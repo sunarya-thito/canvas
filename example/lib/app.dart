@@ -1,116 +1,12 @@
 import 'package:canvas/canvas.dart';
 import 'package:example/cases/flex_case.dart';
+import 'package:example/property.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 abstract class TestCase extends ChangeNotifier {
   String get name;
   String get description;
-  List<TestProperty> get properties;
   CanvasRoot get root;
-
-  void update() {}
-}
-
-abstract class TestProperty<T> extends ValueNotifier<T> {
-  final String name;
-
-  TestProperty({
-    required this.name,
-    required T value,
-  }) : super(value);
-
-  Widget buildControl(BuildContext context);
-}
-
-class StringProperty extends TestProperty<String> {
-  StringProperty({
-    required super.name,
-    required super.value,
-  });
-
-  @override
-  Widget buildControl(BuildContext context) {
-    return TextField(
-      initialValue: value,
-      onChanged: (value) {
-        this.value = value;
-      },
-    );
-  }
-}
-
-class NumberProperty extends TestProperty<double> {
-  NumberProperty({
-    required super.name,
-    required super.value,
-  });
-
-  @override
-  Widget buildControl(BuildContext context) {
-    return TextField(
-      initialValue: value.toString(),
-      onChanged: (value) {
-        this.value = double.tryParse(value) ?? this.value;
-      },
-      features: const [
-        InputFeature.spinner(),
-      ],
-      submitFormatters: [
-        TextInputFormatters.mathExpression(),
-      ],
-    );
-  }
-}
-
-class EnumProperty<T extends Enum> extends TestProperty<T> {
-  final List<Enum> values;
-
-  EnumProperty({
-    required super.name,
-    required super.value,
-    required this.values,
-  });
-
-  @override
-  Widget buildControl(BuildContext context) {
-    return Select(
-      value: value,
-      onChanged: (value) {
-        if (value != null) {
-          this.value = value;
-        }
-      },
-      popup: SelectPopup(
-        items: SelectItemList(
-          children: values.map(
-            (e) {
-              return SelectItemButton(value: e, child: Text(e.name));
-            },
-          ).toList(),
-        ),
-      ).call,
-      itemBuilder: (context, value) {
-        return Text(value.name);
-      },
-    );
-  }
-}
-
-class BoolProperty extends TestProperty<bool> {
-  BoolProperty({
-    required super.name,
-    required super.value,
-  });
-
-  @override
-  Widget buildControl(BuildContext context) {
-    return Checkbox(
-      state: value ? CheckboxState.checked : CheckboxState.unchecked,
-      onChanged: (value) {
-        this.value = value == CheckboxState.checked;
-      },
-    );
-  }
 }
 
 class CanvasExampleApp extends StatefulWidget {
@@ -126,6 +22,7 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
     FlexTestCase(),
   ];
   int? _selectedCase;
+  Selection? _localSelection;
 
   bool _showRuler = false;
   bool _allowReparenting = true;
@@ -138,35 +35,13 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
 
   void _setSelectedCase(int newCase) {
     controller.value = const CanvasEditorTransform();
-    int? oldCase = _selectedCase;
-    if (oldCase != null) {
-      var oldTestCase = testCases[oldCase];
-      for (var property in oldTestCase.properties) {
-        property.removeListener(_onPropertyUpdate);
-      }
-    }
     _selectedCase = newCase;
-    var newTestCase = testCases[newCase];
-    for (var property in newTestCase.properties) {
-      property.addListener(_onPropertyUpdate);
-    }
-    _onPropertyUpdate();
   }
 
   void _closeCase() {
+    _localSelection = null;
     if (_selectedCase != null) {
-      var testCase = testCases[_selectedCase!];
-      for (var property in testCase.properties) {
-        property.removeListener(_onPropertyUpdate);
-      }
       _selectedCase = null;
-    }
-  }
-
-  void _onPropertyUpdate() {
-    if (_selectedCase != null) {
-      var testCase = testCases[_selectedCase!];
-      testCase.update();
     }
   }
 
@@ -401,45 +276,82 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                       gesture: _dragMode == 0
                           ? const EditorSelectDragGesture()
                           : const EditorMoveDragGesture(),
+                      onLocalSelectionChanged: (value) {
+                        setState(() {
+                          _localSelection = value;
+                        });
+                      },
                       root: testCases[_selectedCase!].root,
                     ),
                   ),
                   ResizablePane(
                       initialSize: 300,
                       minSize: 200,
-                      child: ListenableBuilder(
-                          listenable: testCases[_selectedCase!],
-                          builder: (context, _) {
-                            return ListView(
-                              padding: const EdgeInsets.all(8),
-                              children: [
-                                ...testCases[_selectedCase!].properties.map(
-                                  (property) {
-                                    return ListenableBuilder(
-                                      listenable: property,
-                                      builder: (context, _) {
-                                        return Container(
-                                          padding: EdgeInsets.only(bottom: 8),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.stretch,
-                                            children: [
-                                              Text(property.name).small.muted,
-                                              gap(4),
-                                              property.buildControl(context),
-                                            ],
-                                          ),
+                      child: _localSelection == null
+                          ? const Center(
+                              child: Text('Select an Object'),
+                            )
+                          : ListenableBuilder(
+                              listenable: Listenable.merge(
+                                  _localSelection!.selectedItems),
+                              builder: (context, _) {
+                                return ListView(
+                                  padding: const EdgeInsets.all(8),
+                                  children: [
+                                    ..._localSelection!.editableProperties.map(
+                                      (property) {
+                                        return ListenableBuilder(
+                                          listenable: property,
+                                          builder: (context, _) {
+                                            return Container(
+                                              key: ValueKey(_PropertyKey(
+                                                  property.owner,
+                                                  property.key)),
+                                              padding:
+                                                  EdgeInsets.only(bottom: 8),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
+                                                children: [
+                                                  Text((property.key
+                                                              as ValueKey<
+                                                                  String>)
+                                                          .value)
+                                                      .small
+                                                      .muted,
+                                                  gap(4),
+                                                  buildPropertyRenderer(
+                                                      context, property),
+                                                ],
+                                              ),
+                                            );
+                                          },
                                         );
                                       },
-                                    );
-                                  },
-                                ),
-                              ],
-                            );
-                          })),
+                                    ),
+                                  ],
+                                );
+                              })),
                 ],
               ),
       ),
     );
   }
+}
+
+class _PropertyKey {
+  final EditorPropertyOwner item;
+  final Key key;
+
+  const _PropertyKey(this.item, this.key);
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is _PropertyKey && other.item == item && other.key == key;
+  }
+
+  @override
+  int get hashCode => Object.hash(item, key);
 }

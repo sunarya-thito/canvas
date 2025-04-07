@@ -1,6 +1,5 @@
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/ruler.dart';
-import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
 
 class CanvasCreateRulerSnapAnchorIntent extends Intent {

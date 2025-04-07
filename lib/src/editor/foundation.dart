@@ -1,12 +1,8 @@
 import 'dart:ui';
 
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/ruler.dart';
-import 'package:canvas/src/editor/snap.dart';
-import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 

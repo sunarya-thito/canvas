@@ -1,10 +1,6 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/editor/control.dart';
-import 'package:canvas/src/editor/snap.dart';
-import 'package:canvas/src/editor/util.dart';
-import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
 
 typedef CanvasRulerCrossLineVisitor = double? Function();

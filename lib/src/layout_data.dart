@@ -1,9 +1,6 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/editor/control.dart';
-import 'package:canvas/src/editor/editable.dart';
-import 'package:canvas/src/editor/util.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:flutter/widgets.dart';
 
@@ -23,7 +20,6 @@ abstract class CanvasLayoutData {
     }
   }
 
-  final TextDirection? textDirection;
   final Offset? shear;
 
   // i don't think there should be a scale
@@ -36,10 +32,12 @@ abstract class CanvasLayoutData {
   final Offset? scale;
 
   const CanvasLayoutData({
-    this.textDirection,
     this.shear,
     this.scale,
   });
+
+  CanvasLayoutData withShear(Offset shear);
+  CanvasLayoutData withScale(Offset scale);
 
   Map<String, Object?> toJson();
 
@@ -211,8 +209,8 @@ class AbsoluteLayoutData extends CanvasLayoutData {
     this.bottom,
     this.width,
     this.height,
-    super.textDirection,
     super.shear,
+    super.scale,
     this.scaleHorizontal = false,
     this.scaleVertical = false,
   });
@@ -227,9 +225,21 @@ class AbsoluteLayoutData extends CanvasLayoutData {
       height: json.getDouble('height'),
       shear:
           Offset(json.getDouble('shearX') ?? 0, json.getDouble('shearY') ?? 0),
+      scale:
+          Offset(json.getDouble('scaleX') ?? 1, json.getDouble('scaleY') ?? 1),
       scaleHorizontal: json.getBool('scaleHorizontal') ?? false,
       scaleVertical: json.getBool('scaleVertical') ?? false,
     );
+  }
+
+  @override
+  CanvasLayoutData withShear(Offset shear) {
+    return copyWith(shear: shear);
+  }
+
+  @override
+  CanvasLayoutData withScale(Offset scale) {
+    return copyWith(scale: scale);
   }
 
   @override
@@ -249,7 +259,18 @@ class AbsoluteLayoutData extends CanvasLayoutData {
       'shearY': shear?.dy,
       'scaleHorizontal': scaleHorizontal,
       'scaleVertical': scaleVertical,
+      'scaleX': scale?.dx,
+      'scaleY': scale?.dy,
     };
+  }
+
+  CanvasLayoutData move(CanvasItemState item, Offset delta) {
+    return copyWith(
+      top: top == null ? null : top! + delta.dy,
+      left: left == null ? null : left! + delta.dx,
+      right: right == null ? null : right! - delta.dx,
+      bottom: bottom == null ? null : bottom! - delta.dy,
+    );
   }
 
   @override
@@ -323,6 +344,7 @@ class AbsoluteLayoutData extends CanvasLayoutData {
     double? width,
     double? height,
     Offset? shear,
+    Offset? scale,
   }) {
     return AbsoluteLayoutData(
       top: top ?? this.top,
@@ -332,6 +354,7 @@ class AbsoluteLayoutData extends CanvasLayoutData {
       width: width ?? this.width,
       height: height ?? this.height,
       shear: shear ?? this.shear,
+      scale: scale ?? this.scale,
     );
   }
 
@@ -378,8 +401,8 @@ class FixedLayoutData extends CanvasLayoutData {
   const FixedLayoutData({
     this.width = const FixedSizeConstraint(0),
     this.height = const FixedSizeConstraint(0),
-    super.textDirection,
     super.shear,
+    super.scale,
   });
 
   factory FixedLayoutData.fromJson(Map<String, Object?> json) {
@@ -388,7 +411,19 @@ class FixedLayoutData extends CanvasLayoutData {
       height: SizeConstraint.fromJson(json.getMap('height') ?? {}),
       shear:
           Offset(json.getDouble('shearX') ?? 0, json.getDouble('shearY') ?? 0),
+      scale:
+          Offset(json.getDouble('scaleX') ?? 1, json.getDouble('scaleY') ?? 1),
     );
+  }
+
+  @override
+  CanvasLayoutData withScale(Offset scale) {
+    return copyWith(scale: scale);
+  }
+
+  @override
+  CanvasLayoutData withShear(Offset shear) {
+    return copyWith(shear: shear);
   }
 
   @override
@@ -399,6 +434,8 @@ class FixedLayoutData extends CanvasLayoutData {
       'height': height.toJson(),
       'shearX': shear?.dx,
       'shearY': shear?.dy,
+      'scaleX': scale?.dx,
+      'scaleY': scale?.dy,
     };
   }
 
@@ -422,12 +459,13 @@ class FixedLayoutData extends CanvasLayoutData {
     SizeConstraint? height,
     Offset? shear,
     TextDirection? textDirection,
+    Offset? scale,
   }) {
     return FixedLayoutData(
       width: width ?? this.width,
       height: height ?? this.height,
       shear: shear ?? this.shear,
-      textDirection: textDirection ?? this.textDirection,
+      scale: scale ?? this.scale,
     );
   }
 
@@ -462,8 +500,8 @@ class FlexLayoutData extends CanvasLayoutData {
     this.min = 0,
     this.max = double.infinity,
     this.cross = const IntrinsicSizeConstraint(),
-    super.textDirection,
     super.shear,
+    super.scale,
   });
 
   factory FlexLayoutData.fromJson(Map<String, Object?> json) {
@@ -474,6 +512,8 @@ class FlexLayoutData extends CanvasLayoutData {
       cross: SizeConstraint.fromJson(json.getMap('cross') ?? {}),
       shear:
           Offset(json.getDouble('shearX') ?? 0, json.getDouble('shearY') ?? 0),
+      scale:
+          Offset(json.getDouble('scaleX') ?? 1, json.getDouble('scaleY') ?? 1),
     );
   }
 
@@ -487,10 +527,22 @@ class FlexLayoutData extends CanvasLayoutData {
       'cross': cross.toJson(),
       'shearX': shear?.dx,
       'shearY': shear?.dy,
+      'scaleX': scale?.dx,
+      'scaleY': scale?.dy,
     };
   }
 
-  EditableProperty<double?>? get flexWidth => null;
+  @override
+  CanvasLayoutData withShear(Offset shear) {
+    return copyWith(shear: shear);
+  }
+
+  @override
+  CanvasLayoutData withScale(Offset scale) {
+    return copyWith(scale: scale);
+  }
+
+  EditorProperty<double?>? get flexWidth => null;
 
   @override
   CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta) {
@@ -527,6 +579,7 @@ class FlexLayoutData extends CanvasLayoutData {
     SizeConstraint? cross,
     Offset? shear,
     TextDirection? textDirection,
+    Offset? scale,
   }) {
     return FlexLayoutData(
       flex: flex ?? this.flex,
@@ -534,7 +587,7 @@ class FlexLayoutData extends CanvasLayoutData {
       max: max ?? this.max,
       cross: cross ?? this.cross,
       shear: shear ?? this.shear,
-      textDirection: textDirection ?? this.textDirection,
+      scale: scale ?? this.scale,
     );
   }
 

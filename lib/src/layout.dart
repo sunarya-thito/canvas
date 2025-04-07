@@ -5,7 +5,6 @@ import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/extra.dart';
 import 'package:canvas/src/editor/util.dart';
 import 'package:canvas/src/external/widgets.dart';
-import 'package:canvas/src/selection/selection.dart';
 import 'package:cassowary/cassowary.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart';
@@ -206,6 +205,7 @@ abstract class CanvasLayout {
   double computeMinIntrinsicHeight(CanvasObjectState state, double width);
   double computeMaxIntrinsicHeight(CanvasObjectState state, double width);
 
+  CanvasLayout withNewPadding(EdgeInsets padding);
   void handleDrag(CanvasObjectState parent, CanvasItemState dragged,
       EditorControlDelta delta) {}
 
@@ -282,7 +282,9 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
 }
 
 class FixedLayout extends CanvasLayout {
-  const FixedLayout();
+  const FixedLayout({
+    super.padding,
+  });
   @override
   CanvasLayoutResult performLayout(CanvasObjectState state,
       BoxConstraints constraints, TextDirection textDirection) {
@@ -310,8 +312,16 @@ class FixedLayout extends CanvasLayout {
   }
 
   @override
-  void visitRelayout(CanvasItemState item, CanvasItemState child) {
-    item.relayout();
+  FixedLayout withNewPadding(EdgeInsets padding) {
+    return copyWith(padding: padding);
+  }
+
+  FixedLayout copyWith({
+    EdgeInsets? padding,
+  }) {
+    return FixedLayout(
+      padding: padding ?? this.padding,
+    );
   }
 
   double _computeIntrinsicSize(
@@ -449,7 +459,7 @@ class FlexLayout extends CanvasLayout {
   final FlexAlignment crossAxisAlignment;
   final double spacing;
 
-  FlexLayout({
+  const FlexLayout({
     this.direction = Axis.horizontal,
     this.mainAxisAlignment = FlexAlignment.start,
     this.crossAxisAlignment = FlexAlignment.start,
@@ -471,6 +481,11 @@ class FlexLayout extends CanvasLayout {
       spacing: spacing ?? this.spacing,
       padding: padding ?? this.padding,
     );
+  }
+
+  @override
+  CanvasLayout withNewPadding(EdgeInsets padding) {
+    return copyWith(padding: padding);
   }
 
   double _getMain(Size size) {
@@ -516,6 +531,10 @@ class FlexLayout extends CanvasLayout {
   Axis get crossDirection =>
       direction == Axis.horizontal ? Axis.vertical : Axis.horizontal;
 
+  bool _shouldLayout(CanvasObjectState parent, CanvasItemState child) {
+    return !(child.targetReparent != null && child.targetReparent != parent);
+  }
+
   @override
   CanvasLayoutResult performLayout(CanvasObjectState state,
       BoxConstraints constraints, TextDirection textDirection) {
@@ -552,6 +571,10 @@ class FlexLayout extends CanvasLayout {
     var totalFixedSize = 0.0;
     var totalAffectedChildren = 0.0;
     while (child != null) {
+      if (!_shouldLayout(state, child)) {
+        child = _resolveNextChild(child, textDirection);
+        continue;
+      }
       var layoutData = child.item.layoutData;
       var parentData = child.parentData as CanvasFlexParentData;
       if (layoutData is FlexLayoutData) {
@@ -622,6 +645,10 @@ class FlexLayout extends CanvasLayout {
     }
 
     while (child != null) {
+      if (!_shouldLayout(state, child)) {
+        child = _resolveNextChild(child, textDirection);
+        continue;
+      }
       var layoutData = child.item.layoutData;
       var parentData = child.parentData as CanvasFlexParentData;
       if (layoutData is FlexLayoutData) {
@@ -656,6 +683,10 @@ class FlexLayout extends CanvasLayout {
     // third phase, lay out the cross filling children
     child = _resolveFirstChild(state, textDirection);
     while (child != null) {
+      if (!_shouldLayout(state, child)) {
+        child = _resolveNextChild(child, textDirection);
+        continue;
+      }
       var layoutData = child.item.layoutData;
       var parentData = child.parentData as CanvasFlexParentData;
       if (layoutData is FixedLayoutData) {
@@ -701,6 +732,10 @@ class FlexLayout extends CanvasLayout {
         break;
     }
     while (child != null) {
+      if (!_shouldLayout(state, child)) {
+        child = _resolveNextChild(child, textDirection);
+        continue;
+      }
       var layoutData = child.item.layoutData;
       if (layoutData is FixedLayoutData || layoutData is FlexLayoutData) {
         var childSize = child.size;
@@ -710,8 +745,11 @@ class FlexLayout extends CanvasLayout {
             childCrossOffset = crossStartPadding;
             break;
           case FlexAlignment.center:
-            childCrossOffset =
-                crossStartPadding + (crossSize - childSize.height) / 2;
+            childCrossOffset = crossStartPadding +
+                (crossSize -
+                        (crossStartPadding + crossEndPadding) -
+                        childSize.height) /
+                    2;
             break;
           case FlexAlignment.end:
             childCrossOffset = crossSize - childSize.height - crossEndPadding;
@@ -930,7 +968,8 @@ class FlexLayout extends CanvasLayout {
       }
       var (childStart, childEnd) = _getGlobalRange(child);
       var centerChildOffset = childStart + (childEnd - childStart) / 2;
-      if (child.item.layoutData is! AbsoluteLayoutData) {
+      if (child.item.layoutData is FixedLayoutData ||
+          child.item.layoutData is FlexLayoutData) {
         if (centerDraggedOffset > centerChildOffset && !isBefore) {
           child.putReorderOffset(dragged, -draggedSize - spacing);
           var currentTarget = dragged.targetReorderIndex;
@@ -949,6 +988,9 @@ class FlexLayout extends CanvasLayout {
           }
         } else {
           child.removeReorderOffset(dragged);
+          if (dragged.targetReorderIndex == currentIndex) {
+            dragged.targetReorderIndex = null;
+          }
         }
       }
       child = child.parentData.nextSibling;

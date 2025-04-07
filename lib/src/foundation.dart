@@ -3,10 +3,7 @@ import 'dart:math';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/debug.dart';
 import 'package:canvas/src/editor/extra.dart';
-import 'package:canvas/src/editor/grid.dart';
-import 'package:canvas/src/editor/snap.dart';
 import 'package:canvas/src/external/widgets.dart';
-import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -67,7 +64,7 @@ enum CanvasOverflow {
   const CanvasOverflow({required this.convert});
 }
 
-abstract class CanvasItem implements Listenable {
+abstract class CanvasItem {
   final String? debugLabel;
   CanvasItem({this.debugLabel});
 
@@ -108,7 +105,7 @@ CanvasParentData _migrateParentData(
   return newParentData;
 }
 
-class CanvasObject extends CanvasItem with ChangeNotifier {
+class CanvasObject extends CanvasItem {
   BoxConstraints _constraints;
   CanvasLayout _layout;
   CanvasLayoutData _layoutData;
@@ -152,9 +149,8 @@ class CanvasObject extends CanvasItem with ChangeNotifier {
     if (value != _overflow) {
       _overflow = value;
       for (var state in _attachedStates) {
-        state.relayout();
+        state.requestRelayout();
       }
-      notifyListeners();
     }
   }
 
@@ -166,9 +162,8 @@ class CanvasObject extends CanvasItem with ChangeNotifier {
     if (value != _locked) {
       _locked = value;
       for (var state in _attachedStates) {
-        state.relayout();
+        state.requestRelayout();
       }
-      notifyListeners();
     }
   }
 
@@ -180,9 +175,8 @@ class CanvasObject extends CanvasItem with ChangeNotifier {
     if (value != _constraints) {
       _constraints = value;
       for (var state in _attachedStates) {
-        state.relayout();
+        state.requestRelayout();
       }
-      notifyListeners();
     }
   }
 
@@ -191,9 +185,8 @@ class CanvasObject extends CanvasItem with ChangeNotifier {
     if (value != _borderRadius) {
       _borderRadius = value;
       for (var state in _attachedStates) {
-        state.relayout();
+        state.requestRelayout();
       }
-      notifyListeners();
     }
   }
 
@@ -202,9 +195,8 @@ class CanvasObject extends CanvasItem with ChangeNotifier {
     if (value != _clipContent) {
       _clipContent = value;
       for (var state in _attachedStates) {
-        state.relayout();
+        state.requestRelayout();
       }
-      notifyListeners();
     }
   }
 
@@ -213,9 +205,8 @@ class CanvasObject extends CanvasItem with ChangeNotifier {
     if (!listEquals(value, _layoutGrids)) {
       _layoutGrids = List.of(value);
       for (var state in _attachedStates) {
-        state.relayout();
+        state.requestRelayout();
       }
-      notifyListeners();
     }
   }
 
@@ -258,7 +249,6 @@ class CanvasObject extends CanvasItem with ChangeNotifier {
         }
         state.requestRelayout();
       }
-      notifyListeners();
     }
   }
 
@@ -271,7 +261,6 @@ class CanvasObject extends CanvasItem with ChangeNotifier {
       for (var state in _attachedStates) {
         state.requestRelayout();
       }
-      notifyListeners();
     }
   }
 
@@ -284,7 +273,6 @@ class CanvasObject extends CanvasItem with ChangeNotifier {
         state.buildChildren(value);
         state.requestRelayout();
       }
-      notifyListeners();
     }
   }
 
@@ -378,30 +366,32 @@ abstract class CanvasItemState
   //   }
   // }
 
-  final Map<CanvasItemState, double> _reorderOffsetMap = {};
+  Map<CanvasItemState, double>? _reorderOffsetMap;
 
   void putReorderOffset(CanvasItemState item, double offset) {
-    if (_reorderOffsetMap[item] != offset) {
-      _reorderOffsetMap[item] = offset;
+    _reorderOffsetMap ??= {};
+    if (_reorderOffsetMap![item] != offset) {
+      _reorderOffsetMap![item] = offset;
       notifyListeners();
     }
   }
 
   void removeReorderOffset(CanvasItemState item) {
-    if (_reorderOffsetMap.remove(item) != null) {
+    if (_reorderOffsetMap == null) return;
+    if (_reorderOffsetMap!.remove(item) != null) {
       notifyListeners();
     }
   }
 
   void clearReorderOffsets() {
-    if (_reorderOffsetMap.isNotEmpty) {
-      _reorderOffsetMap.clear();
+    if (_reorderOffsetMap != null) {
+      _reorderOffsetMap = null;
       notifyListeners();
     }
   }
 
   Offset? get reorderOffsets {
-    if (_reorderOffsetMap.isEmpty) return null;
+    if (_reorderOffsetMap == null) return null;
     var parent = this.parent;
     if (parent is CanvasObjectState) {
       var parentLayout = parent.item.layout;
@@ -409,13 +399,13 @@ abstract class CanvasItemState
         var direction = parentLayout.direction;
         if (direction == Axis.horizontal) {
           return Offset(
-            _reorderOffsetMap.values.fold(0, (a, b) => a + b),
+            _reorderOffsetMap!.values.fold(0, (a, b) => a + b),
             0,
           );
         } else {
           return Offset(
             0,
-            _reorderOffsetMap.values.fold(0, (a, b) => a + b),
+            _reorderOffsetMap!.values.fold(0, (a, b) => a + b),
           );
         }
       }
@@ -441,7 +431,7 @@ abstract class CanvasItemState
   set targetReparent(CanvasObjectState? value) {
     if (_targetReparent != value) {
       _targetReparent = value;
-      relayout();
+      requestRelayout();
     }
   }
   //
@@ -704,7 +694,7 @@ abstract class CanvasItemState
   void relayout() {
     var cached = _layoutResult;
     assert(cached != null, 'CanvasItem $this has not been laid out');
-    _reorderOffsetMap.clear();
+    _reorderOffsetMap = null;
     forcePerformLayout(
       cached!.constraints,
       cached.textDirection,
@@ -1003,12 +993,125 @@ class CanvasObjectState extends CanvasItemState {
       ..addRRect(resolvedBorderRadius.toRRect(Offset.zero & innerSize));
   }
 
+  bool _suspendRelayout = false;
+  bool _hasLayoutRequest = false;
+
+  void setState(VoidCallback fn) {
+    _suspendRelayout = true;
+    _hasLayoutRequest = false;
+    try {
+      fn();
+    } finally {
+      _suspendRelayout = false;
+      if (_hasLayoutRequest) {
+        requestRelayout();
+      }
+    }
+  }
+
+  EdgeInsets analyzePossiblePadding() {
+    if (firstChild == null) {
+      return EdgeInsets.zero;
+    }
+    double minTop = double.infinity;
+    double minLeft = double.infinity;
+    double minRight = double.infinity;
+    double minBottom = double.infinity;
+    var child = firstChild;
+    while (child != null) {
+      var position = child.parentData.position;
+      var size = child.size;
+      minTop = min(minTop, position.dy);
+      minLeft = min(minLeft, position.dx);
+      minRight = min(minRight, size.width - position.dx - size.width);
+      minBottom = min(minBottom, size.height - position.dy - size.height);
+      child = child.parentData.nextSibling;
+    }
+    return EdgeInsets.only(
+      top: max(0, minTop),
+      left: max(0, minLeft),
+      right: max(0, minRight),
+      bottom: max(0, minBottom),
+    );
+  }
+
+  Axis analyzePossibleFlexDirection() {
+    if (firstChild == null) {
+      return Axis.horizontal;
+    }
+    double maxWidth = double.negativeInfinity;
+    double maxHeight = double.negativeInfinity;
+    var child = firstChild;
+    while (child != null) {
+      var position = child.parentData.position;
+      var size = child.size;
+      maxWidth = max(maxWidth, position.dx + size.width);
+      maxHeight = max(maxHeight, position.dy + size.height);
+      child = child.parentData.nextSibling;
+    }
+    if (maxWidth > maxHeight) {
+      return Axis.horizontal;
+    } else {
+      return Axis.vertical;
+    }
+  }
+
+  double analyzePossibleSpacing() {
+    if (firstChild == null || firstChild == lastChild) {
+      return 0.0;
+    }
+    double minSpacing = double.infinity;
+    var child = firstChild;
+    while (child != null) {
+      var nextSibling = child.parentData.nextSibling;
+      if (nextSibling != null) {
+        var position = child.parentData.position;
+        var nextPosition = nextSibling.parentData.position;
+        var size = child.size;
+        var nextSize = nextSibling.size;
+        var rect = position & size;
+        var nextRect = nextPosition & nextSize;
+        if (!rect.overlaps(nextRect)) {
+          var distance = _distanceBetweenRects(rect, nextRect);
+          if (distance < minSpacing) {
+            minSpacing = distance;
+          }
+        }
+      }
+      child = nextSibling;
+    }
+    return minSpacing == double.infinity ? 0.0 : max(0, minSpacing);
+  }
+
+  static double _distanceBetweenRects(Rect a, Rect b) {
+    double dx = 0.0;
+    double dy = 0.0;
+
+    if (a.right < b.left) {
+      dx = b.left - a.right;
+    } else if (b.right < a.left) {
+      dx = a.left - b.right;
+    }
+
+    if (a.bottom < b.top) {
+      dy = b.top - a.bottom;
+    } else if (b.bottom < a.top) {
+      dy = a.top - b.bottom;
+    }
+
+    return sqrt(dx * dx + dy * dy);
+  }
+
   @override
   void requestRelayout() {
+    if (_suspendRelayout) {
+      _hasLayoutRequest = true;
+      return;
+    }
     var parent = this.parent;
     // absolute does not affect parent size whatsoever
-    if (parent != null && item.layoutData.doesAffectParentLayout) {
-      parent.relayout();
+    if (parent != null) {
+      parent.requestRelayout();
     }
     relayout();
   }

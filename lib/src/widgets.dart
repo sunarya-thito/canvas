@@ -1,11 +1,6 @@
-import 'dart:math';
-
 import 'package:animation_kit/animation_kit.dart';
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/editor/control.dart';
-import 'package:canvas/src/editor/util.dart';
 import 'package:canvas/src/external/widgets.dart';
-import 'package:canvas/src/selection/selection.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/widgets.dart';
 

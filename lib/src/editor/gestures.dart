@@ -1,5 +1,4 @@
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/scheduler.dart';
 

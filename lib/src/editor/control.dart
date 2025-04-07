@@ -1,8 +1,6 @@
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/notifications.dart';
 import 'package:canvas/src/editor/ruler.dart';
-import 'package:canvas/src/editor/snap.dart';
-import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/cupertino.dart';
 
 class EditorControlDelta {
@@ -401,38 +399,31 @@ class SelectionMoveControlSession extends EditorControlSession {
     selection.editorOffset.value = delta;
     CanvasObjectState? targetReparent;
     if (editor.allowReparenting) {
-      CanvasItemState targetHit = editor.findItemAtPosition(delta.end);
-      bool preventReparenting = false;
-      if (targetHit is CanvasObjectState &&
-          (targetHit != _parentStart || _lockReparenting)) {
-        for (var group in selection.groups) {
-          for (var item in group.selectedItems) {
-            if (item.targetReparent != null) {
-              continue;
-            }
-            var layoutData = item.item.layoutData;
-            if (layoutData is FlexLayoutData &&
-                targetHit.item.layoutData is FlexLayoutData &&
-                item.parent == targetHit.parent) {
-              preventReparenting = true;
-              break;
-            }
-          }
-          if (preventReparenting) {
+      CanvasItemState? targetHit = editor.findItemAtPosition(delta.end);
+      for (var group in selection.groups) {
+        for (var item in group.selectedItems) {
+          var layoutData = item.item.layoutData;
+          if ((layoutData is FlexLayoutData || layoutData is FixedLayoutData) &&
+              targetHit != null &&
+              targetHit is CanvasObjectState &&
+              (targetHit.item.layoutData is FlexLayoutData ||
+                  targetHit.item.layoutData is FixedLayoutData)) {
+            targetHit = null;
             break;
           }
         }
-        targetReparent = preventReparenting ? null : targetHit;
       }
-      if (!preventReparenting) {
-        _parentEnd?.targetDrop.value = null;
-        _parentEnd = targetReparent;
-        _parentEnd?.targetDrop.value = selection;
-        if (_parentStart != targetHit &&
-            targetHit is CanvasObjectState &&
-            !_lockReparenting) {
-          _lockReparenting = true;
-        }
+      if (targetHit is CanvasObjectState &&
+          (targetHit != _parentStart || _lockReparenting)) {
+        targetReparent = targetHit;
+      }
+      _parentEnd?.targetDrop.value = null;
+      _parentEnd = targetReparent;
+      _parentEnd?.targetDrop.value = selection;
+      if (_parentStart != targetHit &&
+          targetHit is CanvasObjectState &&
+          !_lockReparenting) {
+        _lockReparenting = true;
       }
     }
     for (var group in selection.groups) {
@@ -440,9 +431,8 @@ class SelectionMoveControlSession extends EditorControlSession {
         var transform = Matrix4.inverted(item.globalTransform);
         var transformedDelta = delta.transform(transform);
         item.editorOffset = transformedDelta.delta;
-
         item.targetReparent = targetReparent;
-        if (item.targetReparent == null) {
+        if (item.targetReparent == null || item.targetReparent == item.parent) {
           var parent = item.parent;
           if (parent is CanvasObjectState) {
             var parentLayout = parent.item.layout;
@@ -471,9 +461,19 @@ class SelectionMoveControlSession extends EditorControlSession {
           var parent = item.parent;
           if (parent is CanvasObjectState) {
             parent.reorderItem(item, reorderTarget);
-            print(
-                'reorder item ${item.item} to $reorderTarget in ${parent.item}');
           }
+          continue;
+        }
+        var reparentTarget = item.targetReparent;
+        if (reparentTarget != null && reparentTarget != item.parent) {
+          // TODO: reparent
+          continue;
+        }
+        var layoutData = item.item.layoutData;
+        if (layoutData is AbsoluteLayoutData) {
+          Matrix4 parentTransform = item.parentTransform;
+          var offsetDelta = delta.transform(parentTransform).delta;
+          item.item.layoutData = layoutData.move(item, offsetDelta);
         }
       }
     }

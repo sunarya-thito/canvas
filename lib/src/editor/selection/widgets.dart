@@ -1,10 +1,8 @@
 import 'dart:math';
 
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/extra.dart';
 import 'package:canvas/src/external/widgets.dart';
-import 'package:canvas/src/selection/selection.dart';
 import 'package:flutter/widgets.dart';
 
 class SelectionWidget extends StatelessWidget {

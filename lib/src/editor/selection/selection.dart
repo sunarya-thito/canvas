@@ -208,12 +208,14 @@ class Selection {
   final ValueNotifier<EditorControlDelta> editorOffset =
       ValueNotifier(EditorControlDelta.zero);
 
-  CanvasItemState? _selectedLayer; // used for smart selection
-
   Selection({
     required this.groups,
     required this.client,
   });
+
+  List<CanvasItemState> get selectedItems {
+    return groups.expand((group) => group.selectedItems).toList();
+  }
 
   CanvasItemState? get singleSelection {
     if (groups.length == 1) {
@@ -227,6 +229,50 @@ class Selection {
 
   bool get isSingleSelection {
     return groups.length == 1 && groups.first.selectedItems.length == 1;
+  }
+
+  List<EditorProperty> get editableProperties {
+    Map<Key, List<EditorProperty>> grouped = {};
+    for (var group in groups) {
+      for (var item in group.selectedItems) {
+        if (item is EditableCanvasItemState) {
+          List<EditorProperty> properties =
+              (item as EditableCanvasItemState).properties;
+          for (var property in properties) {
+            List<EditorProperty>? group = grouped[property.key];
+            if (group == null) {
+              grouped[property.key] = [property];
+            } else {
+              group.add(property);
+            }
+          }
+        }
+      }
+    }
+    // return grouped.values.map(
+    //   (value) {
+    //     return EditorProperty.combined(value);
+    //   },
+    // ).toList();
+    // use EditorProperty#combineWith instead
+    List<EditorProperty> properties = [];
+    for (var entry in grouped.entries) {
+      var value = entry.value;
+      if (value.isNotEmpty) {
+        EditorProperty? combined;
+        for (var property in value) {
+          if (combined == null) {
+            combined = property;
+          } else {
+            combined = combined.combineWith(property);
+          }
+        }
+        if (combined != null) {
+          properties.add(combined);
+        }
+      }
+    }
+    return properties;
   }
 
   factory Selection.fromSelection(List<CanvasItemState> selectedItems,

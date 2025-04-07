@@ -10,30 +10,38 @@ class FlexTestCase extends TestCase {
   String get description => 'A test case for flex layout.';
 
   @override
-  CanvasRoot root = CanvasRoot();
+  final CanvasRoot root = CanvasRoot();
 
   late CanvasObject mainObject;
 
   FlexTestCase() {
     root.addChild(
-      mainObject = CanvasObject(
+      mainObject = EditableCanvasObject(
         debugLabel: 'Main Object',
+        layout: const FlexLayout(
+          padding: EdgeInsets.all(60),
+          spacing: 20,
+        ),
+        layoutData: const AbsoluteLayoutData(
+          width: 1200,
+          height: 600,
+        ),
         children: [
-          CanvasObject(
+          EditableCanvasObject(
             debugLabel: 'Child 1',
             layoutData: const FlexLayoutData(
               flex: 1,
               cross: SizeConstraint.unconstrained(),
             ),
           ),
-          CanvasObject(
+          EditableCanvasObject(
             debugLabel: 'Child 2',
             layoutData: const FlexLayoutData(
               flex: 2,
               cross: SizeConstraint.unconstrained(),
             ),
           ),
-          CanvasObject(
+          EditableCanvasObject(
             debugLabel: 'Child 3',
             layoutData: const FlexLayoutData(
               flex: 1,
@@ -44,91 +52,4 @@ class FlexTestCase extends TestCase {
       ),
     );
   }
-
-  @override
-  void update() {
-    mainObject.layout = FlexLayout(
-      direction: direction.value,
-      mainAxisAlignment: mainAlignment.value,
-      crossAxisAlignment: crossAlignment.value,
-      padding: EdgeInsets.only(
-        top: topPadding.value,
-        left: leftPadding.value,
-        right: rightPadding.value,
-        bottom: bottomPadding.value,
-      ),
-      spacing: spacing.value,
-    );
-    mainObject.layoutData = AbsoluteLayoutData(
-      width: width.value,
-      height: height.value,
-    );
-  }
-
-  final direction = EnumProperty<Axis>(
-    name: 'Direction',
-    value: Axis.horizontal,
-    values: Axis.values,
-  );
-
-  final mainAlignment = EnumProperty<FlexAlignment>(
-    name: 'Main Alignment',
-    value: FlexAlignment.start,
-    values: FlexAlignment.values,
-  );
-
-  final crossAlignment = EnumProperty<FlexAlignment>(
-    name: 'Cross Alignment',
-    value: FlexAlignment.start,
-    values: FlexAlignment.values,
-  );
-
-  final topPadding = NumberProperty(
-    name: 'Top Padding',
-    value: 60,
-  );
-
-  final leftPadding = NumberProperty(
-    name: 'Left Padding',
-    value: 60,
-  );
-
-  final rightPadding = NumberProperty(
-    name: 'Right Padding',
-    value: 60,
-  );
-
-  final bottomPadding = NumberProperty(
-    name: 'Bottom Padding',
-    value: 60,
-  );
-
-  final spacing = NumberProperty(
-    name: 'Spacing',
-    value: 60,
-  );
-
-  final width = NumberProperty(
-    name: 'Width',
-    value: 1200,
-  );
-
-  final height = NumberProperty(
-    name: 'Height',
-    value: 600,
-  );
-
-  @override
-  List<TestProperty> get properties => [
-        direction,
-        mainAlignment,
-        crossAlignment,
-        topPadding,
-        leftPadding,
-        rightPadding,
-        bottomPadding,
-        spacing,
-        width,
-        height,
-      ];
 }

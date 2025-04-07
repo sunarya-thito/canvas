@@ -1,26 +1,85 @@
+import 'dart:math';
+
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/foundation.dart';
 import 'package:canvas/src/layout.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-abstract class EditableProperty<T> implements ValueListenable<T> {
-  static EditableProperty<T?> combined<T>(
-      Iterable<EditableProperty<T>> properties) {
+mixin EditorPropertyOwner {}
+
+class CompositeEditorPropertyOwner with EditorPropertyOwner {
+  final List<EditorPropertyOwner> owners;
+
+  const CompositeEditorPropertyOwner(this.owners);
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! CompositeEditorPropertyOwner) return false;
+    return listEquals(owners, other.owners);
+  }
+
+  @override
+  int get hashCode {
+    return owners.hashCode;
+  }
+}
+
+abstract class EditorProperty<T> implements ValueListenable<T> {
+  static EditorProperty<T?> combined<T>(
+      Iterable<EditorProperty<T>> properties) {
     assert(properties.isNotEmpty,
         'EditableProperty.combined() must be called with at least one property.');
     assert(properties.map((e) => e.key).toSet().length == 1,
         'EditableProperty.combined() must be called with properties that have the same key.');
-    return _CombinedEditableProperty<T>(properties.first.key, properties);
+    List<EditorPropertyOwner> owners = [];
+    void addOrExpand(EditorPropertyOwner owner) {
+      if (owner is CompositeEditorPropertyOwner) {
+        owners.addAll(owner.owners);
+      } else {
+        owners.add(owner);
+      }
+    }
+
+    for (var property in properties) {
+      addOrExpand(property.owner);
+    }
+    return _CombinedEditableProperty<T>(
+      CompositeEditorPropertyOwner(owners),
+      properties.first.key,
+      properties,
+    );
   }
 
-  EditableProperty();
+  EditorProperty();
+  EditorPropertyOwner get owner;
   Key get key;
   Type get type => T;
   set value(T newValue);
+
+  EditorProperty<T?> combineWith(EditorProperty<T> other) {
+    List<EditorPropertyOwner> owners = [];
+    void addOrExpand(EditorPropertyOwner owner) {
+      if (owner is CompositeEditorPropertyOwner) {
+        owners.addAll(owner.owners);
+      } else {
+        owners.add(owner);
+      }
+    }
+
+    addOrExpand(owner);
+    addOrExpand(other.owner);
+    return _CombinedEditableProperty<T>(
+      CompositeEditorPropertyOwner(owners),
+      key,
+      [this, other],
+    );
+  }
 }
 
-class _DelegateEditableProperty<T> extends EditableProperty<T> {
+class _DelegateEditableProperty<T> extends EditorProperty<T> {
+  @override
+  final EditorPropertyOwner owner;
   @override
   final Key key;
   final T Function() valueGetter;
@@ -28,6 +87,7 @@ class _DelegateEditableProperty<T> extends EditableProperty<T> {
   final Listenable listenable;
 
   _DelegateEditableProperty({
+    required this.owner,
     required this.key,
     required this.valueGetter,
     required this.valueSetter,
@@ -53,12 +113,14 @@ class _DelegateEditableProperty<T> extends EditableProperty<T> {
   }
 }
 
-class _CombinedEditableProperty<T> extends EditableProperty<T?> {
+class _CombinedEditableProperty<T> extends EditorProperty<T?> {
+  @override
+  final EditorPropertyOwner owner;
   @override
   final Key key;
-  final Iterable<EditableProperty<T>> properties;
+  final Iterable<EditorProperty<T>> properties;
 
-  _CombinedEditableProperty(this.key, this.properties);
+  _CombinedEditableProperty(this.owner, this.key, this.properties);
 
   @override
   T? get value {
@@ -98,6 +160,10 @@ class _CombinedEditableProperty<T> extends EditableProperty<T?> {
   }
 }
 
+mixin EditableCanvasItemState {
+  List<EditorProperty> get properties;
+}
+
 class EditableCanvasObject extends CanvasObject {
   EditableCanvasObject({
     super.debugLabel,
@@ -118,59 +184,69 @@ class EditableCanvasObject extends CanvasObject {
   }
 }
 
-class EditableCanvasObjectState extends CanvasObjectState {
+class EditableCanvasObjectState extends CanvasObjectState
+    with EditableCanvasItemState, EditorPropertyOwner {
   EditableCanvasObjectState({required super.item, super.editor, super.parent});
 
-  EditableProperty<double>? _getEditablePadding(
+  EditorProperty<double> get rotation {
+    return _DelegateEditableProperty<double>(
+      owner: this,
+      key: Key('rotation'),
+      valueGetter: () =>
+          rotationFromShear(item.layoutData.shear ?? Offset.zero) * 180 / pi,
+      valueSetter: (value) {
+        item.layoutData = item.layoutData.withShear(Rotation(value * pi / 180));
+      },
+      listenable: this,
+    );
+  }
+
+  EditorProperty<double>? _getEditablePadding(
     Key key,
     double Function(EdgeInsets) getter,
     EdgeInsets Function(EdgeInsets, double) setter,
   ) {
-    if (item.layout is FlexLayout) {
-      return _DelegateEditableProperty<double>(
-        key: key,
-        valueGetter: () => getter((item.layout as FlexLayout).padding),
-        valueSetter: (value) {
-          item.layout = (layout as FlexLayout).copyWith(
-            padding: setter(
-              (layout as FlexLayout).padding,
-              value,
-            ),
-          );
-        },
-        listenable: this,
-      );
-    }
-    return null;
+    return _DelegateEditableProperty<double>(
+      owner: this,
+      key: key,
+      valueGetter: () => getter(item.layout.padding),
+      valueSetter: (value) {
+        item.layout = item.layout.withNewPadding(
+          setter(item.layout.padding, value),
+        );
+      },
+      listenable: this,
+    );
   }
 
-  EditableProperty<double>? get topPadding => _getEditablePadding(
+  EditorProperty<double>? get topPadding => _getEditablePadding(
         Key('topPadding'),
         (padding) => padding.top,
         (padding, value) => padding.copyWith(top: value),
       );
-  EditableProperty<double>? get leftPadding => _getEditablePadding(
+  EditorProperty<double>? get leftPadding => _getEditablePadding(
         Key('leftPadding'),
         (padding) => padding.left,
         (padding, value) => padding.copyWith(left: value),
       );
-  EditableProperty<double>? get rightPadding => _getEditablePadding(
+  EditorProperty<double>? get rightPadding => _getEditablePadding(
         Key('rightPadding'),
         (padding) => padding.right,
         (padding, value) => padding.copyWith(right: value),
       );
-  EditableProperty<double>? get bottomPadding => _getEditablePadding(
+  EditorProperty<double>? get bottomPadding => _getEditablePadding(
         Key('bottomPadding'),
         (padding) => padding.bottom,
         (padding, value) => padding.copyWith(bottom: value),
       );
 
-  EditableProperty<double> _getEditableBorderRadius(
+  EditorProperty<double> _getEditableBorderRadius(
     Key key,
     double Function(BorderRadius?) getter,
     BorderRadius? Function(BorderRadius?, double) setter,
   ) {
     return _DelegateEditableProperty<double>(
+      owner: this,
       key: key,
       valueGetter: () => getter(item.borderRadius),
       valueSetter: (value) {
@@ -180,7 +256,7 @@ class EditableCanvasObjectState extends CanvasObjectState {
     );
   }
 
-  EditableProperty<double> get topLeftRadius => _getEditableBorderRadius(
+  EditorProperty<double> get topLeftRadius => _getEditableBorderRadius(
         Key('topLeftRadius'),
         (borderRadius) => borderRadius?.topLeft.x ?? 0,
         (borderRadius, value) =>
@@ -191,7 +267,7 @@ class EditableCanvasObjectState extends CanvasObjectState {
               topLeft: Radius.circular(value),
             ),
       );
-  EditableProperty<double> get topRightRadius => _getEditableBorderRadius(
+  EditorProperty<double> get topRightRadius => _getEditableBorderRadius(
         Key('topRightRadius'),
         (borderRadius) => borderRadius?.topRight.x ?? 0,
         (borderRadius, value) =>
@@ -202,7 +278,7 @@ class EditableCanvasObjectState extends CanvasObjectState {
               topRight: Radius.circular(value),
             ),
       );
-  EditableProperty<double> get bottomLeftRadius => _getEditableBorderRadius(
+  EditorProperty<double> get bottomLeftRadius => _getEditableBorderRadius(
         Key('bottomLeftRadius'),
         (borderRadius) => borderRadius?.bottomLeft.x ?? 0,
         (borderRadius, value) =>
@@ -213,7 +289,7 @@ class EditableCanvasObjectState extends CanvasObjectState {
               bottomLeft: Radius.circular(value),
             ),
       );
-  EditableProperty<double> get bottomRightRadius => _getEditableBorderRadius(
+  EditorProperty<double> get bottomRightRadius => _getEditableBorderRadius(
         Key('bottomRightRadius'),
         (borderRadius) => borderRadius?.bottomRight.x ?? 0,
         (borderRadius, value) =>
@@ -225,13 +301,14 @@ class EditableCanvasObjectState extends CanvasObjectState {
             ),
       );
 
-  EditableProperty<double?>? _getEditableAnchor(
+  EditorProperty<double?>? _getEditableAnchor(
     Key key,
     double? Function(AbsoluteLayoutData) getter,
     AbsoluteLayoutData Function(AbsoluteLayoutData, double?) setter,
   ) {
     if (item.layoutData is AbsoluteLayoutData) {
       return _DelegateEditableProperty<double?>(
+        owner: this,
         key: key,
         valueGetter: () => getter(item.layoutData as AbsoluteLayoutData),
         valueSetter: (value) {
@@ -246,33 +323,34 @@ class EditableCanvasObjectState extends CanvasObjectState {
     return null;
   }
 
-  EditableProperty<double?>? get topAnchor => _getEditableAnchor(
+  EditorProperty<double?>? get topAnchor => _getEditableAnchor(
         Key('topAnchor'),
         (layoutData) => layoutData.top,
         (layoutData, value) => layoutData.copyWith(top: value),
       );
-  EditableProperty<double?>? get leftAnchor => _getEditableAnchor(
+  EditorProperty<double?>? get leftAnchor => _getEditableAnchor(
         Key('leftAnchor'),
         (layoutData) => layoutData.left,
         (layoutData, value) => layoutData.copyWith(left: value),
       );
-  EditableProperty<double?>? get rightAnchor => _getEditableAnchor(
+  EditorProperty<double?>? get rightAnchor => _getEditableAnchor(
         Key('rightAnchor'),
         (layoutData) => layoutData.right,
         (layoutData, value) => layoutData.copyWith(right: value),
       );
-  EditableProperty<double?>? get bottomAnchor => _getEditableAnchor(
+  EditorProperty<double?>? get bottomAnchor => _getEditableAnchor(
         Key('bottomAnchor'),
         (layoutData) => layoutData.bottom,
         (layoutData, value) => layoutData.copyWith(bottom: value),
       );
 
-  EditableProperty<double?> _getEditableConstraints(
+  EditorProperty<double?> _getEditableConstraints(
     Key key,
     double? Function(BoxConstraints) getter,
     BoxConstraints Function(BoxConstraints, double?) setter,
   ) {
     return _DelegateEditableProperty<double?>(
+      owner: this,
       key: key,
       valueGetter: () => getter(item.constraints),
       valueSetter: (value) {
@@ -282,21 +360,21 @@ class EditableCanvasObjectState extends CanvasObjectState {
     );
   }
 
-  EditableProperty<double?> get minWidth => _getEditableConstraints(
+  EditorProperty<double?> get minWidth => _getEditableConstraints(
         Key('minWidth'),
         (constraints) =>
             constraints.minWidth == 0 ? null : constraints.minWidth,
         (constraints, value) => constraints.copyWith(minWidth: value ?? 0),
       );
 
-  EditableProperty<double?> get minHeight => _getEditableConstraints(
+  EditorProperty<double?> get minHeight => _getEditableConstraints(
         Key('minHeight'),
         (constraints) =>
             constraints.minHeight == 0 ? null : constraints.minHeight,
         (constraints, value) => constraints.copyWith(minHeight: value ?? 0),
       );
 
-  EditableProperty<double?> get maxWidth => _getEditableConstraints(
+  EditorProperty<double?> get maxWidth => _getEditableConstraints(
         Key('maxWidth'),
         (constraints) => constraints.maxWidth == double.infinity
             ? null
@@ -305,7 +383,7 @@ class EditableCanvasObjectState extends CanvasObjectState {
             constraints.copyWith(maxWidth: value ?? double.infinity),
       );
 
-  EditableProperty<double?> get maxHeight => _getEditableConstraints(
+  EditorProperty<double?> get maxHeight => _getEditableConstraints(
         Key('maxHeight'),
         (constraints) => constraints.maxHeight == double.infinity
             ? null
@@ -314,382 +392,155 @@ class EditableCanvasObjectState extends CanvasObjectState {
             constraints.copyWith(maxHeight: value ?? double.infinity),
       );
 
-  EditableProperty<FlexAlignment>? get horizontalAlignment {
+  EditorProperty<FlexAlignment>? get horizontalAlignment {
     if (item.layout is FlexLayout) {
-      var parent = this.parent;
-      if (parent is CanvasObjectState) {
-        var parentLayout = parent.item.layout;
-        if (parentLayout is FlexLayout) {
-          var direction = parentLayout.direction;
-          return _DelegateEditableProperty<FlexAlignment>(
-            key: Key('horizontalAlignment'),
-            valueGetter: () => direction == Axis.horizontal
-                ? (item.layout as FlexLayout).mainAxisAlignment
-                : (item.layout as FlexLayout).crossAxisAlignment,
-            valueSetter: (value) {
-              item.layout = direction == Axis.horizontal
-                  ? (item.layout as FlexLayout).copyWith(
-                      mainAxisAlignment: value,
-                    )
-                  : (item.layout as FlexLayout).copyWith(
-                      crossAxisAlignment: value,
-                    );
-            },
-            listenable: this,
-          );
-        }
-      }
+      var direction = (item.layout as FlexLayout).direction;
+      return _DelegateEditableProperty<FlexAlignment>(
+        owner: this,
+        key: Key('horizontalAlignment'),
+        valueGetter: () => direction == Axis.horizontal
+            ? (item.layout as FlexLayout).mainAxisAlignment
+            : (item.layout as FlexLayout).crossAxisAlignment,
+        valueSetter: (value) {
+          item.layout = direction == Axis.horizontal
+              ? (item.layout as FlexLayout).copyWith(
+                  mainAxisAlignment: value,
+                )
+              : (item.layout as FlexLayout).copyWith(
+                  crossAxisAlignment: value,
+                );
+        },
+        listenable: this,
+      );
     }
     return null;
   }
 
-  EditableProperty<FlexAlignment>? get verticalAlignment {
+  EditorProperty<FlexAlignment>? get verticalAlignment {
     if (item.layout is FlexLayout) {
-      var parent = this.parent;
-      if (parent is CanvasObjectState) {
-        var parentLayout = parent.item.layout;
-        if (parentLayout is FlexLayout) {
-          var direction = parentLayout.direction;
-          return _DelegateEditableProperty<FlexAlignment>(
-            key: Key('verticalAlignment'),
-            valueGetter: () => direction == Axis.horizontal
-                ? (item.layout as FlexLayout).crossAxisAlignment
-                : (item.layout as FlexLayout).mainAxisAlignment,
-            valueSetter: (value) {
-              item.layout = direction == Axis.horizontal
-                  ? (item.layout as FlexLayout).copyWith(
-                      crossAxisAlignment: value,
-                    )
-                  : (item.layout as FlexLayout).copyWith(
-                      mainAxisAlignment: value,
-                    );
-            },
-            listenable: this,
-          );
-        }
-      }
+      var direction = (item.layout as FlexLayout).direction;
+      return _DelegateEditableProperty<FlexAlignment>(
+        owner: this,
+        key: Key('verticalAlignment'),
+        valueGetter: () => direction == Axis.horizontal
+            ? (item.layout as FlexLayout).crossAxisAlignment
+            : (item.layout as FlexLayout).mainAxisAlignment,
+        valueSetter: (value) {
+          item.layout = direction == Axis.horizontal
+              ? (item.layout as FlexLayout).copyWith(
+                  crossAxisAlignment: value,
+                )
+              : (item.layout as FlexLayout).copyWith(
+                  mainAxisAlignment: value,
+                );
+        },
+        listenable: this,
+      );
     }
     return null;
   }
 
-  // EditableProperty<double?> get width {
-  //   return _DelegateEditableProperty(
-  //     key: Key('width'),
-  //     valueGetter: valueGetter,
-  //     valueSetter: valueSetter,
-  //     listenable: this,
-  //   );
-  // }
-  // EditableProperty<double?>? _getEditableSize(
-  //   double? Function(FixedLayoutData) getter,
-  //   FixedLayoutData Function(FixedLayoutData, double?) setter,
-  // ) {
-  //   if (item.layoutData is FixedLayoutData) {
-  //     return _DelegateEditableProperty<double?>(
-  //       key: const Key('size'),
-  //       valueGetter: () => getter(item.layoutData as FixedLayoutData),
-  //       valueSetter: (value) {
-  //         item.layoutData = setter(
-  //           item.layoutData as FixedLayoutData,
-  //           value,
-  //         );
-  //       },
-  //       listenable: this,
-  //     );
-  //   }
-  //   return null;
-  // }
+  EditorProperty<double>? get spacing {
+    if (item.layout is FlexLayout) {
+      return _DelegateEditableProperty<double>(
+        owner: this,
+        key: Key('spacing'),
+        valueGetter: () => (item.layout as FlexLayout).spacing,
+        valueSetter: (value) {
+          item.layout = (item.layout as FlexLayout).copyWith(
+            spacing: value,
+          );
+        },
+        listenable: this,
+      );
+    }
+    return null;
+  }
 
-  // EditableProperty<double?>? get width {
-  //   var editableWidth = _getEditableSize(
-  //     (layoutData) => layoutData.width.value,
-  //     (layoutData, value) => layoutData.copyWith(
-  //       width: value == null
-  //           ? SizeConstraint.intrinsic()
-  //           : value == double.infinity
-  //               ? SizeConstraint.unconstrained()
-  //               : SizeConstraint.fixed(value),
-  //     ),
-  //   );
-  //   editableWidth ??= _getEditableAnchor((layoutData) => layoutData.width,
-  //       (layoutData, value) => layoutData.copyWith(width: value));
-  //   if (parent is CanvasObjectState && item.layoutData is FlexLayoutData) {
-  //     var layoutData = item.layoutData as FlexLayoutData;
-  //     var parent = this.parent as CanvasObjectState;
-  //     var parentLayout = parent.item.layout;
-  //     if (parentLayout is FlexLayout) {
-  //       var direction = parentLayout.direction;
-  //       if (direction == Axis.vertical) {
-  //         editableWidth ??= _DelegateEditableProperty<double?>(
-  //           key: const Key('flexWidth'),
-  //           valueGetter: () => layoutData.cross.value,
-  //           valueSetter: (value) {
-  //             item.layoutData = layoutData.copyWith(
-  //               cross: value == null
-  //                   ? SizeConstraint.intrinsic()
-  //                   : value == double.infinity
-  //                       ? SizeConstraint.unconstrained()
-  //                       : SizeConstraint.fixed(value),
-  //             );
-  //           },
-  //           listenable: this,
-  //         );
-  //       }
-  //     }
-  //   }
-  //   return editableWidth;
-  // }
+  EditorProperty<LayoutType> get layoutType {
+    return _DelegateEditableProperty(
+      owner: this,
+      key: Key('layout'),
+      valueGetter: () {
+        if (item.layout is FlexLayout) {
+          return LayoutType.flex;
+        }
+        return LayoutType.none;
+      },
+      valueSetter: (value) {
+        if (value == LayoutType.flex && item.layout is! FlexLayout) {
+          // convert all AbsoluteChildren into FixedChildren
+          setState(() {
+            for (var child in children) {
+              child.item.layoutData = FixedLayoutData(
+                width: SizeConstraint.fixed(child.size.width),
+                height: SizeConstraint.fixed(child.size.height),
+              );
+            }
+            item.layout = FlexLayout(
+              direction: analyzePossibleFlexDirection(),
+              mainAxisAlignment: FlexAlignment.start,
+              crossAxisAlignment: FlexAlignment.start,
+              padding: analyzePossiblePadding(),
+              spacing: analyzePossibleSpacing(),
+            );
+          });
+        } else if (value == LayoutType.none && item.layout is! FixedLayout) {
+          // convert all FixedChildren into AbsoluteChildren
+          setState(() {
+            for (var child in children) {
+              if (child.item.layoutData is! AbsoluteLayoutData) {
+                child.item.layoutData = AbsoluteLayoutData(
+                  top: child.parentData.position.dy,
+                  left: child.parentData.position.dx,
+                  width: child.size.width,
+                  height: child.size.height,
+                );
+              }
+            }
+            item.layout = FixedLayout();
+          });
+        }
+      },
+      listenable: this,
+    );
+  }
 
-  // EditableProperty<double?>? get height {
-  //   var editableHeight = _getEditableSize(
-  //     (layoutData) => layoutData.height.value,
-  //     (layoutData, value) => layoutData.copyWith(
-  //       height: value == null
-  //           ? SizeConstraint.intrinsic()
-  //           : value == double.infinity
-  //               ? SizeConstraint.unconstrained()
-  //               : SizeConstraint.fixed(value),
-  //     ),
-  //   );
-  //   editableHeight ??= _getEditableAnchor((layoutData) => layoutData.height,
-  //       (layoutData, value) => layoutData.copyWith(height: value));
-  //   if (parent is CanvasObjectState && item.layoutData is FlexLayoutData) {
-  //     var layoutData = item.layoutData as FlexLayoutData;
-  //     var parent = this.parent as CanvasObjectState;
-  //     var parentLayout = parent.item.layout;
-  //     if (parentLayout is FlexLayout) {
-  //       var direction = parentLayout.direction;
-  //       if (direction == Axis.horizontal) {
-  //         editableHeight ??= _DelegateEditableProperty<double?>(
-  //           key: const Key('flexHeight'),
-  //           valueGetter: () => layoutData.cross.value,
-  //           valueSetter: (value) {
-  //             item.layoutData = layoutData.copyWith(
-  //               cross: value == null
-  //                   ? SizeConstraint.intrinsic()
-  //                   : value == double.infinity
-  //                       ? SizeConstraint.unconstrained()
-  //                       : SizeConstraint.fixed(value),
-  //             );
-  //           },
-  //           listenable: this,
-  //         );
-  //       }
-  //     }
-  //   }
-  //   return editableHeight;
-  // }
+  @override
+  List<EditorProperty> get properties {
+    var properties = <EditorProperty>[];
+    void addIfNotNull(EditorProperty? property) {
+      if (property != null) {
+        properties.add(property);
+      }
+    }
 
-  // EditableProperty<double?>? get minWidth {
-  //   var layoutData = item.layoutData;
-  //   var parent = this.parent;
-  //   if (layoutData is FixedLayoutData &&
-  //       layoutData.width is IntrinsicSizeConstraint) {
-  //     return _DelegateEditableProperty<double?>(
-  //       key: const Key('minWidth'),
-  //       valueGetter: () => (layoutData.width as IntrinsicSizeConstraint).min,
-  //       valueSetter: (value) {
-  //         item.layoutData = layoutData.copyWith(
-  //           width: (layoutData.width as IntrinsicSizeConstraint).copyWith(
-  //             min: value,
-  //           ),
-  //         );
-  //       },
-  //       listenable: this,
-  //     );
-  //   } else if (layoutData is FlexLayoutData && parent is CanvasObjectState) {
-  //     var parentLayout = parent.item.layout;
-  //     if (parentLayout is FlexLayout) {
-  //       var direction = parentLayout.direction;
-  //       if (direction == Axis.horizontal) {
-  //         if (layoutData.cross is IntrinsicSizeConstraint) {
-  //           return _DelegateEditableProperty<double?>(
-  //             key: const Key('minWidth'),
-  //             valueGetter: () =>
-  //                 (layoutData.cross as IntrinsicSizeConstraint).min,
-  //             valueSetter: (value) {
-  //               item.layoutData = layoutData.copyWith(
-  //                 cross: (layoutData.cross as IntrinsicSizeConstraint).copyWith(
-  //                   min: value,
-  //                 ),
-  //               );
-  //             },
-  //             listenable: this,
-  //           );
-  //         }
-  //       } else {
-  //         return _DelegateEditableProperty<double?>(
-  //           key: const Key('minWidth'),
-  //           valueGetter: () => layoutData.min,
-  //           valueSetter: (value) {
-  //             item.layoutData = layoutData.copyWith(
-  //               min: value,
-  //             );
-  //           },
-  //           listenable: this,
-  //         );
-  //       }
-  //     }
-  //   }
-  //   return null;
-  // }
+    addIfNotNull(rotation);
+    addIfNotNull(topPadding);
+    addIfNotNull(leftPadding);
+    addIfNotNull(rightPadding);
+    addIfNotNull(bottomPadding);
+    addIfNotNull(topLeftRadius);
+    addIfNotNull(topRightRadius);
+    addIfNotNull(bottomLeftRadius);
+    addIfNotNull(bottomRightRadius);
+    addIfNotNull(topAnchor);
+    addIfNotNull(leftAnchor);
+    addIfNotNull(rightAnchor);
+    addIfNotNull(bottomAnchor);
+    addIfNotNull(minWidth);
+    addIfNotNull(minHeight);
+    addIfNotNull(maxWidth);
+    addIfNotNull(maxHeight);
+    addIfNotNull(horizontalAlignment);
+    addIfNotNull(verticalAlignment);
+    addIfNotNull(layoutType);
+    addIfNotNull(spacing);
+    return properties;
+  }
+}
 
-  // EditableProperty<double?>? get minHeight {
-  //   var layoutData = item.layoutData;
-  //   var parent = this.parent;
-  //   if (layoutData is FixedLayoutData &&
-  //       layoutData.height is IntrinsicSizeConstraint) {
-  //     return _DelegateEditableProperty<double?>(
-  //       key: const Key('minHeight'),
-  //       valueGetter: () => (layoutData.height as IntrinsicSizeConstraint).min,
-  //       valueSetter: (value) {
-  //         item.layoutData = layoutData.copyWith(
-  //           height: (layoutData.height as IntrinsicSizeConstraint).copyWith(
-  //             min: value,
-  //           ),
-  //         );
-  //       },
-  //       listenable: this,
-  //     );
-  //   } else if (layoutData is FlexLayoutData && parent is CanvasObjectState) {
-  //     var parentLayout = parent.item.layout;
-  //     if (parentLayout is FlexLayout) {
-  //       var direction = parentLayout.direction;
-  //       if (direction == Axis.vertical) {
-  //         if (layoutData.cross is IntrinsicSizeConstraint) {
-  //           return _DelegateEditableProperty<double?>(
-  //             key: const Key('minHeight'),
-  //             valueGetter: () =>
-  //                 (layoutData.cross as IntrinsicSizeConstraint).min,
-  //             valueSetter: (value) {
-  //               item.layoutData = layoutData.copyWith(
-  //                 cross: (layoutData.cross as IntrinsicSizeConstraint)
-  //                     .copyWith(min: value),
-  //               );
-  //             },
-  //             listenable: this,
-  //           );
-  //         }
-  //       } else {
-  //         return _DelegateEditableProperty<double?>(
-  //           key: const Key('minHeight'),
-  //           valueGetter: () => layoutData.min,
-  //           valueSetter: (value) {
-  //             item.layoutData = layoutData.copyWith(
-  //               min: value,
-  //             );
-  //           },
-  //           listenable: this,
-  //         );
-  //       }
-  //     }
-  //   }
-  //   return null;
-  // }
-
-  // EditableProperty<double?>? get maxWidth {
-  //   var layoutData = item.layoutData;
-  //   var parent = this.parent;
-  //   if (layoutData is FixedLayoutData &&
-  //       layoutData.width is IntrinsicSizeConstraint) {
-  //     return _DelegateEditableProperty<double?>(
-  //       key: const Key('maxWidth'),
-  //       valueGetter: () => (layoutData.width as IntrinsicSizeConstraint).max,
-  //       valueSetter: (value) {
-  //         item.layoutData = layoutData.copyWith(
-  //           width: (layoutData.width as IntrinsicSizeConstraint).copyWith(
-  //             max: value,
-  //           ),
-  //         );
-  //       },
-  //       listenable: this,
-  //     );
-  //   } else if (layoutData is FlexLayoutData && parent is CanvasObjectState) {
-  //     var parentLayout = parent.item.layout;
-  //     if (parentLayout is FlexLayout) {
-  //       var direction = parentLayout.direction;
-  //       if (direction == Axis.horizontal) {
-  //         if (layoutData.cross is IntrinsicSizeConstraint) {
-  //           return _DelegateEditableProperty<double?>(
-  //             key: const Key('maxWidth'),
-  //             valueGetter: () =>
-  //                 (layoutData.cross as IntrinsicSizeConstraint).max,
-  //             valueSetter: (value) {
-  //               item.layoutData = layoutData.copyWith(
-  //                 cross: (layoutData.cross as IntrinsicSizeConstraint)
-  //                     .copyWith(max: value),
-  //               );
-  //             },
-  //             listenable: this,
-  //           );
-  //         }
-  //       } else {
-  //         return _DelegateEditableProperty<double?>(
-  //           key: const Key('maxWidth'),
-  //           valueGetter: () => layoutData.max,
-  //           valueSetter: (value) {
-  //             item.layoutData = layoutData.copyWith(
-  //               max: value,
-  //             );
-  //           },
-  //           listenable: this,
-  //         );
-  //       }
-  //     }
-  //   }
-  //   return null;
-  // }
-
-  // EditableProperty<double?>? get maxHeight {
-  //   var layoutData = item.layoutData;
-  //   var parent = this.parent;
-  //   if (layoutData is FixedLayoutData &&
-  //       layoutData.height is IntrinsicSizeConstraint) {
-  //     return _DelegateEditableProperty<double?>(
-  //       key: const Key('maxHeight'),
-  //       valueGetter: () => (layoutData.height as IntrinsicSizeConstraint).max,
-  //       valueSetter: (value) {
-  //         item.layoutData = layoutData.copyWith(
-  //           height: (layoutData.height as IntrinsicSizeConstraint).copyWith(
-  //             max: value,
-  //           ),
-  //         );
-  //       },
-  //       listenable: this,
-  //     );
-  //   } else if (layoutData is FlexLayoutData && parent is CanvasObjectState) {
-  //     var parentLayout = parent.item.layout;
-  //     if (parentLayout is FlexLayout) {
-  //       var direction = parentLayout.direction;
-  //       if (direction == Axis.vertical) {
-  //         if (layoutData.cross is IntrinsicSizeConstraint) {
-  //           return _DelegateEditableProperty<double?>(
-  //             key: const Key('maxHeight'),
-  //             valueGetter: () =>
-  //                 (layoutData.cross as IntrinsicSizeConstraint).max,
-  //             valueSetter: (value) {
-  //               item.layoutData = layoutData.copyWith(
-  //                 cross: (layoutData.cross as IntrinsicSizeConstraint)
-  //                     .copyWith(max: value),
-  //               );
-  //             },
-  //             listenable: this,
-  //           );
-  //         }
-  //       } else {
-  //         return _DelegateEditableProperty<double?>(
-  //           key: const Key('maxHeight'),
-  //           valueGetter: () => layoutData.max,
-  //           valueSetter: (value) {
-  //             item.layoutData = layoutData.copyWith(
-  //               max: value,
-  //             );
-  //           },
-  //           listenable: this,
-  //         );
-  //       }
-  //     }
-  //   }
-  //   return null;
-  // }
+enum LayoutType {
+  none,
+  flex,
 }
