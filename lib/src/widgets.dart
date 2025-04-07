@@ -86,14 +86,17 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
         child: Transform(
           transform: transform,
           child: AnimatedValueBuilder(
-            value: widget.state.reorderOffset ?? Offset.zero,
+            value: widget.state.reorderOffsets,
+            lerp: Offset.lerp,
             builder: (context, value, child) {
               return Transform.translate(
-                offset: value,
+                offset: value ?? Offset.zero,
                 child: child!,
               );
             },
-            duration: const Duration(milliseconds: 200),
+            duration: widget.state.reorderOffsets == null
+                ? Duration.zero
+                : const Duration(milliseconds: 200),
             child: AdaptiveSizedBox(
               size: innerSize,
               child: FreeHitClipRRect(

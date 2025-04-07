@@ -485,7 +485,7 @@ class CanvasEditorState extends State<CanvasEditor>
         setToLocalSelection(targetClick);
         break;
       case CanvasSelectionMode.multiple:
-        if (localSelection?.contains(targetClick) == false) {
+        if (!isInLocalSelection(targetClick)) {
           addToLocalSelection(targetClick);
         } else {
           removeFromLocalSelection(targetClick);
@@ -787,7 +787,7 @@ class CanvasEditorState extends State<CanvasEditor>
   void addToLocalSelection(CanvasItemState item) {
     var selection = localSelection;
     if (selection == null) {
-      selection = Selection(
+      localSelection = Selection(
         groups: [
           SelectionGroup(
             parent: item.parent!,
@@ -797,7 +797,7 @@ class CanvasEditorState extends State<CanvasEditor>
         client: SelectionClient.local,
       );
     } else {
-      selection.addSelection(item);
+      localSelection = selection.addSelection(item);
     }
   }
 
@@ -805,9 +805,11 @@ class CanvasEditorState extends State<CanvasEditor>
   void removeFromLocalSelection(CanvasItemState item) {
     var selection = localSelection;
     if (selection != null) {
-      selection.removeSelection(item);
-      if (selection.isEmpty) {
+      var result = selection.removeSelection(item);
+      if (result.isEmpty) {
         localSelection = null;
+      } else {
+        localSelection = result;
       }
     }
   }

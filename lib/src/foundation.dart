@@ -369,18 +369,59 @@ abstract class CanvasItemState
     }
   }
 
-  Offset? _reorderOffset;
-  Offset? get reorderOffset => _reorderOffset;
-  set reorderOffset(Offset? value) {
-    if (value != _reorderOffset) {
-      _reorderOffset = value;
+  // Offset? _reorderOffset;
+  // Offset? get reorderOffset => _reorderOffset;
+  // set reorderOffset(Offset? value) {
+  //   if (value != _reorderOffset) {
+  //     _reorderOffset = value;
+  //     notifyListeners();
+  //   }
+  // }
+
+  final Map<CanvasItemState, double> _reorderOffsetMap = {};
+
+  void putReorderOffset(CanvasItemState item, double offset) {
+    if (_reorderOffsetMap[item] != offset) {
+      _reorderOffsetMap[item] = offset;
       notifyListeners();
     }
   }
 
-  int? assignedReorderIndex;
+  void removeReorderOffset(CanvasItemState item) {
+    if (_reorderOffsetMap.remove(item) != null) {
+      notifyListeners();
+    }
+  }
 
-  final Map<CanvasItemState, bool> sourceReorders = {};
+  void clearReorderOffsets() {
+    if (_reorderOffsetMap.isNotEmpty) {
+      _reorderOffsetMap.clear();
+      notifyListeners();
+    }
+  }
+
+  Offset? get reorderOffsets {
+    if (_reorderOffsetMap.isEmpty) return null;
+    var parent = this.parent;
+    if (parent is CanvasObjectState) {
+      var parentLayout = parent.item.layout;
+      if (parentLayout is FlexLayout) {
+        var direction = parentLayout.direction;
+        if (direction == Axis.horizontal) {
+          return Offset(
+            _reorderOffsetMap.values.fold(0, (a, b) => a + b),
+            0,
+          );
+        } else {
+          return Offset(
+            0,
+            _reorderOffsetMap.values.fold(0, (a, b) => a + b),
+          );
+        }
+      }
+    }
+    return null;
+  }
 
   int? targetReorderIndex;
 
@@ -437,9 +478,9 @@ abstract class CanvasItemState
     if (editorOffset != null) {
       transform.translate(editorOffset.dx, editorOffset.dy);
     }
-    var reorderOffset = this.reorderOffset;
-    if (reorderOffset != null) {
-      transform.translate(reorderOffset.dx, reorderOffset.dy);
+    var reorderOffsets = this.reorderOffsets;
+    if (reorderOffsets != null) {
+      transform.translate(reorderOffsets.dx, reorderOffsets.dy);
     }
     return transform;
   }
@@ -663,6 +704,7 @@ abstract class CanvasItemState
   void relayout() {
     var cached = _layoutResult;
     assert(cached != null, 'CanvasItem $this has not been laid out');
+    _reorderOffsetMap.clear();
     forcePerformLayout(
       cached!.constraints,
       cached.textDirection,
@@ -803,6 +845,30 @@ class CanvasObjectState extends CanvasItemState {
     return boundingBox;
   }
 
+  void reorderItem(CanvasItemState child, int newIndex) {
+    var children = List.of(item.children);
+    var oldIndex = children.indexOf(child.item);
+    assert(oldIndex != -1, 'Child $child is not a child of $this');
+    assert(newIndex >= 0 && newIndex < children.length,
+        'New index $newIndex is out of bounds for $this');
+    if (oldIndex != newIndex) {
+      if (oldIndex < newIndex) {
+        // moving down
+        for (var i = oldIndex; i < newIndex; i++) {
+          children[i] = children[i + 1];
+        }
+        children[newIndex] = child.item;
+      } else {
+        // moving up
+        for (var i = oldIndex; i > newIndex; i--) {
+          children[i] = children[i - 1];
+        }
+        children[newIndex] = child.item;
+      }
+      item.children = children;
+    }
+  }
+
   @override
   void layout(BoxConstraints constraints, TextDirection textDirection) {
     if (!hasLayoutPerformedFor(constraints, textDirection)) {
@@ -909,9 +975,9 @@ class CanvasObjectState extends CanvasItemState {
     if (parentTransform != null) {
       transform = (parentTransform * transform) as Matrix4;
     }
-    var reorderOffset = this.reorderOffset;
-    if (reorderOffset != null) {
-      transform.translate(reorderOffset.dx, reorderOffset.dy);
+    var reorderOffsets = this.reorderOffsets;
+    if (reorderOffsets != null) {
+      transform.translate(reorderOffsets.dx, reorderOffsets.dy);
     }
     if (!super.visitSnapAnchor(visitor,
         parentTransform: null, transform: transform)) {

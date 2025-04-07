@@ -920,71 +920,36 @@ class FlexLayout extends CanvasLayout {
     var draggedSize = endOffset - startOffset;
     var centerDraggedOffset = startOffset + draggedSize / 2;
     int currentIndex = 0;
+    bool isBefore = true;
     while (child != null) {
       if (child == dragged) {
+        isBefore = false;
         child = child.parentData.nextSibling;
         currentIndex++;
         continue;
       }
       var (childStart, childEnd) = _getGlobalRange(child);
-      bool? fromStart = child.sourceReorders[dragged];
-      if (centerDraggedOffset > childStart && centerDraggedOffset < childEnd) {
-        var distanceFromLeft = centerDraggedOffset - childStart;
-        var distanceFromRight = childEnd - centerDraggedOffset;
-        if (fromStart == null) {
-          if (distanceFromLeft < dragTolerance) {
-            print('a');
-            child.sourceReorders[dragged] = true;
+      var centerChildOffset = childStart + (childEnd - childStart) / 2;
+      if (child.item.layoutData is! AbsoluteLayoutData) {
+        if (centerDraggedOffset > centerChildOffset && !isBefore) {
+          child.putReorderOffset(dragged, -draggedSize - spacing);
+          var currentTarget = dragged.targetReorderIndex;
+          if (currentTarget == null) {
             dragged.targetReorderIndex = currentIndex;
-            child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
-                (direction == Axis.horizontal
-                    ? Offset(-draggedSize - spacing, 0)
-                    : Offset(0, -draggedSize - spacing));
-          } else if (distanceFromRight < dragTolerance) {
-            print('b');
-            child.sourceReorders[dragged] = false;
-            dragged.targetReorderIndex = currentIndex + 1;
-            child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
-                (direction == Axis.horizontal
-                    ? Offset(draggedSize + spacing, 0)
-                    : Offset(0, draggedSize + spacing));
+          } else {
+            dragged.targetReorderIndex = max(currentTarget, currentIndex);
           }
-          break;
+        } else if (centerDraggedOffset < centerChildOffset && isBefore) {
+          child.putReorderOffset(dragged, draggedSize + spacing);
+          var currentTarget = dragged.targetReorderIndex;
+          if (currentTarget == null) {
+            dragged.targetReorderIndex = currentIndex;
+          } else {
+            dragged.targetReorderIndex = min(currentTarget, currentIndex);
+          }
         } else {
-          if (distanceFromLeft < dragTolerance && fromStart == true) {
-            print('c');
-            child.sourceReorders[dragged] = false;
-            dragged.targetReorderIndex = currentIndex;
-            child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
-                (direction == Axis.horizontal
-                    ? Offset(-draggedSize - spacing, 0)
-                    : Offset(0, -draggedSize - spacing));
-          } else if (distanceFromRight < dragTolerance && fromStart == false) {
-            print('d');
-            child.sourceReorders[dragged] = true;
-            child.sourceReorders.remove(dragged);
-            dragged.targetReorderIndex = currentIndex + 1;
-            child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
-                (direction == Axis.horizontal
-                    ? Offset(draggedSize + spacing, 0)
-                    : Offset(0, draggedSize + spacing));
-          }
+          child.removeReorderOffset(dragged);
         }
-      } else {
-        if (fromStart == true && centerDraggedOffset < childStart) {
-          print('e');
-          child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
-              (direction == Axis.horizontal
-                  ? Offset(-draggedSize - spacing, 0)
-                  : Offset(0, -draggedSize - spacing));
-        } else if (fromStart == false && centerDraggedOffset > childEnd) {
-          print('f');
-          child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
-              (direction == Axis.horizontal
-                  ? Offset(draggedSize + spacing, 0)
-                  : Offset(0, draggedSize + spacing));
-        }
-        child.sourceReorders.remove(dragged);
       }
       child = child.parentData.nextSibling;
       currentIndex++;
