@@ -203,7 +203,7 @@ class TransformControlBox {
 class Selection {
   // when selection is created, it is created with a list of groups
   // from the selected items based on the parent item.
-  final ValueNotifier<List<SelectionGroup>> groups;
+  final List<SelectionGroup> groups;
   final SelectionClient client;
   final ValueNotifier<EditorControlDelta> editorOffset =
       ValueNotifier(EditorControlDelta.zero);
@@ -211,18 +211,22 @@ class Selection {
   CanvasItemState? _selectedLayer; // used for smart selection
 
   Selection({
-    required List<SelectionGroup> groups,
+    required this.groups,
     required this.client,
-  }) : groups = ValueNotifier(groups);
+  });
 
   CanvasItemState? get singleSelection {
-    if (groups.value.length == 1) {
-      var firstGroup = groups.value.first;
+    if (groups.length == 1) {
+      var firstGroup = groups.first;
       if (firstGroup.selectedItems.length == 1) {
         return firstGroup.selectedItems.first;
       }
     }
     return null;
+  }
+
+  bool get isSingleSelection {
+    return groups.length == 1 && groups.first.selectedItems.length == 1;
   }
 
   factory Selection.fromSelection(List<CanvasItemState> selectedItems,
@@ -250,7 +254,12 @@ class Selection {
         var group = groups[possibleGroup];
         groups[possibleGroup] = SelectionGroup(
           parent: group.parent,
-          selectedItems: [...group.selectedItems, item],
+          selectedItems: [
+            ...group.selectedItems.where(
+              (selectedItem) => selectedItem != item,
+            ),
+            item,
+          ],
         );
       } else {
         groups.add(SelectionGroup(
@@ -267,7 +276,7 @@ class Selection {
 
   Rect computeBoundingBox({Matrix4? parentTransform}) {
     Rect? boundingBox;
-    for (var group in groups.value) {
+    for (var group in groups) {
       var box = group.getTransformControlBox(parentTransform: parentTransform);
       if (boundingBox == null) {
         boundingBox = box.boundingBox;
@@ -287,8 +296,8 @@ class Selection {
     required SelectionGroup selectionGroup,
     required Matrix4 parentTransform,
   }) {
-    if (groups.value.length == 1) {
-      var first = groups.value.first;
+    if (groups.length == 1) {
+      var first = groups.first;
       // return first.buildControls(
       //   selection: this,
       //   editor: editor,
@@ -299,31 +308,43 @@ class Selection {
   }
 
   int? _findPossibleGroup(CanvasItemState item) {
-    for (var i = 0; i < groups.value.length; i++) {
-      if (groups.value[i].parent == item.parent) {
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].parent == item.parent) {
         return i;
       }
     }
     return null;
   }
 
-  void addSelection(CanvasItemState item) {
-    int? possibleGroup = _findPossibleGroup(item);
-    if (possibleGroup != null) {
-      var group = List.of(groups.value);
-      group[possibleGroup] = SelectionGroup(
-        parent: group[possibleGroup].parent,
-        selectedItems: [...group[possibleGroup].selectedItems, item],
-      );
-      groups.value = group;
-    } else {
-      var group = List.of(groups.value);
-      group.add(SelectionGroup(
-        parent: item.parent!,
-        selectedItems: [item],
-      ));
-      groups.value = group;
-    }
+  Selection addSelection(CanvasItemState item) {
+    return Selection.fromSelection(
+      [...groups.expand((group) => group.selectedItems), item],
+      client: client,
+    );
+    // int? possibleGroup = _findPossibleGroup(item);
+    // List<SelectionGroup> newGroups;
+    // if (possibleGroup != null) {
+    //   newGroups = List.of(groups);
+    //   newGroups[possibleGroup] = SelectionGroup(
+    //     parent: newGroups[possibleGroup].parent,
+    //     selectedItems: [
+    //       ...newGroups[possibleGroup].selectedItems.where(
+    //             (selectedItem) => selectedItem != item,
+    //           ),
+    //       item,
+    //     ],
+    //   );
+    // } else {
+    //   newGroups = List.of(groups);
+    //   newGroups.add(SelectionGroup(
+    //     parent: item.parent!,
+    //     selectedItems: [item],
+    //   ));
+    // }
+    // return Selection(
+    //   groups: newGroups,
+    //   client: client,
+    // );
   }
 
   @override
@@ -332,7 +353,7 @@ class Selection {
   }
 
   bool contains(CanvasItemState item) {
-    for (var group in groups.value) {
+    for (var group in groups) {
       if (group.selectedItems.contains(item)) {
         return true;
       }
@@ -341,7 +362,7 @@ class Selection {
   }
 
   bool containsOrDescendant(CanvasItemState other) {
-    for (var group in groups.value) {
+    for (var group in groups) {
       for (var item in group.selectedItems) {
         if (item == other || other.isDescendantOf(item)) {
           return true;
@@ -349,5 +370,33 @@ class Selection {
       }
     }
     return false;
+  }
+
+  Selection removeSelection(CanvasItemState item) {
+    int? possibleGroup = _findPossibleGroup(item);
+    List<SelectionGroup> newGroups;
+    if (possibleGroup != null) {
+      newGroups = List.of(groups);
+      newGroups[possibleGroup] = SelectionGroup(
+        parent: newGroups[possibleGroup].parent,
+        selectedItems: [
+          ...newGroups[possibleGroup].selectedItems.where(
+                (selectedItem) => selectedItem != item,
+              ),
+        ],
+      );
+    } else {
+      newGroups = List.of(groups);
+      newGroups.removeWhere((group) => group.selectedItems.contains(item));
+    }
+    return Selection(
+      groups: newGroups,
+      client: client,
+    );
+  }
+
+  bool get isEmpty {
+    return groups.isEmpty ||
+        groups.every((group) => group.selectedItems.isEmpty);
   }
 }

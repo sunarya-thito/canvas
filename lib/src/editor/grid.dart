@@ -291,7 +291,7 @@ class LayoutGridWidget extends StatelessWidget {
                         }
                         return GroupWidget(
                           children: [
-                            for (var group in value.groups.value)
+                            for (var group in value.groups)
                               for (var ghost in group.selectedItems)
                                 Builder(
                                   builder: (context) {

@@ -6,6 +6,8 @@ import 'package:flutter/scheduler.dart';
 abstract class EditorDragGesture {
   const EditorDragGesture();
   EditorDragGestureSession createState({required CanvasEditorHandler editor});
+  MouseCursor get cursor => MouseCursor.defer;
+  bool get allowEditorInteraction => true;
 }
 
 abstract class EditorDragGestureSession {
@@ -72,13 +74,17 @@ abstract class EditorDragGestureSession {
         _shift!.dx * delta.inMilliseconds / 2,
         _shift!.dy * delta.inMilliseconds / 2,
       );
-      editor.dragViewport(shift);
+
       onShift(shift);
     }
     _lastTick = elapsed;
   }
 
-  void onShift(Offset shift) {}
+  MouseCursor get cursor => MouseCursor.defer;
+
+  void onShift(Offset shift) {
+    editor.dragViewport(shift);
+  }
 
   void onDragStart(Offset start) {
     _handleCursorPosition(start);
@@ -105,6 +111,9 @@ class EditorSelectDragGesture extends EditorDragGesture {
       editor: editor,
     );
   }
+
+  @override
+  MouseCursor get cursor => SystemMouseCursors.grab;
 }
 
 class EditorSelectDragGestureHandler extends EditorDragGestureSession {
@@ -113,10 +122,12 @@ class EditorSelectDragGestureHandler extends EditorDragGestureSession {
   });
 
   late SelectionBox _selectionRect;
+  Selection? _oldSelection;
 
   @override
   void onDragStart(Offset start) {
     super.onDragStart(start);
+    _oldSelection = editor.localSelection;
     _selectionRect = SelectionBox.local(start: start);
     editor.addSelectionRect(_selectionRect);
   }
@@ -125,6 +136,7 @@ class EditorSelectDragGestureHandler extends EditorDragGestureSession {
   void onShift(Offset shift) {
     super.onShift(shift);
     _selectionRect.start.value += shift;
+    editor.selectFromRect(_selectionRect, _oldSelection);
   }
 
   @override
@@ -132,6 +144,7 @@ class EditorSelectDragGestureHandler extends EditorDragGestureSession {
     super.onDrag(start, end);
     _selectionRect.start.value = start;
     _selectionRect.end.value = end;
+    editor.selectFromRect(_selectionRect, _oldSelection);
   }
 
   @override
@@ -140,171 +153,53 @@ class EditorSelectDragGestureHandler extends EditorDragGestureSession {
     _selectionRect.start.value = start;
     _selectionRect.end.value = end;
     editor.removeSelectionRect(_selectionRect);
-    editor.selectFromRect(_selectionRect);
+    editor.selectFromRect(_selectionRect, _oldSelection);
   }
 
   @override
   void onDragCancel() {
     super.onDragCancel();
     editor.removeSelectionRect(_selectionRect);
+    editor.localSelection = _oldSelection;
   }
 }
 
-// class EditorMoveGesture extends EditorDragGesture {
-//   const EditorMoveGesture();
-//   @override
-//   EditorDragGestureSession createState(
-//       {required Offset localPosition, required CanvasEditorHandler editor}) {
-//     return EditorMoveGestureHandler(
-//       editor: editor,
-//       startPosition: localPosition,
-//     );
-//   }
-// }
+class EditorMoveDragGesture extends EditorDragGesture {
+  const EditorMoveDragGesture();
+  @override
+  EditorDragGestureSession createState({required CanvasEditorHandler editor}) {
+    return EditorMoveDragGestureHandler(
+      editor: editor,
+    );
+  }
 
-// class EditorMoveGestureHandler extends EditorDragGestureSession {
-//   EditorMoveGestureHandler({
-//     required super.editor,
-//     required super.startPosition,
-//   });
+  @override
+  MouseCursor get cursor => SystemMouseCursors.grab;
 
-//   bool _dragging = false;
-//   SelectionBox? _selectionRect;
+  @override
+  bool get allowEditorInteraction => false;
+}
 
-//   @override
-//   void onPointerDown(PointerDownEvent event) {
+class EditorMoveDragGestureHandler extends EditorDragGestureSession {
+  EditorMoveDragGestureHandler({
+    required super.editor,
+  });
 
-//     GestureDetector(
-//       onPanStart: (details) {
-//       },
-//       onTertiaryTapUp: ,
-//     )
-//     if (event.buttons == kTertiaryButton) {
-//       _dragging = true;
-//     }
-//   }
+  @override
+  void onDrag(Offset start, Offset end) {
+    super.onDrag(start, end);
+    editor.dragViewport(end - start);
+  }
 
-//   void onPanStart(DragStartDetails details) {
-//     _selectionRect = SelectionBox.local(start: details.localPosition);
-//     editor.addSelectionRect(_selectionRect!);
-//   }
+  @override
+  void onShift(Offset shift) {
+    editor.transform = editor.transform.copyWith(
+      offset: editor.transform.offset - shift,
+    );
+  }
 
-//   void onPanUpdate(DragUpdateDetails details) {
-//     if (_selectionRect != null) {
-//       _selectionRect!.update(end: details.localPosition);
-//     }
-//   }
-
-//   void onPanEnd(DragEndDetails details) {
-//     if (_selectionRect != null) {
-//       editor.removeSelectionRect(_selectionRect!);
-//       editor.selectFromRect(_selectionRect!);
-//       _selectionRect = null;
-//     }
-//   }
-
-//   void onPanCancel() {
-//     if (_selectionRect != null) {
-//       editor.removeSelectionRect(_selectionRect!);
-//       _selectionRect = null;
-//     }
-//   }
-
-//   @override
-//   void onPointerMove(PointerMoveEvent event) {
-//     if (_dragging) {
-//       editor.transform = editor.transform.drag(event.localDelta);
-//     }
-//   }
-
-//   @override
-//   void onPointerCancel(PointerCancelEvent event) {
-//     dispose();
-//   }
-
-//   @override
-//   void onPointerUp(PointerUpEvent event) {
-//     dispose();
-//   }
-// }
-
-// abstract class EditorGestureHandler {
-//   const EditorGestureHandler();
-
-//   Widget wrap(
-//       BuildContext context, Widget child, CanvasEditorController controller);
-// }
-
-// class DesktopEditorGestureHandler extends EditorGestureHandler {
-//   const DesktopEditorGestureHandler();
-
-//   @override
-//   Widget wrap(
-//       BuildContext context, Widget child, CanvasEditorController controller) {
-//     return Stack(
-//       children: [
-//         Positioned.fill(
-//           child: child,
-//         ),
-//         Positioned.fill(
-//           child: _DesktopEditorGestureHandlerWidget(
-//             controller: controller,
-//             child: child,
-//           ),
-//         ),
-//       ],
-//     );
-//   }
-// }
-
-// class _DesktopEditorGestureHandlerWidget extends StatefulWidget {
-//   final CanvasEditorController controller;
-//   final Widget child;
-
-//   const _DesktopEditorGestureHandlerWidget({
-//     Key? key,
-//     required this.controller,
-//     required this.child,
-//   }) : super(key: key);
-
-//   @override
-//   State<_DesktopEditorGestureHandlerWidget> createState() =>
-//       _DesktopEditorGestureHandlerWidgetState();
-// }
-
-// class _DesktopEditorGestureHandlerWidgetState
-//     extends State<_DesktopEditorGestureHandlerWidget> {
-//   bool _dragging = false;
-//   @override
-//   Widget build(BuildContext context) {
-//     return Listener(
-//       behavior: HitTestBehavior.translucent,
-//       onPointerDown: (event) {
-//         if (event.buttons == kTertiaryButton) {
-//           _dragging = true;
-//         }
-//       },
-//       onPointerMove: (event) {
-//         if (_dragging) {
-//           widget.controller.value = widget.controller.value.drag(event.delta);
-//         }
-//       },
-//       onPointerUp: (event) {
-//         _dragging = false;
-//       },
-//       onPointerCancel: (event) {
-//         _dragging = false;
-//       },
-//       onPointerSignal: (event) {
-//         if (event is PointerScrollEvent) {
-//           Offset position = event.localPosition;
-//           widget.controller.value = widget.controller.value.zoomAt(
-//             position,
-//             delta: event.scrollDelta.dy < 0 ? 0.1 : -0.1,
-//           );
-//         }
-//       },
-//       child: widget.child,
-//     );
-//   }
-// }
+  @override
+  MouseCursor get cursor {
+    return SystemMouseCursors.grabbing;
+  }
+}

@@ -164,6 +164,23 @@ class CanvasItemSnapAnchor extends AbsoluteSnapAnchor {
     );
   }
 
+  // @override
+  // bool canSnapInto(SnapAnchor other) {
+  //   if (other is CanvasItemSnapAnchor) {
+  //     var otherItem = other.item;
+  //     var parent = item.parent;
+  //     if (parent is CanvasObjectState) {
+  //       var layout = parent.layout;
+  //       if (layout is FlexLayout) {
+  //         if (parent.children.contains(otherItem)) {
+  //           return false;
+  //         }
+  //       }
+  //     }
+  //   }
+  //   return super.canSnapInto(other);
+  // }
+
   @override
   String? get debugOwner => item.item.debugLabel;
 
@@ -187,6 +204,23 @@ class SelectionSnapAnchor extends AbsoluteSnapAnchor {
       group: group,
       point: point + offset,
     );
+  }
+
+  @override
+  bool canSnapInto(SnapAnchor other) {
+    if (other is CanvasItemSnapAnchor) {
+      var otherItem = other.item;
+      var groupParent = group.parent;
+      if (groupParent is CanvasObjectState) {
+        var layout = groupParent.item.layout;
+        if (layout is FlexLayout) {
+          if (groupParent.children.contains(otherItem)) {
+            return false;
+          }
+        }
+      }
+    }
+    return super.canSnapInto(other);
   }
 
   @override

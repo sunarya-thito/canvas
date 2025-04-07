@@ -49,11 +49,16 @@ mixin CanvasEditorHandler {
   List<SelectionBox> get activeSelectionClients;
   void addSelectionRect(SelectionBox rect);
   void removeSelectionRect(SelectionBox rect);
-  void selectFromRect(SelectionBox rect);
+  Selection? selectFromRect(SelectionBox rect, [Selection? currentSelection]);
   CanvasEditorTransform get transform;
   set transform(CanvasEditorTransform value);
   void addToLocalSelection(CanvasItemState item);
   void setToLocalSelection(CanvasItemState item);
+  void removeFromLocalSelection(CanvasItemState item);
+  bool isInLocalSelection(CanvasItemState item) {
+    return localSelection?.contains(item) ?? false;
+  }
+
   void hitTest(CanvasHitTestResult result, Offset position,
       {CanvasHitTestPredicate? test});
   void selectTest(CanvasHitTestResult result, Path path);

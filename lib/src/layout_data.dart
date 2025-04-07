@@ -2,10 +2,27 @@ import 'dart:math';
 
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/control.dart';
+import 'package:canvas/src/editor/editable.dart';
+import 'package:canvas/src/editor/util.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:flutter/widgets.dart';
 
 abstract class CanvasLayoutData {
+  factory CanvasLayoutData.fromJson(Map<String, Object?> json) {
+    String type = json.getString('type') ?? 'absolute';
+    switch (type) {
+      case 'absolute':
+        return AbsoluteLayoutData.fromJson(json);
+      case 'fixed':
+        return FixedLayoutData.fromJson(json);
+      case 'flex':
+        return FlexLayoutData.fromJson(json);
+      default:
+        throw ArgumentError(
+            'Unknown layout type: $type. Supported types are: absolute, fixed, flex.');
+    }
+  }
+
   final TextDirection? textDirection;
   final Offset? shear;
 
@@ -23,6 +40,10 @@ abstract class CanvasLayoutData {
     this.shear,
     this.scale,
   });
+
+  Map<String, Object?> toJson();
+
+  bool get doesAffectParentLayout => true;
 
   CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta);
 
@@ -196,6 +217,41 @@ class AbsoluteLayoutData extends CanvasLayoutData {
     this.scaleVertical = false,
   });
 
+  factory AbsoluteLayoutData.fromJson(Map<String, Object?> json) {
+    return AbsoluteLayoutData(
+      top: json.getDouble('top'),
+      left: json.getDouble('left'),
+      right: json.getDouble('right'),
+      bottom: json.getDouble('bottom'),
+      width: json.getDouble('width'),
+      height: json.getDouble('height'),
+      shear:
+          Offset(json.getDouble('shearX') ?? 0, json.getDouble('shearY') ?? 0),
+      scaleHorizontal: json.getBool('scaleHorizontal') ?? false,
+      scaleVertical: json.getBool('scaleVertical') ?? false,
+    );
+  }
+
+  @override
+  bool get doesAffectParentLayout => false;
+
+  @override
+  Map<String, Object?> toJson() {
+    return {
+      'type': 'absolute',
+      'top': top,
+      'left': left,
+      'right': right,
+      'bottom': bottom,
+      'width': width,
+      'height': height,
+      'shearX': shear?.dx,
+      'shearY': shear?.dy,
+      'scaleHorizontal': scaleHorizontal,
+      'scaleVertical': scaleVertical,
+    };
+  }
+
   @override
   CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta) {
     Offset positionDelta = delta.positionDelta;
@@ -311,7 +367,7 @@ class AbsoluteLayoutData extends CanvasLayoutData {
 
   @override
   String toString() {
-    return 'AbsoluteLayoutData{top: $top, left: $left, right: $right, bottom: $bottom, width: $width, height: $height}';
+    return 'AbsoluteLayoutData{top: $top, left: $left, right: $right, bottom: $bottom, width: $width, height: $height, shear: $shear, scale: $scale}';
   }
 }
 
@@ -325,6 +381,26 @@ class FixedLayoutData extends CanvasLayoutData {
     super.textDirection,
     super.shear,
   });
+
+  factory FixedLayoutData.fromJson(Map<String, Object?> json) {
+    return FixedLayoutData(
+      width: SizeConstraint.fromJson(json.getMap('width') ?? {}),
+      height: SizeConstraint.fromJson(json.getMap('height') ?? {}),
+      shear:
+          Offset(json.getDouble('shearX') ?? 0, json.getDouble('shearY') ?? 0),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    return {
+      'type': 'fixed',
+      'width': width.toJson(),
+      'height': height.toJson(),
+      'shearX': shear?.dx,
+      'shearY': shear?.dy,
+    };
+  }
 
   @override
   CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta) {
@@ -368,6 +444,11 @@ class FixedLayoutData extends CanvasLayoutData {
     }
     return this;
   }
+
+  @override
+  String toString() {
+    return 'FixedLayoutData{width: $width, height: $height, shear: $shear, scale: $scale}';
+  }
 }
 
 class FlexLayoutData extends CanvasLayoutData {
@@ -384,6 +465,32 @@ class FlexLayoutData extends CanvasLayoutData {
     super.textDirection,
     super.shear,
   });
+
+  factory FlexLayoutData.fromJson(Map<String, Object?> json) {
+    return FlexLayoutData(
+      flex: json.getDouble('flex') ?? 1,
+      min: json.getDouble('min') ?? 0,
+      max: json.getDouble('max') ?? double.infinity,
+      cross: SizeConstraint.fromJson(json.getMap('cross') ?? {}),
+      shear:
+          Offset(json.getDouble('shearX') ?? 0, json.getDouble('shearY') ?? 0),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    return {
+      'type': 'flex',
+      'flex': flex,
+      'min': min,
+      'max': max,
+      'cross': cross.toJson(),
+      'shearX': shear?.dx,
+      'shearY': shear?.dy,
+    };
+  }
+
+  EditableProperty<double?>? get flexWidth => null;
 
   @override
   CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta) {
@@ -443,5 +550,10 @@ class FlexLayoutData extends CanvasLayoutData {
       );
     }
     return this;
+  }
+
+  @override
+  String toString() {
+    return 'FlexLayoutData{flex: $flex, min: $min, max: $max, cross: $cross, shear: $shear, scale: $scale}';
   }
 }

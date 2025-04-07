@@ -285,7 +285,7 @@ class SelectionMoveControlSession extends EditorControlSession {
   @override
   void visitTransformedSnapAnchor(SnapAnchorVisitor visitor) {
     var offset = delta.delta;
-    for (var group in selection.groups.value) {
+    for (var group in selection.groups) {
       var box = group.getTransformControlBox();
       var transform = box.transform;
       var size = box.size;
@@ -344,7 +344,7 @@ class SelectionMoveControlSession extends EditorControlSession {
 
   @override
   void onStart() {
-    for (var group in selection.groups.value) {
+    for (var group in selection.groups) {
       for (var item in group.selectedItems) {
         item.editorOffset = Offset.zero; // this prevents snapping for the item
       }
@@ -389,7 +389,7 @@ class SelectionMoveControlSession extends EditorControlSession {
     _parentEnd = null;
     _parentStart = null;
     _lockReparenting = false;
-    for (var group in selection.groups.value) {
+    for (var group in selection.groups) {
       for (var item in group.selectedItems) {
         item.targetReparent = null;
       }
@@ -402,25 +402,63 @@ class SelectionMoveControlSession extends EditorControlSession {
     CanvasObjectState? targetReparent;
     if (editor.allowReparenting) {
       CanvasItemState targetHit = editor.findItemAtPosition(delta.end);
+      bool preventReparenting = false;
       if (targetHit is CanvasObjectState &&
           (targetHit != _parentStart || _lockReparenting)) {
-        targetReparent = targetHit;
+        for (var group in selection.groups) {
+          for (var item in group.selectedItems) {
+            if (item.targetReparent != null) {
+              continue;
+            }
+            var layoutData = item.item.layoutData;
+            if (layoutData is FlexLayoutData &&
+                targetHit.item.layoutData is FlexLayoutData &&
+                item.parent == targetHit.parent) {
+              preventReparenting = true;
+              break;
+            }
+          }
+          if (preventReparenting) {
+            break;
+          }
+        }
+        targetReparent = preventReparenting ? null : targetHit;
       }
-      _parentEnd?.targetDrop.value = null;
-      _parentEnd = targetReparent;
-      _parentEnd?.targetDrop.value = selection;
-      if (_parentStart != targetHit &&
-          targetHit is CanvasObjectState &&
-          !_lockReparenting) {
-        _lockReparenting = true;
+      if (!preventReparenting) {
+        _parentEnd?.targetDrop.value = null;
+        _parentEnd = targetReparent;
+        _parentEnd?.targetDrop.value = selection;
+        if (_parentStart != targetHit &&
+            targetHit is CanvasObjectState &&
+            !_lockReparenting) {
+          _lockReparenting = true;
+        }
       }
     }
-    for (var group in selection.groups.value) {
+    for (var group in selection.groups) {
       for (var item in group.selectedItems) {
         var transform = Matrix4.inverted(item.globalTransform);
         var transformedDelta = delta.transform(transform);
         item.editorOffset = transformedDelta.delta;
+
         item.targetReparent = targetReparent;
+        if (item.targetReparent == null) {
+          var parent = item.parent;
+          if (parent is CanvasObjectState) {
+            var parentLayout = parent.item.layout;
+            parentLayout.handleDrag(parent, item, delta);
+          }
+        } else {
+          var parent = item.parent;
+          if (parent is CanvasObjectState) {
+            for (var sibling in parent.children) {
+              if (sibling != item) {
+                sibling.reorderOffset = null;
+                sibling.sourceReorders.clear();
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -437,9 +475,17 @@ class SelectionMoveControlSession extends EditorControlSession {
 
   void _resetEditorOffset() {
     selection.editorOffset.value = EditorControlDelta.zero;
-    for (var group in selection.groups.value) {
+    for (var group in selection.groups) {
       for (var item in group.selectedItems) {
         item.editorOffset = null;
+        item.targetReorderIndex = null;
+        var parent = item.parent;
+        if (parent is CanvasObjectState) {
+          for (var sibling in parent.children) {
+            sibling.reorderOffset = null;
+            sibling.sourceReorders.clear();
+          }
+        }
       }
     }
     _stopReparenting();
@@ -481,7 +527,7 @@ class SelectionResizeControlSession extends EditorControlSession {
         )
       ];
     } else {
-      for (var group in selection.groups.value) {
+      for (var group in selection.groups) {
         for (var item in group.selectedItems) {
           var layoutData = item.item.layoutData;
           var size = item.size;

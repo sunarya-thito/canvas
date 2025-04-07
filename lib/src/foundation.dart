@@ -19,18 +19,69 @@ enum CanvasChildOperation {
   symmetricDifference, // reversed intersection
 }
 
-enum CanvasOverflow {
-  hide,
-  visible,
-  scroll,
+BoxConstraints _noneConvert(BoxConstraints constraints) {
+  return constraints;
 }
 
-abstract class CanvasItem {
-  final String? debugLabel;
+BoxConstraints _scrollHorizontalConvert(BoxConstraints constraints) {
+  return BoxConstraints(
+    minWidth: constraints.minWidth,
+    maxWidth: constraints.maxWidth,
+    minHeight: constraints.minHeight,
+    maxHeight: double.infinity,
+  );
+}
 
+BoxConstraints _scrollVerticalConvert(BoxConstraints constraints) {
+  return BoxConstraints(
+    minWidth: constraints.minWidth,
+    maxWidth: double.infinity,
+    minHeight: constraints.minHeight,
+    maxHeight: constraints.maxHeight,
+  );
+}
+
+BoxConstraints _scrollConvert(BoxConstraints constraints) {
+  return BoxConstraints(
+    minWidth: constraints.minWidth,
+    maxWidth: double.infinity,
+    minHeight: constraints.minHeight,
+    maxHeight: double.infinity,
+  );
+}
+
+enum CanvasOverflow {
+  none(convert: _noneConvert),
+  scrollHorizontal(
+    convert: _scrollHorizontalConvert,
+  ),
+  scrollVertical(
+    convert: _scrollVerticalConvert,
+  ),
+  scroll(
+    convert: _scrollConvert,
+  );
+
+  final BoxConstraints Function(BoxConstraints constraints) convert;
+
+  const CanvasOverflow({required this.convert});
+}
+
+abstract class CanvasItem implements Listenable {
+  final String? debugLabel;
   CanvasItem({this.debugLabel});
 
+  CanvasOverflow get overflow;
+  set overflow(CanvasOverflow value);
+
+  bool get locked;
+  set locked(bool value);
+
   final List<CanvasItemState> _attachedStates = [];
+
+  BoxConstraints get constraints;
+  set constraints(BoxConstraints value);
+
   CanvasLayoutData get layoutData;
   set layoutData(CanvasLayoutData value);
 
@@ -57,12 +108,15 @@ CanvasParentData _migrateParentData(
   return newParentData;
 }
 
-class CanvasObject extends CanvasItem {
+class CanvasObject extends CanvasItem with ChangeNotifier {
+  BoxConstraints _constraints;
   CanvasLayout _layout;
   CanvasLayoutData _layoutData;
   List<CanvasItem> _children = [];
   bool _clipContent;
-  BorderRadiusGeometry? _borderRadius;
+  BorderRadius? _borderRadius;
+  bool _locked;
+  CanvasOverflow _overflow;
   @override
   List<CanvasObjectState> get _attachedStates =>
       super._attachedStates.cast<CanvasObjectState>();
@@ -76,21 +130,70 @@ class CanvasObject extends CanvasItem {
     List<LayoutGrid> layoutGrids = const [],
     super.debugLabel,
     bool clipContent = true,
-    BorderRadiusGeometry? borderRadius,
+    BorderRadius? borderRadius,
+    bool locked = false,
+    BoxConstraints constraints = const BoxConstraints(),
+    CanvasOverflow overflow = CanvasOverflow.none,
   })  : _layout = layout,
         _layoutData = layoutData,
         _children = List.of(children),
         _clipContent = clipContent,
         _layoutGrids = layoutGrids,
-        _borderRadius = borderRadius;
+        _borderRadius = borderRadius,
+        _locked = locked,
+        _constraints = constraints,
+        _overflow = overflow;
 
-  BorderRadiusGeometry? get borderRadius => _borderRadius;
-  set borderRadius(BorderRadiusGeometry? value) {
+  @override
+  CanvasOverflow get overflow => _overflow;
+
+  @override
+  set overflow(CanvasOverflow value) {
+    if (value != _overflow) {
+      _overflow = value;
+      for (var state in _attachedStates) {
+        state.relayout();
+      }
+      notifyListeners();
+    }
+  }
+
+  @override
+  bool get locked => _locked;
+
+  @override
+  set locked(bool value) {
+    if (value != _locked) {
+      _locked = value;
+      for (var state in _attachedStates) {
+        state.relayout();
+      }
+      notifyListeners();
+    }
+  }
+
+  @override
+  BoxConstraints get constraints => _constraints;
+
+  @override
+  set constraints(BoxConstraints value) {
+    if (value != _constraints) {
+      _constraints = value;
+      for (var state in _attachedStates) {
+        state.relayout();
+      }
+      notifyListeners();
+    }
+  }
+
+  BorderRadius? get borderRadius => _borderRadius;
+  set borderRadius(BorderRadius? value) {
     if (value != _borderRadius) {
       _borderRadius = value;
       for (var state in _attachedStates) {
-        state.markNeedsLayout();
+        state.relayout();
       }
+      notifyListeners();
     }
   }
 
@@ -99,8 +202,9 @@ class CanvasObject extends CanvasItem {
     if (value != _clipContent) {
       _clipContent = value;
       for (var state in _attachedStates) {
-        state.markNeedsLayout();
+        state.relayout();
       }
+      notifyListeners();
     }
   }
 
@@ -109,8 +213,9 @@ class CanvasObject extends CanvasItem {
     if (!listEquals(value, _layoutGrids)) {
       _layoutGrids = List.of(value);
       for (var state in _attachedStates) {
-        state.markNeedsLayout();
+        state.relayout();
       }
+      notifyListeners();
     }
   }
 
@@ -153,6 +258,7 @@ class CanvasObject extends CanvasItem {
         }
         state.requestRelayout();
       }
+      notifyListeners();
     }
   }
 
@@ -165,6 +271,7 @@ class CanvasObject extends CanvasItem {
       for (var state in _attachedStates) {
         state.requestRelayout();
       }
+      notifyListeners();
     }
   }
 
@@ -177,6 +284,7 @@ class CanvasObject extends CanvasItem {
         state.buildChildren(value);
         state.requestRelayout();
       }
+      notifyListeners();
     }
   }
 
@@ -231,20 +339,20 @@ class CanvasObject extends CanvasItem {
 }
 
 class _CachedLayout {
-  final Size size;
+  final CanvasLayoutResult layoutResult;
   final BoxConstraints constraints;
   final TextDirection textDirection;
-  final Rect preferredBounds; // used to make the item scrollable
 
   _CachedLayout({
-    required this.size,
     required this.constraints,
     required this.textDirection,
-    required this.preferredBounds,
+    required this.layoutResult,
   });
 }
 
-abstract class CanvasItemState implements Listenable, HitTestTarget {
+abstract class CanvasItemState
+    with ChangeNotifier
+    implements Listenable, HitTestTarget {
   CanvasItemState? parent;
   CanvasItem get item;
   CanvasParentData? _parentData;
@@ -257,8 +365,34 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   set editorOffset(Offset? value) {
     if (value != _editorOffset) {
       _editorOffset = value;
-      markNeedsLayout();
+      notifyListeners();
     }
+  }
+
+  Offset? _reorderOffset;
+  Offset? get reorderOffset => _reorderOffset;
+  set reorderOffset(Offset? value) {
+    if (value != _reorderOffset) {
+      _reorderOffset = value;
+      notifyListeners();
+    }
+  }
+
+  int? assignedReorderIndex;
+
+  final Map<CanvasItemState, bool> sourceReorders = {};
+
+  int? targetReorderIndex;
+
+  bool get parentHasEditorOffset {
+    var parent = this.parent;
+    while (parent != null) {
+      if (parent.editorOffset != null) {
+        return true;
+      }
+      parent = parent.parent;
+    }
+    return false;
   }
 
   CanvasObjectState? _targetReparent;
@@ -266,7 +400,7 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   set targetReparent(CanvasObjectState? value) {
     if (_targetReparent != value) {
       _targetReparent = value;
-      markNeedsLayout();
+      relayout();
     }
   }
   //
@@ -302,6 +436,10 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
     var editorOffset = this.editorOffset;
     if (editorOffset != null) {
       transform.translate(editorOffset.dx, editorOffset.dy);
+    }
+    var reorderOffset = this.reorderOffset;
+    if (reorderOffset != null) {
+      transform.translate(reorderOffset.dx, reorderOffset.dy);
     }
     return transform;
   }
@@ -367,7 +505,7 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   bool visitSnapAnchor(SnapAnchorVisitor visitor,
       {Matrix4? parentTransform, Matrix4? transform}) {
     // if this object or its ascendant is being dragged, then do not snap!
-    if (editorOffset != null) {
+    if (editorOffset != null || parentHasEditorOffset) {
       return true;
     }
     transform ??= item.layoutData.computeTranslatedMatrix(this);
@@ -479,7 +617,8 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
 
   Widget? render(BuildContext context) => RandomContainer(
         seed: hashCode,
-        child: Text('${item.debugLabel}'),
+        child: Text(
+            '${item.debugLabel}\n(${size.width}, ${size.height})\n${item.layoutData}'),
       );
 
   bool isDescendantOf(CanvasItemState state) {
@@ -506,7 +645,8 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
 
   Size get size {
     assert(_layoutResult != null, 'CanvasItem $this has not been laid out');
-    return _layoutResult!.size;
+    return item.constraints
+        .constrainAllowNegative(_layoutResult!.layoutResult.size);
   }
 
   bool hasLayoutPerformedFor(
@@ -519,31 +659,35 @@ abstract class CanvasItemState implements Listenable, HitTestTarget {
   bool get hasSize => _layoutResult != null;
 
   void requestRelayout();
-  void requestChildRelayout(CanvasItemState child);
 
-  void markNeedsLayout();
-
-  void forceRelayout() {
+  void relayout() {
     var cached = _layoutResult;
     assert(cached != null, 'CanvasItem $this has not been laid out');
-    forceLayout(cached!.constraints, cached.textDirection);
+    forcePerformLayout(
+      cached!.constraints,
+      cached.textDirection,
+    );
   }
-
-  void dispose() {}
 
   void layout(BoxConstraints constraints, TextDirection textDirection) {
     if (!hasLayoutPerformedFor(constraints, textDirection)) {
-      var size = forceLayout(constraints, textDirection);
-      _layoutResult = _CachedLayout(
-        size: size,
-        constraints: constraints,
-        textDirection: textDirection,
-        preferredBounds: Offset.zero & size,
-      );
+      forcePerformLayout(constraints, textDirection);
     }
   }
 
-  Size forceLayout(BoxConstraints constraints, TextDirection textDirection);
+  void forcePerformLayout(
+      BoxConstraints constraints, TextDirection textDirection) {
+    var layoutResult = forceLayout(constraints, textDirection);
+    _layoutResult = _CachedLayout(
+      constraints: constraints,
+      textDirection: textDirection,
+      layoutResult: layoutResult,
+    );
+    notifyListeners();
+  }
+
+  CanvasLayoutResult forceLayout(
+      BoxConstraints constraints, TextDirection textDirection);
 
   double computeMinIntrinsicWidth(double height);
   double computeMaxIntrinsicWidth(double height);
@@ -593,7 +737,7 @@ class CanvasItemNode extends LinkedNode<CanvasItemNode> {
   CanvasItemNode(this.item, this.next);
 }
 
-class CanvasObjectState extends CanvasItemState with ChangeNotifier {
+class CanvasObjectState extends CanvasItemState {
   @override
   final CanvasObject item;
 
@@ -662,29 +806,20 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   @override
   void layout(BoxConstraints constraints, TextDirection textDirection) {
     if (!hasLayoutPerformedFor(constraints, textDirection)) {
-      var size = forceLayout(constraints, textDirection);
-      var child = firstChild;
-      double minX = 0;
-      double minY = 0;
-      double maxX = size.width;
-      double maxY = size.height;
-      while (child != null) {
-        var childPosition = child.parentData.position;
-        var childSize = child.size;
-        minX = min(minX, childPosition.dx);
-        minY = min(minY, childPosition.dy);
-        maxX = max(maxX, childPosition.dx + childSize.width);
-        maxY = max(maxY, childPosition.dy + childSize.height);
-        child = child.parentData.nextSibling;
-      }
-      var preferredBounds = Rect.fromLTRB(minX, minY, maxX, maxY);
-      _layoutResult = _CachedLayout(
-        size: size,
-        constraints: constraints,
-        textDirection: textDirection,
-        preferredBounds: preferredBounds,
-      );
+      forcePerformLayout(constraints, textDirection);
     }
+  }
+
+  @override
+  void forcePerformLayout(
+      BoxConstraints constraints, TextDirection textDirection) {
+    var result = forceLayout(constraints, textDirection);
+    _layoutResult = _CachedLayout(
+      constraints: constraints,
+      textDirection: textDirection,
+      layoutResult: result,
+    );
+    notifyListeners();
   }
 
   @override
@@ -767,9 +902,16 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   @override
   bool visitSnapAnchor(SnapAnchorVisitor visitor,
       {Matrix4? parentTransform, Matrix4? transform}) {
+    if (editorOffset != null || parentHasEditorOffset) {
+      return true;
+    }
     transform ??= item.layoutData.computeTranslatedMatrix(this);
     if (parentTransform != null) {
       transform = (parentTransform * transform) as Matrix4;
+    }
+    var reorderOffset = this.reorderOffset;
+    if (reorderOffset != null) {
+      transform.translate(reorderOffset.dx, reorderOffset.dy);
     }
     if (!super.visitSnapAnchor(visitor,
         parentTransform: null, transform: transform)) {
@@ -798,20 +940,11 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   @override
   void requestRelayout() {
     var parent = this.parent;
-    if (parent != null) {
-      parent.markNeedsLayout();
+    // absolute does not affect parent size whatsoever
+    if (parent != null && item.layoutData.doesAffectParentLayout) {
+      parent.relayout();
     }
-    markNeedsLayout();
-  }
-
-  @override
-  void requestChildRelayout(CanvasItemState child) {
-    item.layout.visitRelayout(this, child);
-  }
-
-  @override
-  void markNeedsLayout() {
-    notifyListeners();
+    relayout();
   }
 
   @override
@@ -918,7 +1051,8 @@ class CanvasObjectState extends CanvasItemState with ChangeNotifier {
   }
 
   @override
-  Size forceLayout(BoxConstraints constraints, TextDirection textDirection) {
+  CanvasLayoutResult forceLayout(
+      BoxConstraints constraints, TextDirection textDirection) {
     return item.layout.performLayout(this, constraints, textDirection);
   }
 

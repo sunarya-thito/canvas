@@ -85,27 +85,27 @@ class FlexTestCase extends TestCase {
 
   final topPadding = NumberProperty(
     name: 'Top Padding',
-    value: 0,
+    value: 60,
   );
 
   final leftPadding = NumberProperty(
     name: 'Left Padding',
-    value: 0,
+    value: 60,
   );
 
   final rightPadding = NumberProperty(
     name: 'Right Padding',
-    value: 0,
+    value: 60,
   );
 
   final bottomPadding = NumberProperty(
     name: 'Bottom Padding',
-    value: 0,
+    value: 60,
   );
 
   final spacing = NumberProperty(
     name: 'Spacing',
-    value: 0,
+    value: 60,
   );
 
   final width = NumberProperty(

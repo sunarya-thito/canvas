@@ -11,3 +11,5 @@ export 'src/editor/widgets.dart';
 export 'src/editor/foundation.dart';
 export 'src/editor/gestures.dart';
 export 'src/editor/grid.dart';
+export 'src/shape.dart';
+export 'src/editor/snap.dart';

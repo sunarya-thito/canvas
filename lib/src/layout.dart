@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/control.dart';
 import 'package:canvas/src/editor/extra.dart';
+import 'package:canvas/src/editor/util.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:cassowary/cassowary.dart';
@@ -22,6 +23,18 @@ class CanvasFlexParentData extends CanvasParentData {
 }
 
 abstract class SizeConstraint {
+  factory SizeConstraint.fromJson(Map<String, dynamic> json) {
+    switch (json['type']) {
+      case 'fixed':
+        return FixedSizeConstraint.fromJson(json);
+      case 'intrinsic':
+        return IntrinsicSizeConstraint.fromJson(json);
+      case 'unconstrained':
+        return UnconstrainedSizeConstraint.fromJson(json);
+      default:
+        throw Exception('Unknown size constraint type: ${json['type']}');
+    }
+  }
   const factory SizeConstraint.fixed(double size) = FixedSizeConstraint;
   const factory SizeConstraint.intrinsic({
     double min,
@@ -30,6 +43,9 @@ abstract class SizeConstraint {
   const factory SizeConstraint.unconstrained() = UnconstrainedSizeConstraint;
   double computeSize(
       CanvasItemState state, double crossSize, Axis axisDirection, bool min);
+  double? get value;
+
+  Map<String, dynamic> toJson();
 }
 
 class FixedSizeConstraint implements SizeConstraint {
@@ -37,21 +53,60 @@ class FixedSizeConstraint implements SizeConstraint {
 
   const FixedSizeConstraint(this.size);
 
+  factory FixedSizeConstraint.fromJson(Map<String, Object?> json) {
+    return FixedSizeConstraint(json.getDouble('size') ?? 0);
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': 'fixed',
+      'size': size,
+    };
+  }
+
+  @override
+  double get value => size;
+
   @override
   double computeSize(
       CanvasItemState state, double crossSize, Axis axisDirection, bool min) {
     return size;
+  }
+
+  @override
+  String toString() {
+    return 'FixedSizeConstraint($size)';
   }
 }
 
 class UnconstrainedSizeConstraint implements SizeConstraint {
   const UnconstrainedSizeConstraint();
 
+  factory UnconstrainedSizeConstraint.fromJson(Map<String, dynamic> json) {
+    return const UnconstrainedSizeConstraint();
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': 'unconstrained',
+    };
+  }
+
   @override
   double computeSize(
       CanvasItemState state, double crossSize, Axis axisDirection, bool min) {
     return double.infinity;
   }
+
+  @override
+  String toString() {
+    return 'UnconstrainedSizeConstraint()';
+  }
+
+  @override
+  double get value => double.infinity;
 }
 
 class IntrinsicSizeConstraint implements SizeConstraint {
@@ -59,6 +114,32 @@ class IntrinsicSizeConstraint implements SizeConstraint {
   final double max;
 
   const IntrinsicSizeConstraint({this.min = 0, this.max = double.infinity});
+
+  factory IntrinsicSizeConstraint.fromJson(Map<String, dynamic> json) {
+    return IntrinsicSizeConstraint(
+      min: json.getDouble('min') ?? 0,
+      max: json.getDouble('max') ?? double.infinity,
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {
+      'type': 'intrinsic',
+      'min': min,
+      'max': max,
+    };
+  }
+
+  IntrinsicSizeConstraint copyWith({
+    double? min,
+    double? max,
+  }) {
+    return IntrinsicSizeConstraint(
+      min: min ?? this.min,
+      max: max ?? this.max,
+    );
+  }
 
   @override
   double computeSize(
@@ -83,27 +164,47 @@ class IntrinsicSizeConstraint implements SizeConstraint {
     }
     return size;
   }
+
+  @override
+  String toString() {
+    return 'IntrinsicSizeConstraint($min, $max)';
+  }
+
+  @override
+  double? get value => null;
+}
+
+class CanvasLayoutResult {
+  final Size size; // the size, that is not constrained by the item constraints
+  // this is used to compute scrollable area (if enabled)
+
+  const CanvasLayoutResult(this.size);
+}
+
+class CanvasFlexLayoutResult extends CanvasLayoutResult {
+  final double flexUnit;
+  final double totalFlex;
+  final double reservedFlexSpace;
+
+  const CanvasFlexLayoutResult(
+    super.size,
+    this.flexUnit,
+    this.totalFlex,
+    this.reservedFlexSpace,
+  );
 }
 
 abstract class CanvasLayout {
-  const CanvasLayout();
+  final EdgeInsets padding;
+  const CanvasLayout({this.padding = EdgeInsets.zero});
   CanvasParentData setupParentData(CanvasObjectState state,
       CanvasItemState child, CanvasParentData? parentData);
-  Size performLayout(CanvasObjectState state, BoxConstraints constraints,
-      TextDirection textDirection);
+  CanvasLayoutResult performLayout(CanvasObjectState state,
+      BoxConstraints constraints, TextDirection textDirection);
   double computeMinIntrinsicWidth(CanvasObjectState state, double height);
   double computeMaxIntrinsicWidth(CanvasObjectState state, double height);
   double computeMinIntrinsicHeight(CanvasObjectState state, double width);
   double computeMaxIntrinsicHeight(CanvasObjectState state, double width);
-
-  void visitRelayout(CanvasObjectState item, CanvasItemState child) {
-    child.markNeedsLayout();
-  }
-
-  // DragResult handleDragAttempt(CanvasObjectState item, CanvasItemState dragged,
-  //     CanvasItemState target, Offset localPosition) {
-  //   return DragResult.doNothing;
-  // }
 
   void handleDrag(CanvasObjectState parent, CanvasItemState dragged,
       EditorControlDelta delta) {}
@@ -183,16 +284,21 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
 class FixedLayout extends CanvasLayout {
   const FixedLayout();
   @override
-  Size performLayout(CanvasObjectState state, BoxConstraints constraints,
-      TextDirection textDirection) {
+  CanvasLayoutResult performLayout(CanvasObjectState state,
+      BoxConstraints constraints, TextDirection textDirection) {
     constraints =
         state.item.layoutData.computeInnerConstraints(state, constraints);
+    var paddedSize = Size(
+      constraints.maxWidth - padding.horizontal,
+      constraints.maxHeight - padding.vertical,
+    );
+    var paddingOffset = Offset(padding.left, padding.top);
     var child = state.firstChild;
     while (child != null) {
       var layoutData = child.item.layoutData;
       if (layoutData is AbsoluteLayoutData) {
-        layoutAbsolutePositioning(child, constraints.biggestAllowNegative,
-            Offset.zero, layoutData, textDirection);
+        layoutAbsolutePositioning(
+            child, paddedSize, paddingOffset, layoutData, textDirection);
       } else {
         child.layout(constraints, textDirection);
         assert(false, 'FixedLayout can only be used with AbsoluteLayoutData');
@@ -200,12 +306,12 @@ class FixedLayout extends CanvasLayout {
       }
       child = child.parentData.nextSibling;
     }
-    return constraints.biggestAllowNegative;
+    return CanvasLayoutResult(constraints.biggestAllowNegative);
   }
 
   @override
   void visitRelayout(CanvasItemState item, CanvasItemState child) {
-    item.markNeedsLayout();
+    item.relayout();
   }
 
   double _computeIntrinsicSize(
@@ -342,19 +448,29 @@ class FlexLayout extends CanvasLayout {
   final FlexAlignment mainAxisAlignment;
   final FlexAlignment crossAxisAlignment;
   final double spacing;
-  final EdgeInsetsGeometry padding;
 
   FlexLayout({
     this.direction = Axis.horizontal,
     this.mainAxisAlignment = FlexAlignment.start,
     this.crossAxisAlignment = FlexAlignment.start,
     this.spacing = 0,
-    this.padding = EdgeInsets.zero,
+    super.padding,
   });
 
-  @override
-  void visitRelayout(CanvasItemState item, CanvasItemState child) {
-    item.markNeedsLayout();
+  FlexLayout copyWith({
+    Axis? direction,
+    FlexAlignment? mainAxisAlignment,
+    FlexAlignment? crossAxisAlignment,
+    double? spacing,
+    EdgeInsets? padding,
+  }) {
+    return FlexLayout(
+      direction: direction ?? this.direction,
+      mainAxisAlignment: mainAxisAlignment ?? this.mainAxisAlignment,
+      crossAxisAlignment: crossAxisAlignment ?? this.crossAxisAlignment,
+      spacing: spacing ?? this.spacing,
+      padding: padding ?? this.padding,
+    );
   }
 
   double _getMain(Size size) {
@@ -401,16 +517,21 @@ class FlexLayout extends CanvasLayout {
       direction == Axis.horizontal ? Axis.vertical : Axis.horizontal;
 
   @override
-  Size performLayout(CanvasObjectState state, BoxConstraints constraints,
-      TextDirection textDirection) {
+  CanvasLayoutResult performLayout(CanvasObjectState state,
+      BoxConstraints constraints, TextDirection textDirection) {
+    // TODO: scrollable area
     constraints =
         state.item.layoutData.computeInnerConstraints(state, constraints);
     final watch = Stopwatch();
     watch.start();
-    var padding = this.padding.resolve(textDirection);
+    var padding = EdgeInsetsDirectional.only(
+      start: this.padding.left,
+      top: this.padding.top,
+      end: this.padding.right,
+      bottom: this.padding.bottom,
+    ).resolve(textDirection);
     var mainAlignment = _resolveFlexAlignment(mainAxisAlignment, textDirection);
     var startPadding = _getMainStart(padding);
-    var endPadding = _getMainEnd(padding);
     var crossStartPadding = _getCrossStart(padding);
     var crossEndPadding = _getCrossEnd(padding);
     var gap = spacing;
@@ -479,7 +600,7 @@ class FlexLayout extends CanvasLayout {
       // and the gap set to 0, flex children will take all the remaining space
     }
     var totalUsedMainSize = totalFixedSize + totalGap;
-    var remainingSpace = totalWidth - totalUsedMainSize;
+    var remainingSpace = totalWidth - totalUsedMainSize - totalMainPadding;
     var flexUnit = remainingSpace / totalFlex;
 
     // second phase: solve constraint
@@ -506,7 +627,7 @@ class FlexLayout extends CanvasLayout {
       if (layoutData is FlexLayoutData) {
         appendConstraint(
             parentData.mainSize.equals(cm(flexUnit * layoutData.flex))
-              ..priority = Priority.weak);
+              ..priority = Priority.medium);
         appendConstraint(parentData.mainSize >= cm(layoutData.min));
         appendConstraint(parentData.mainSize <= cm(layoutData.max));
         constraint += parentData.mainSize;
@@ -514,19 +635,19 @@ class FlexLayout extends CanvasLayout {
         var mainChildSize = parentData.cachedMainSize;
         if (mainChildSize.isInfinite) {
           appendConstraint(parentData.mainSize.equals(cm(flexUnit))
-            ..priority = Priority.weak);
+            ..priority = Priority.medium);
           constraint += parentData.mainSize;
         }
       }
       child = _resolveNextChild(child, textDirection);
     }
     appendConstraint(
-        constraint.equals(cm(totalWidth))..priority = Priority.strong);
+        constraint.equals(cm(totalWidth))..priority = Priority.weak);
     solver.addConstraints(
         LinkedNodeIterable(first).map((e) => e.constraint).toList());
     solver.flushUpdates();
     var usedMainSize = constraint.value;
-    remainingSpace = totalWidth - usedMainSize;
+    remainingSpace = totalWidth - usedMainSize - totalMainPadding;
     if (remainingSpace > 0 && autoGap) {
       usedMainSize = totalWidth; // left no space, eat all for gap
       gap = remainingSpace / (totalAffectedChildren - 1);
@@ -576,7 +697,7 @@ class FlexLayout extends CanvasLayout {
         mainOffset = startPadding + (totalWidth - usedMainSize) / 2;
         break;
       case FlexAlignment.end:
-        mainOffset = totalWidth - usedMainSize - endPadding;
+        mainOffset = startPadding + (totalWidth - usedMainSize);
         break;
     }
     while (child != null) {
@@ -597,14 +718,19 @@ class FlexLayout extends CanvasLayout {
             break;
         }
         child.parentData.position = _createOffset(mainOffset, childCrossOffset);
-        mainOffset += childSize.width + gap;
+        mainOffset += _getMain(childSize) + gap;
       }
       child = _resolveNextChild(child, textDirection);
     }
 
     watch.stop();
 
-    return constraints.biggestAllowNegative;
+    return CanvasFlexLayoutResult(
+      constraints.biggestAllowNegative,
+      flexUnit,
+      totalFlex,
+      totalWidth - totalUsedMainSize - totalMainPadding,
+    );
   }
 
   CanvasItemState? _resolveFirstChild(
@@ -775,4 +901,95 @@ class FlexLayout extends CanvasLayout {
       return _computeCrossIntrinsicSize(state, height, true);
     }
   }
+
+  (double start, double end) _getGlobalRange(CanvasItemState child) {
+    var editorTransform = child.globalEditorTransform;
+    var topLeft = transformOffset(Offset.zero, editorTransform);
+    var bottomRight = transformOffset(
+        Offset(child.size.width, child.size.height), editorTransform);
+    var start = direction == Axis.horizontal ? topLeft.dx : topLeft.dy;
+    var end = direction == Axis.horizontal ? bottomRight.dx : bottomRight.dy;
+    return (start, end);
+  }
+
+  @override
+  void handleDrag(CanvasObjectState parent, CanvasItemState dragged,
+      EditorControlDelta delta) {
+    var child = parent.firstChild;
+    var (startOffset, endOffset) = _getGlobalRange(dragged);
+    var draggedSize = endOffset - startOffset;
+    var centerDraggedOffset = startOffset + draggedSize / 2;
+    int currentIndex = 0;
+    while (child != null) {
+      if (child == dragged) {
+        child = child.parentData.nextSibling;
+        currentIndex++;
+        continue;
+      }
+      var (childStart, childEnd) = _getGlobalRange(child);
+      bool? fromStart = child.sourceReorders[dragged];
+      if (centerDraggedOffset > childStart && centerDraggedOffset < childEnd) {
+        var distanceFromLeft = centerDraggedOffset - childStart;
+        var distanceFromRight = childEnd - centerDraggedOffset;
+        if (fromStart == null) {
+          if (distanceFromLeft < dragTolerance) {
+            print('a');
+            child.sourceReorders[dragged] = true;
+            dragged.targetReorderIndex = currentIndex;
+            child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
+                (direction == Axis.horizontal
+                    ? Offset(-draggedSize - spacing, 0)
+                    : Offset(0, -draggedSize - spacing));
+          } else if (distanceFromRight < dragTolerance) {
+            print('b');
+            child.sourceReorders[dragged] = false;
+            dragged.targetReorderIndex = currentIndex + 1;
+            child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
+                (direction == Axis.horizontal
+                    ? Offset(draggedSize + spacing, 0)
+                    : Offset(0, draggedSize + spacing));
+          }
+          break;
+        } else {
+          if (distanceFromLeft < dragTolerance && fromStart == true) {
+            print('c');
+            child.sourceReorders[dragged] = false;
+            dragged.targetReorderIndex = currentIndex;
+            child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
+                (direction == Axis.horizontal
+                    ? Offset(-draggedSize - spacing, 0)
+                    : Offset(0, -draggedSize - spacing));
+          } else if (distanceFromRight < dragTolerance && fromStart == false) {
+            print('d');
+            child.sourceReorders[dragged] = true;
+            child.sourceReorders.remove(dragged);
+            dragged.targetReorderIndex = currentIndex + 1;
+            child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
+                (direction == Axis.horizontal
+                    ? Offset(draggedSize + spacing, 0)
+                    : Offset(0, draggedSize + spacing));
+          }
+        }
+      } else {
+        if (fromStart == true && centerDraggedOffset < childStart) {
+          print('e');
+          child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
+              (direction == Axis.horizontal
+                  ? Offset(-draggedSize - spacing, 0)
+                  : Offset(0, -draggedSize - spacing));
+        } else if (fromStart == false && centerDraggedOffset > childEnd) {
+          print('f');
+          child.reorderOffset = (child.reorderOffset ?? Offset.zero) +
+              (direction == Axis.horizontal
+                  ? Offset(draggedSize + spacing, 0)
+                  : Offset(0, draggedSize + spacing));
+        }
+        child.sourceReorders.remove(dragged);
+      }
+      child = child.parentData.nextSibling;
+      currentIndex++;
+    }
+  }
+
+  static const dragTolerance = 20;
 }

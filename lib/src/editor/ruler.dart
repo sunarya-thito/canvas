@@ -48,7 +48,7 @@ class CanvasSnapGuideline with ChangeNotifier {
 class CanvasRuler extends StatefulWidget {
   final CanvasEditorController controller;
   final CanvasEditorHandler editor;
-  final bool showRuler;
+  final double showRuler;
   final Widget child;
   final List<CanvasSnapGuideline> snapAnchors;
   final Selection? selection;
@@ -232,33 +232,25 @@ class _CanvasRulerState extends State<CanvasRuler> {
       child: Stack(
         fit: StackFit.passthrough,
         children: [
-          if (!widget.showRuler)
+          PositionedDirectional(
+            top: width * widget.showRuler,
+            start: width * widget.showRuler,
+            end: 0,
+            bottom: 0,
+            child: _wrapChild(context, width),
+          ),
+          if (widget.showRuler != 0) ...[
             PositionedDirectional(
               top: 0,
-              start: 0,
+              start: width * widget.showRuler,
               end: 0,
-              bottom: 0,
-              child: _wrapChild(context, width),
-            ),
-          if (widget.showRuler) ...[
-            PositionedDirectional(
-              top: width,
-              start: width,
-              end: 0,
-              bottom: 0,
-              child: _wrapChild(context, width),
-            ),
-            PositionedDirectional(
-              top: 0,
-              start: width,
-              end: 0,
-              height: width,
+              height: width * widget.showRuler,
               child: _buildDraggable(width, Axis.horizontal),
             ),
             PositionedDirectional(
-              top: width,
+              top: width * widget.showRuler,
               start: 0,
-              width: width,
+              width: width * widget.showRuler,
               bottom: 0,
               child: _buildDraggable(width, Axis.vertical),
             )
@@ -283,7 +275,7 @@ class _CanvasRulerState extends State<CanvasRuler> {
                         backgroundColor: theme.ruler.backgroundColor,
                         strokeColor: theme.ruler.strokeColor,
                         snapAnchors: widget.snapAnchors,
-                        rulerWidth: widget.showRuler ? width : 0,
+                        rulerWidth: width * widget.showRuler,
                         strokeHeight: theme.ruler.strokeHeight,
                         textDirection: Directionality.of(context),
                         snapStrokeColor: theme.snap.strokeColor,
@@ -388,6 +380,19 @@ class _RulerPainter extends CustomPainter {
       ..color = strokeColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth;
+
+    Path clipPath = Path();
+    clipPath.moveTo(0, 0);
+    clipPath.lineTo(size.width, 0);
+    clipPath.lineTo(size.width, rulerWidth);
+    clipPath.lineTo(rulerWidth, rulerWidth);
+    clipPath.lineTo(rulerWidth, size.height);
+    clipPath.lineTo(0, size.height);
+    clipPath.lineTo(0, 0);
+    clipPath.close();
+
+    canvas.save();
+    canvas.clipPath(clipPath, doAntiAlias: true);
 
     Size editorSize = Size(size.width - rulerWidth, size.height - rulerWidth);
     Offset rulerOffset =
@@ -828,6 +833,8 @@ class _RulerPainter extends CustomPainter {
         currentHorizontalOffset += gap * zoom;
       }
     }
+
+    canvas.restore();
 
     if (rulerWidth > 0) {
       strokePaint.strokeWidth = snapStrokeWidth;

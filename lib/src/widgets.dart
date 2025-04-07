@@ -1,7 +1,9 @@
 import 'dart:math';
 
+import 'package:animation_kit/animation_kit.dart';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/control.dart';
+import 'package:canvas/src/editor/util.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:canvas/src/selection/selection.dart';
 import 'package:collection/collection.dart';
@@ -26,10 +28,8 @@ class CanvasItemWidget extends StatefulWidget {
 int count = 0;
 
 class _CanvasItemWidgetState extends State<CanvasItemWidget> {
-  int _count = 0;
   @override
   void initState() {
-    _count = count++;
     super.initState();
     widget.state.addListener(_update);
   }
@@ -50,9 +50,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   }
 
   void _update() {
-    setState(() {
-      widget.state.forceRelayout();
-    });
+    setState(() {});
   }
 
   SelectionMoveControlSession? _moveControlSession;
@@ -68,125 +66,149 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
     if (editorOffset != null && widget.overrideTransform == null) {
       transform.translate(editorOffset.dx, editorOffset.dy);
     }
+    // Offset? reorderOffset = widget.state.reorderOffset;
+    // if (reorderOffset != null && widget.overrideTransform == null) {
+    //   transform.translate(reorderOffset.dx, reorderOffset.dy);
+    // }
     var editor = widget.state.editor;
     bool clipContent = widget.state is CanvasObjectState &&
         (widget.state as CanvasObjectState).item.clipContent;
     BorderRadiusGeometry? borderRadius = widget.state is CanvasObjectState
-        ? (widget.state as CanvasObjectState).item.borderRadius
+        ? (widget.state as CanvasObjectState).item.borderRadius?.directional
         : null;
-    return FreeHitOpacity(
-      opacity: widget.state.targetReparent == null ||
-              widget.overrideTransform != null
-          ? 1
-          : 0,
-      child: Transform(
-        transform: transform,
-        child: AdaptiveSizedBox(
-          size: innerSize,
-          child: FreeHitClipRRect(
-            borderRadius: borderRadius ?? BorderRadius.zero,
-            clipBehavior: clipContent ? Clip.antiAlias : Clip.none,
-            child: GroupWidget(
-              passthrough: true,
-              children: [
-                GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    widget.state.editor?.handleItemClick(widget.state);
-                  },
-                  onPanStart: editor == null
-                      ? null
-                      : (details) {
-                          editor.setToLocalSelection(widget.state);
-                          Selection? local = editor.localSelection;
-                          if (local != null) {
-                            _moveControlSession = editor.startControlSession(
-                                SelectionMoveControlSession(local, editor),
-                                details.globalPosition);
-                          }
+    return FreeHitIgnorePointer(
+      ignoring: widget.state.item.locked,
+      child: FreeHitOpacity(
+        opacity: widget.state.targetReparent == null ||
+                widget.overrideTransform != null
+            ? 1
+            : 0,
+        child: Transform(
+          transform: transform,
+          child: AnimatedValueBuilder(
+            value: widget.state.reorderOffset ?? Offset.zero,
+            builder: (context, value, child) {
+              return Transform.translate(
+                offset: value,
+                child: child!,
+              );
+            },
+            duration: const Duration(milliseconds: 200),
+            child: AdaptiveSizedBox(
+              size: innerSize,
+              child: FreeHitClipRRect(
+                borderRadius: borderRadius ?? BorderRadius.zero,
+                clipBehavior: clipContent ? Clip.antiAlias : Clip.none,
+                child: GroupWidget(
+                  passthrough: true,
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        widget.state.editor?.handleItemClick(widget.state);
+                      },
+                      onPanStart: editor == null
+                          ? null
+                          : (details) {
+                              editor.setToLocalSelection(widget.state);
+                              Selection? local = editor.localSelection;
+                              if (local != null) {
+                                _moveControlSession =
+                                    editor.startControlSession(
+                                        SelectionMoveControlSession(
+                                            local, editor),
+                                        details.globalPosition);
+                              }
+                            },
+                      onPanUpdate: editor == null
+                          ? null
+                          : (details) {
+                              if (_moveControlSession != null) {
+                                _moveControlSession =
+                                    editor.updateControlSession(
+                                        _moveControlSession!,
+                                        details.globalPosition);
+                              }
+                            },
+                      onPanEnd: editor == null
+                          ? null
+                          : (details) {
+                              if (_moveControlSession != null) {
+                                editor.endControlSession(_moveControlSession!);
+                                _moveControlSession = null;
+                              }
+                            },
+                      onPanCancel: editor == null
+                          ? null
+                          : () {
+                              if (_moveControlSession != null) {
+                                editor
+                                    .cancelControlSession(_moveControlSession!);
+                                _moveControlSession = null;
+                              }
+                            },
+                      child: widget.state.render(context),
+                    ),
+                    if (widget.state is CanvasObjectState) ...[
+                      ListenableBuilder(
+                        listenable: Listenable.merge(
+                            (widget.state as CanvasObjectState).children),
+                        builder: (context, child) {
+                          return GroupWidget(
+                            children: [
+                              for (var child
+                                  in (widget.state as CanvasObjectState)
+                                      .children
+                                      .sorted(_sortChildren))
+                                CanvasItemWidget(
+                                  key: ValueKey(child),
+                                  state: child,
+                                ),
+                            ],
+                          );
                         },
-                  onPanUpdate: editor == null
-                      ? null
-                      : (details) {
-                          if (_moveControlSession != null) {
-                            _moveControlSession = editor.updateControlSession(
-                                _moveControlSession!, details.globalPosition);
+                      ),
+                      ValueListenableBuilder(
+                        valueListenable:
+                            (widget.state as CanvasObjectState).targetDrop,
+                        builder: (context, value, _) {
+                          if (value == null) {
+                            return GroupWidget();
                           }
-                        },
-                  onPanEnd: editor == null
-                      ? null
-                      : (details) {
-                          if (_moveControlSession != null) {
-                            editor.endControlSession(_moveControlSession!);
-                            _moveControlSession = null;
-                          }
-                        },
-                  onPanCancel: editor == null
-                      ? null
-                      : () {
-                          if (_moveControlSession != null) {
-                            editor.cancelControlSession(_moveControlSession!);
-                            _moveControlSession = null;
-                          }
-                        },
-                  child: widget.state.render(context),
-                ),
-                if (widget.state is CanvasObjectState) ...[
-                  ListenableBuilder(
-                    listenable: Listenable.merge(
-                        (widget.state as CanvasObjectState).children),
-                    builder: (context, child) {
-                      return GroupWidget(
-                        children: [
-                          for (var child in (widget.state as CanvasObjectState)
-                              .children
-                              .sorted(_sortChildren))
-                            CanvasItemWidget(
-                              key: ValueKey(child),
-                              state: child,
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                  ValueListenableBuilder(
-                    valueListenable:
-                        (widget.state as CanvasObjectState).targetDrop,
-                    builder: (context, value, _) {
-                      if (value == null) {
-                        return GroupWidget();
-                      }
-                      return GroupWidget(
-                        children: [
-                          for (var group in value.groups.value)
-                            for (var ghost in group.selectedItems)
-                              Builder(
-                                builder: (context) {
-                                  var commonParent =
-                                      ghost.findCommonParent(widget.state);
-                                  if (commonParent == null) {
-                                    return SizedBox.shrink();
-                                  }
-                                  Matrix4 reparentedTransform =
-                                      commonParent.globalEditorTransform *
+                          return GroupWidget(
+                            children: [
+                              for (var group in value.groups)
+                                for (var ghost in group.selectedItems)
+                                  Builder(
+                                    builder: (context) {
+                                      var commonParent =
+                                          ghost.findCommonParent(widget.state);
+                                      if (commonParent == null) {
+                                        return SizedBox.shrink();
+                                      }
+                                      Matrix4 reparentedTransform = commonParent
+                                              .globalEditorTransform *
                                           ghost.getGlobalEditorTransformUntil(
                                               commonParent);
-                                  return Transform(
-                                    transform: Matrix4.inverted(
-                                        widget.state.globalTransform),
-                                    child: CanvasItemWidget(
-                                      state: ghost,
-                                      overrideTransform: reparentedTransform,
-                                    ),
-                                  );
-                                },
-                              )
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              ],
+                                      return Transform(
+                                        transform: Matrix4.inverted(
+                                            widget.state.globalTransform),
+                                        child: CanvasItemWidget(
+                                          state: ghost,
+                                          overrideTransform:
+                                              reparentedTransform,
+                                        ),
+                                      );
+                                    },
+                                  )
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),

@@ -66,6 +66,76 @@ extension BoxConstraintsExtension on BoxConstraints {
         maxWidth == other.maxWidth &&
         maxHeight == other.maxHeight;
   }
+
+  Size constrainAllowNegative(Size size) {
+    double width =
+        size.width; // minWidth < maxWidth ? size.width : size.width.abs();
+    double height =
+        size.height; // minHeight < maxHeight ? size.height : size.height.abs();
+    if (width.isNaN) {
+      width = 0;
+    }
+    if (height.isNaN) {
+      height = 0;
+    }
+    bool flipHorizontal = width.isNegative;
+    bool flipVertical = height.isNegative;
+    if (flipHorizontal) {
+      width = -width;
+    }
+    if (flipVertical) {
+      height = -height;
+    }
+    double minWidth = this.minWidth;
+    double minHeight = this.minHeight;
+    double maxWidth = this.maxWidth;
+    double maxHeight = this.maxHeight;
+    if (minWidth.isNaN) {
+      minWidth = 0;
+    }
+    if (minHeight.isNaN) {
+      minHeight = 0;
+    }
+    if (maxWidth.isNaN) {
+      maxWidth = 0;
+    }
+    if (maxHeight.isNaN) {
+      maxHeight = 0;
+    }
+    if (flipHorizontal) {
+      minWidth = -minWidth;
+      maxWidth = -maxWidth;
+    }
+    if (flipVertical) {
+      minHeight = -minHeight;
+      maxHeight = -maxHeight;
+    }
+    if (minWidth > maxWidth) {
+      minWidth = maxWidth;
+    }
+    if (minHeight > maxHeight) {
+      minHeight = maxHeight;
+    }
+    if (width < minWidth) {
+      width = minWidth;
+    }
+    if (height < minHeight) {
+      height = minHeight;
+    }
+    if (width > maxWidth) {
+      width = maxWidth;
+    }
+    if (height > maxHeight) {
+      height = maxHeight;
+    }
+    if (flipHorizontal) {
+      width = -width;
+    }
+    if (flipVertical) {
+      height = -height;
+    }
+    return Size(width, height);
+  }
 }
 
 class AdaptiveSizedBox extends StatelessWidget {
@@ -584,6 +654,53 @@ class RenderFreeHitOpacity extends RenderProxyBox {
       return;
     }
     super.paint(context, offset);
+  }
+}
+
+class FreeHitIgnorePointer extends SingleChildRenderObjectWidget {
+  const FreeHitIgnorePointer({
+    super.key,
+    required this.ignoring,
+    super.child,
+  });
+
+  final bool ignoring;
+
+  @override
+  RenderFreeHitIgnorePointer createRenderObject(BuildContext context) {
+    return RenderFreeHitIgnorePointer(ignoring: ignoring);
+  }
+
+  @override
+  void updateRenderObject(
+      BuildContext context, covariant RenderFreeHitIgnorePointer renderObject) {
+    renderObject.ignoring = ignoring;
+  }
+}
+
+class RenderFreeHitIgnorePointer extends RenderProxyBox {
+  RenderFreeHitIgnorePointer({bool ignoring = false}) : _ignoring = ignoring;
+
+  bool get ignoring => _ignoring;
+  bool _ignoring;
+  set ignoring(bool value) {
+    if (_ignoring == value) {
+      return;
+    }
+    _ignoring = value;
+    markNeedsPaint();
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (ignoring) {
+      return false;
+    }
+    if (hitTestChildren(result, position: position) || hitTestSelf(position)) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
+    }
+    return false;
   }
 }
 
