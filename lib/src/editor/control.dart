@@ -342,11 +342,6 @@ class SelectionMoveControlSession extends EditorControlSession {
 
   @override
   void onStart() {
-    for (var group in selection.groups) {
-      for (var item in group.selectedItems) {
-        item.editorOffset = Offset.zero; // this prevents snapping for the item
-      }
-    }
     if (editor.allowReparenting) {
       _startReparenting();
     }
@@ -364,6 +359,21 @@ class SelectionMoveControlSession extends EditorControlSession {
   void _startReparenting() {
     if (_isReparenting) {
       return;
+    }
+    for (var group in selection.groups) {
+      for (var item in group.selectedItems) {
+        item.editorOffset = Offset.zero; // this prevents snapping for the item
+        item.targetReparent = null;
+        item.targetReorderIndex = null;
+        item.clearReorderOffsets();
+        var parent = item.parent;
+        if (parent is CanvasObjectState) {
+          for (var sibling in parent.children) {
+            sibling.clearReorderOffsets();
+            sibling.targetReorderIndex = null;
+          }
+        }
+      }
     }
     _isReparenting = true;
     _lockReparenting = false;
@@ -390,6 +400,16 @@ class SelectionMoveControlSession extends EditorControlSession {
     for (var group in selection.groups) {
       for (var item in group.selectedItems) {
         item.targetReparent = null;
+        item.targetReorderIndex = null;
+        item.editorOffset = null;
+        item.clearReorderOffsets();
+        var parent = item.parent;
+        if (parent is CanvasObjectState) {
+          for (var sibling in parent.children) {
+            sibling.clearReorderOffsets();
+            sibling.targetReorderIndex = null;
+          }
+        }
       }
     }
   }
@@ -444,6 +464,7 @@ class SelectionMoveControlSession extends EditorControlSession {
             for (var sibling in parent.children) {
               if (sibling != item) {
                 sibling.clearReorderOffsets();
+                sibling.targetReorderIndex = null;
               }
             }
           }
@@ -491,10 +512,13 @@ class SelectionMoveControlSession extends EditorControlSession {
       for (var item in group.selectedItems) {
         item.editorOffset = null;
         item.targetReorderIndex = null;
+        item.targetReparent = null;
+        item.clearReorderOffsets();
         var parent = item.parent;
         if (parent is CanvasObjectState) {
           for (var sibling in parent.children) {
             sibling.clearReorderOffsets();
+            sibling.targetReorderIndex = null;
           }
         }
       }

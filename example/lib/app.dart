@@ -1,12 +1,14 @@
 import 'package:canvas/canvas.dart';
+import 'package:example/cases/empty_case.dart';
 import 'package:example/cases/flex_case.dart';
 import 'package:example/property.dart';
+import 'package:flutter/services.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 abstract class TestCase extends ChangeNotifier {
   String get name;
   String get description;
-  CanvasRoot get root;
+  CanvasRoot createRoot();
 }
 
 class CanvasExampleApp extends StatefulWidget {
@@ -20,6 +22,7 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
   final CanvasEditorController controller = CanvasEditorController();
   final List<TestCase> testCases = [
     FlexTestCase(),
+    EmptyCase(),
   ];
   int? _selectedCase;
   Selection? _localSelection;
@@ -31,11 +34,16 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
   bool _multiSelect = false;
   bool _enableSnapping = true;
 
+  int _objectCount = 0;
+
   int _dragMode = 0; // 0 = select, 1 = move, 2 = create object
+
+  CanvasRoot? _canvasRoot;
 
   void _setSelectedCase(int newCase) {
     controller.value = const CanvasEditorTransform();
     _selectedCase = newCase;
+    _canvasRoot = testCases[newCase].createRoot();
   }
 
   void _closeCase() {
@@ -51,7 +59,9 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
       child: ListView.separated(
         padding: const EdgeInsets.all(8),
         itemCount: testCases.length,
-        separatorBuilder: (context, index) => const Divider(),
+        separatorBuilder: (context, index) => const Divider(
+          height: 8,
+        ),
         itemBuilder: (context, index) {
           return CardButton(
             alignment: Alignment.centerLeft,
@@ -247,6 +257,21 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                       child: const Icon(LucideIcons.plus),
                     ),
                   ),
+                  const VerticalDivider(),
+                  // reset button
+                  Tooltip(
+                    tooltip: const TooltipContainer(child: Text('Reset')).call,
+                    child: IconButton.ghost(
+                      icon: const Icon(LucideIcons.refreshCw),
+                      onPressed: () {
+                        setState(() {
+                          controller.value = const CanvasEditorTransform();
+                          _canvasRoot = testCases[_selectedCase!].createRoot();
+                          _localSelection = null;
+                        });
+                      },
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -261,27 +286,42 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                 direction: Axis.horizontal,
                 children: [
                   ResizablePane.flex(
-                    child: CanvasEditor(
-                      allowReparenting: _allowReparenting,
-                      symmetricResize: _symmetricResize,
-                      proportionalResize: _proportionalResize,
-                      selectionMode: _multiSelect
-                          ? CanvasSelectionMode.multiple
-                          : CanvasSelectionMode.single,
-                      snappingConfiguration: SnappingConfiguration(
-                        enableSnapping: _enableSnapping,
-                      ),
-                      showRuler: _showRuler,
-                      controller: controller,
-                      gesture: _dragMode == 0
-                          ? const EditorSelectDragGesture()
-                          : const EditorMoveDragGesture(),
-                      onLocalSelectionChanged: (value) {
-                        setState(() {
-                          _localSelection = value;
-                        });
+                    child: Shortcuts(
+                      shortcuts: const {
+                        SingleActivator(LogicalKeyboardKey.delete):
+                            CanvasDeleteSelectedObjectsIntent(),
                       },
-                      root: testCases[_selectedCase!].root,
+                      child: CanvasEditor(
+                        allowReparenting: _allowReparenting,
+                        symmetricResize: _symmetricResize,
+                        proportionalResize: _proportionalResize,
+                        selectionMode: _multiSelect
+                            ? CanvasSelectionMode.multiple
+                            : CanvasSelectionMode.single,
+                        snappingConfiguration: SnappingConfiguration(
+                          enableSnapping: _enableSnapping,
+                        ),
+                        showRuler: _showRuler,
+                        controller: controller,
+                        gesture: _dragMode == 0
+                            ? const EditorSelectDragGesture()
+                            : _dragMode == 1
+                                ? const EditorMoveDragGesture()
+                                : EditorCreateObjectDragGesture(
+                                    createItem: (editor) {
+                                      return EditableCanvasObject(
+                                        debugLabel:
+                                            'New Object ${++_objectCount}',
+                                      );
+                                    },
+                                  ),
+                        onLocalSelectionChanged: (value) {
+                          setState(() {
+                            _localSelection = value;
+                          });
+                        },
+                        root: _canvasRoot!,
+                      ),
                     ),
                   ),
                   ResizablePane(

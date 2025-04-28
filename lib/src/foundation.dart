@@ -287,6 +287,18 @@ class CanvasObject extends CanvasItem {
     children = newChildren;
   }
 
+  void insertBefore(CanvasItem child, CanvasItem before) {
+    var newChildren = List.of(_children);
+    var index = newChildren.indexOf(before);
+    if (index == -1) {
+      newChildren.add(child);
+      children = newChildren;
+      return;
+    }
+    newChildren.insert(index, child);
+    children = newChildren;
+  }
+
   void removeChild(CanvasItem child) {
     children = _children.where((e) => e != child).toList();
   }
@@ -445,47 +457,36 @@ abstract class CanvasItemState
   }
 
   Matrix4 get globalTransform {
-    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
-    CanvasItemState? current = parent;
-    while (current != null) {
-      transform =
-          current.item.layoutData.computeTranslatedMatrix(current) * transform;
-      current = current.parent;
-    }
-    return transform;
+    return parentTransform * transform;
   }
 
   Matrix4 get globalEditorTransform {
-    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
-
-    CanvasItemState? current = parent;
-    while (current != null) {
-      transform =
-          current.item.layoutData.computeTranslatedMatrix(current) * transform;
-      current = current.parent;
-    }
+    var transform = globalTransform;
     var editorOffset = this.editorOffset;
     if (editorOffset != null) {
       transform.translate(editorOffset.dx, editorOffset.dy);
     }
-    var reorderOffsets = this.reorderOffsets;
-    if (reorderOffsets != null) {
-      transform.translate(reorderOffsets.dx, reorderOffsets.dy);
+    var parent = this.parent;
+    while (parent != null) {
+      var parentEditorOffset = parent.editorOffset;
+      if (parentEditorOffset != null) {
+        transform.translate(parentEditorOffset.dx, parentEditorOffset.dy);
+      }
+      parent = parent.parent;
     }
     return transform;
   }
 
   Matrix4 getGlobalEditorTransformUntil(CanvasItemState topParent) {
-    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
+    var transform = this.transform;
     var editorOffset = this.editorOffset;
     if (editorOffset != null) {
       transform.translate(editorOffset.dx, editorOffset.dy);
     }
-    CanvasItemState? current = parent;
-    while (current != null && current != topParent) {
-      transform =
-          current.item.layoutData.computeTranslatedMatrix(current) * transform;
-      current = current.parent;
+    var parent = this.parent;
+    while (parent != null && parent != topParent) {
+      transform = parent.transform * transform;
+      parent = parent.parent;
     }
     return transform;
   }
@@ -494,15 +495,39 @@ abstract class CanvasItemState
     Matrix4 transform = Matrix4.identity();
     CanvasItemState? current = parent;
     while (current != null) {
-      transform =
-          current.item.layoutData.computeTranslatedMatrix(current) * transform;
+      transform = current.transform * transform;
       current = current.parent;
     }
     return transform;
   }
 
   Matrix4 get localTransform {
-    return item.layoutData.computeTranslatedMatrix(this);
+    return Matrix4.identity()
+      ..translate(parentData.position.dx, parentData.position.dy);
+  }
+
+  Matrix4 get localEditorTransform {
+    var transform = localTransform;
+    var editorOffset = this.editorOffset;
+    if (editorOffset != null) {
+      transform.translate(editorOffset.dx, editorOffset.dy);
+    }
+    var reorderOffset = reorderOffsets;
+    if (reorderOffset != null) {
+      transform.translate(reorderOffset.dx, reorderOffset.dy);
+    }
+    return transform;
+  }
+
+  Matrix4 get elementTransform {
+    var elementTransform = item.layoutData.computeElementTransform(size);
+    var innerSize = item.layoutData.computeElementSize(size, elementTransform);
+    return elementTransform *
+        CanvasLayoutData.computeAdjustmentTransform(size, innerSize);
+  }
+
+  Matrix4 get transform {
+    return localTransform * elementTransform;
   }
 
   Offset get globalShear {
@@ -539,11 +564,11 @@ abstract class CanvasItemState
     if (editorOffset != null || parentHasEditorOffset) {
       return true;
     }
-    transform ??= item.layoutData.computeTranslatedMatrix(this);
+    transform ??= this.transform;
     if (parentTransform != null) {
       transform = (parentTransform * transform) as Matrix4;
     }
-    var innerSize = this.innerSize;
+    var innerSize = elementSize;
     Offset topLeft = transformOffset(Offset.zero, transform);
     if (!visitor(CanvasItemSnapAnchor(item: this, point: topLeft))) {
       return false;
@@ -571,7 +596,7 @@ abstract class CanvasItemState
   }
 
   Path getPath(TextDirection textDirection) {
-    return Path()..addRect(Offset.zero & innerSize);
+    return Path()..addRect(Offset.zero & elementSize);
   }
 
   // this is build when a single selection is created upon this item
@@ -582,11 +607,36 @@ abstract class CanvasItemState
   }) sync* {}
 
   Rect computeViewportBounds({Matrix4? parentTransform}) {
-    Polygon polygon = Polygon.fromRect(Offset.zero & innerSize);
-    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
+    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Matrix4 transform = this.transform;
     if (parentTransform != null) {
       transform = parentTransform * transform;
     }
+    polygon = polygon.transform(transform);
+    return polygon.boundingBox;
+  }
+
+  Rect get globalBoundingBox {
+    return computeViewportBounds(parentTransform: parentTransform);
+  }
+
+  Rect get globalEditorBoundingBox {
+    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Matrix4 transform = globalEditorTransform;
+    polygon = polygon.transform(transform);
+    return polygon.boundingBox;
+  }
+
+  Rect get localBoundingBox {
+    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Matrix4 transform = localTransform;
+    polygon = polygon.transform(transform);
+    return polygon.boundingBox;
+  }
+
+  Rect get localEditorBoundingBox {
+    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Matrix4 transform = localEditorTransform;
     polygon = polygon.transform(transform);
     return polygon.boundingBox;
   }
@@ -603,7 +653,12 @@ abstract class CanvasItemState
     return false;
   }
 
-  Size get innerSize => item.layoutData.computeInnerSize(this);
+  // Size get innerSize => item.layoutData.computeInnerSize(this);
+
+  Size get elementSize {
+    var elementTransform = item.layoutData.computeElementTransform(size);
+    return item.layoutData.computeElementSize(size, elementTransform);
+  }
 
   bool hitTestSelf(CanvasHitTestResult result, Offset position,
       {CanvasHitTestPredicate? test}) {
@@ -616,7 +671,7 @@ abstract class CanvasItemState
         return false;
       }
     }
-    return innerSize.containsIgnoreSign(position);
+    return elementSize.containsIgnoreSign(position);
   }
 
   void selectTest(
@@ -648,8 +703,19 @@ abstract class CanvasItemState
 
   Widget? render(BuildContext context) => RandomContainer(
         seed: hashCode,
-        child: Text(
-            '${item.debugLabel}\n(${size.width}, ${size.height})\n${item.layoutData}'),
+        child: Stack(
+          children: [
+            Text(
+                '${item.debugLabel}\n(${elementSize.width}, ${elementSize.height})\n${item.layoutData}'),
+            Center(
+              child: Container(
+                width: 10,
+                height: 10,
+                color: Color.fromARGB(255, 255, 0, 0),
+              ),
+            ),
+          ],
+        ),
       );
 
   bool isDescendantOf(CanvasItemState state) {
@@ -819,8 +885,8 @@ class CanvasObjectState extends CanvasItemState {
 
   @override
   Rect computeViewportBounds({Matrix4? parentTransform}) {
-    Polygon polygon = Polygon.fromRect(Offset.zero & innerSize);
-    Matrix4 transform = item.layoutData.computeTranslatedMatrix(this);
+    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Matrix4 transform = this.transform;
     if (parentTransform != null) {
       transform = parentTransform * transform;
     }
@@ -896,15 +962,13 @@ class CanvasObjectState extends CanvasItemState {
   bool hitTestChildren(CanvasHitTestResult result, Offset position,
       {CanvasHitTestPredicate? test}) {
     if (item.clipContent) {
-      if (!innerSize.containsIgnoreSign(position)) {
+      if (!elementSize.containsIgnoreSign(position)) {
         return false;
       }
     }
     var child = lastChild;
     while (child != null) {
-      var childTransform = child.item.layoutData.computeTranslatedMatrix(
-        child,
-      );
+      var childTransform = child.transform;
       if (test != null) {
         if (!test(child)) {
           child = child.parentData.previousSibling;
@@ -941,9 +1005,7 @@ class CanvasObjectState extends CanvasItemState {
     }
     var child = lastChild;
     while (child != null) {
-      var childTransform = child.item.layoutData.computeTranslatedMatrix(
-        child,
-      );
+      var childTransform = child.transform;
       result.addWithPaintTransformPath(
         transform: childTransform,
         path: path,
@@ -961,13 +1023,9 @@ class CanvasObjectState extends CanvasItemState {
     if (editorOffset != null || parentHasEditorOffset) {
       return true;
     }
-    transform ??= item.layoutData.computeTranslatedMatrix(this);
+    transform ??= this.transform;
     if (parentTransform != null) {
       transform = (parentTransform * transform) as Matrix4;
-    }
-    var reorderOffsets = this.reorderOffsets;
-    if (reorderOffsets != null) {
-      transform.translate(reorderOffsets.dx, reorderOffsets.dy);
     }
     if (!super.visitSnapAnchor(visitor,
         parentTransform: null, transform: transform)) {
@@ -990,7 +1048,7 @@ class CanvasObjectState extends CanvasItemState {
       return super.getPath(textDirection);
     }
     return Path()
-      ..addRRect(resolvedBorderRadius.toRRect(Offset.zero & innerSize));
+      ..addRRect(resolvedBorderRadius.toRRect(Offset.zero & elementSize));
   }
 
   bool _suspendRelayout = false;
@@ -1108,12 +1166,13 @@ class CanvasObjectState extends CanvasItemState {
       _hasLayoutRequest = true;
       return;
     }
-    var parent = this.parent;
-    // absolute does not affect parent size whatsoever
-    if (parent != null) {
-      parent.requestRelayout();
-    }
+
     relayout();
+    var parent = this.parent;
+    if (parent != null) {
+      parent.relayout();
+    }
+    notifyListeners();
   }
 
   @override
@@ -1522,7 +1581,7 @@ enum DirectionalCursor {
   }
 
   DirectionalCursor rotateByAngle(double angle) {
-    int index = ((this.index + (angle / angleStep).round()) % length).toInt();
+    int index = ((this.index + (-angle / angleStep).round()) % length).toInt();
     return DirectionalCursor.values[index];
   }
 

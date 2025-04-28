@@ -17,7 +17,7 @@ Rect normalizeRect(Rect rect) {
 double rotationFromShear(Offset shear) {
   // (rotation - (-rotation)) / 2
   // (rotation + rotation) / 2
-  return -(shear.dx - shear.dy) / 2;
+  return (shear.dx - shear.dy) / 2;
 }
 
 Offset resizeShear(Size newOuterSize, Offset shear) {
@@ -39,30 +39,138 @@ Offset resizeShear(Size newOuterSize, Offset shear) {
   return Offset(newShearX, newShearY);
 }
 
+Size computeBoundingBoxFromMatrix({
+  required Matrix4 matrix,
+  required Size originalSize,
+  Alignment alignment = Alignment.center,
+}) {
+  // 1. Determine the origin point for alignment (e.g., center, topLeft)
+  final origin = alignment.alongSize(originalSize);
+
+  // 2. Define the corners of the box relative to origin
+  final corners = [
+    Vector3(-origin.dx, -origin.dy, 0), // top-left
+    Vector3(originalSize.width - origin.dx, -origin.dy, 0), // top-right
+    Vector3(-origin.dx, originalSize.height - origin.dy, 0), // bottom-left
+    Vector3(originalSize.width - origin.dx, originalSize.height - origin.dy,
+        0), // bottom-right
+  ];
+
+  // 3. Transform all 4 corners
+  final transformed = corners.map((corner) {
+    final result = matrix.transform3(corner);
+    return Offset(result.x, result.y);
+  }).toList();
+
+  // 4. Find bounding box that contains all transformed points
+  final xs = transformed.map((p) => p.dx);
+  final ys = transformed.map((p) => p.dy);
+
+  final minX = xs.reduce((a, b) => a < b ? a : b);
+  final maxX = xs.reduce((a, b) => a > b ? a : b);
+  final minY = ys.reduce((a, b) => a < b ? a : b);
+  final maxY = ys.reduce((a, b) => a > b ? a : b);
+
+  return Size(maxX - minX, maxY - minY);
+}
+
+Size computeFittingSizeFromMatrix({
+  required Matrix4 matrix,
+  required double boundingBoxWidth,
+  required double boundingBoxHeight,
+  Alignment alignment = Alignment.center,
+  BoxFit fit = BoxFit.cover,
+}) {
+  final aspectRatio = boundingBoxWidth / boundingBoxHeight;
+  assert(
+    fit == BoxFit.cover || fit == BoxFit.contain,
+    'Unsupported BoxFit: $fit',
+  );
+  final baseSize =
+      fit == BoxFit.cover ? Size(1.0, 1.0 / aspectRatio) : Size(1.0, 1.0);
+  final origin = alignment.alongSize(baseSize);
+
+  final corners = [
+    Vector3(-origin.dx, -origin.dy, 0),
+    Vector3(baseSize.width - origin.dx, -origin.dy, 0),
+    Vector3(-origin.dx, baseSize.height - origin.dy, 0),
+    Vector3(baseSize.width - origin.dx, baseSize.height - origin.dy, 0),
+  ];
+
+  final transformed = corners.map(matrix.transform3).toList();
+
+  final xs = transformed.map((p) => p.x);
+  final ys = transformed.map((p) => p.y);
+
+  final transformedWidth = xs.reduce(max) - xs.reduce(min);
+  final transformedHeight = ys.reduce(max) - ys.reduce(min);
+
+  final scaleX = boundingBoxWidth / transformedWidth;
+  final scaleY = boundingBoxHeight / transformedHeight;
+  final scale = max(scaleX, scaleY); // ✅ BoxFit.cover logic
+
+  // return Size(baseSize.width * scale, baseSize.height * scale);
+  double width = baseSize.width * scale;
+  double height = baseSize.height * scale;
+  if (width.isNaN || width.isInfinite) {
+    width = 0;
+  }
+  if (height.isNaN || height.isInfinite) {
+    height = 0;
+  }
+  return Size(width, height);
+}
+
 Offset normalizeOffset(Offset offset) {
   final double length = offset.distance;
   return length > 0 ? offset / length : offset;
 }
 
-Matrix4 computeShearMatrix(double shearX, double shearY,
-    {Matrix4? parent, Offset? origin}) {
-  var result = Matrix4.identity();
-  if (origin != null) {
+Matrix4 computeShearMatrix(
+  double shearX,
+  double shearY, {
+  Matrix4? parent,
+  Alignment? alignment,
+  Size? size,
+  Offset? origin,
+}) {
+  final result = Matrix4.identity();
+
+  // Convert alignment into actual Offset origin in the box
+  // final Offset originOffset = alignment.alongSize(size);
+  if (alignment != null && size != null) {
+    final Offset originOffset = alignment.alongSize(size);
+    result.translate(originOffset.dx, originOffset.dy);
+  } else if (origin != null) {
     result.translate(origin.dx, origin.dy);
   }
-  var shearXMatrix = Matrix4.identity()
+
+  // Apply shear via setEntry
+  final shearXMatrix = Matrix4.identity()
     ..setEntry(0, 1, tan(shearX))
     ..setEntry(1, 0, tan(shearY));
-  var shearYMatrix = Matrix4.identity()
+  final shearYMatrix = Matrix4.identity()
     ..setEntry(1, 1, cos(shearX))
     ..setEntry(0, 0, cos(shearY));
-  result = shearXMatrix * shearYMatrix * result;
-  if (origin != null) {
+
+  // Apply both shears to result
+  result.multiply(shearXMatrix);
+  result.multiply(shearYMatrix);
+
+  // Translate back
+  // result.translate(-originOffset.dx, -originOffset.dy);
+  if (alignment != null && size != null) {
+    final Offset originOffset = alignment.alongSize(size);
+    result.translate(-originOffset.dx, -originOffset.dy);
+  } else if (origin != null) {
     result.translate(-origin.dx, -origin.dy);
   }
+
+  // If parent matrix is given, prepend it
   if (parent != null) {
-    result = parent * result;
+    result.multiply(parent);
   }
+
   return result;
 }
 
@@ -141,6 +249,19 @@ class Polygon {
       Offset(left + width, top + height),
       Offset(left, top + height),
     ]);
+  }
+
+  Offset get center {
+    if (points.isEmpty) {
+      return Offset.zero;
+    }
+    double sumX = 0;
+    double sumY = 0;
+    for (var point in points) {
+      sumX += point.dx;
+      sumY += point.dy;
+    }
+    return Offset(sumX / points.length, sumY / points.length);
   }
 
   Path get path {

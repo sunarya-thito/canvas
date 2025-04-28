@@ -17,3 +17,4 @@ export 'src/editor/snap.dart';
 export 'src/editor/editable.dart';
 export 'src/editor/control.dart';
 export 'src/editor/selection/selection.dart';
+export 'src/editor/actions.dart';

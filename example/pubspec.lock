@@ -343,7 +343,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "4eca5e95a99d48de7a660d1a5899cd929c22f9f9"
+      resolved-ref: c4c77662e97e14256ef91368849691cbc0ea3cf1
       url: "https://github.com/sunarya-thito/shadcn_flutter.git"
     source: git
     version: "0.0.34"

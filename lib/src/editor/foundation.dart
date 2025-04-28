@@ -55,6 +55,8 @@ mixin CanvasEditorHandler {
     return localSelection?.contains(item) ?? false;
   }
 
+  // remove object from existance (including from parent and from active selections)
+  void removeObject(CanvasItemState item);
   void hitTest(CanvasHitTestResult result, Offset position,
       {CanvasHitTestPredicate? test});
   void selectTest(CanvasHitTestResult result, Path path);

@@ -78,62 +78,10 @@ extension BoxConstraintsExtension on BoxConstraints {
     if (height.isNaN) {
       height = 0;
     }
-    bool flipHorizontal = width.isNegative;
-    bool flipVertical = height.isNegative;
-    if (flipHorizontal) {
-      width = -width;
-    }
-    if (flipVertical) {
-      height = -height;
-    }
     double minWidth = this.minWidth;
     double minHeight = this.minHeight;
     double maxWidth = this.maxWidth;
     double maxHeight = this.maxHeight;
-    if (minWidth.isNaN) {
-      minWidth = 0;
-    }
-    if (minHeight.isNaN) {
-      minHeight = 0;
-    }
-    if (maxWidth.isNaN) {
-      maxWidth = 0;
-    }
-    if (maxHeight.isNaN) {
-      maxHeight = 0;
-    }
-    if (flipHorizontal) {
-      minWidth = -minWidth;
-      maxWidth = -maxWidth;
-    }
-    if (flipVertical) {
-      minHeight = -minHeight;
-      maxHeight = -maxHeight;
-    }
-    if (minWidth > maxWidth) {
-      minWidth = maxWidth;
-    }
-    if (minHeight > maxHeight) {
-      minHeight = maxHeight;
-    }
-    if (width < minWidth) {
-      width = minWidth;
-    }
-    if (height < minHeight) {
-      height = minHeight;
-    }
-    if (width > maxWidth) {
-      width = maxWidth;
-    }
-    if (height > maxHeight) {
-      height = maxHeight;
-    }
-    if (flipHorizontal) {
-      width = -width;
-    }
-    if (flipVertical) {
-      height = -height;
-    }
     return Size(width, height);
   }
 }

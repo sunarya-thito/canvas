@@ -29,6 +29,8 @@ class CanvasEditor extends StatefulWidget {
   final bool symmetricResize;
   final bool proportionalResize;
   final ValueChanged<Selection?>? onLocalSelectionChanged;
+  final List<CanvasSnapGuideline>? initialRulerSnapAnchors;
+  final ValueChanged<List<CanvasSnapGuideline>>? onRulerSnapAnchorsChanged;
 
   const CanvasEditor({
     super.key,
@@ -49,6 +51,8 @@ class CanvasEditor extends StatefulWidget {
     this.symmetricResize = false,
     this.proportionalResize = false,
     this.onLocalSelectionChanged,
+    this.initialRulerSnapAnchors,
+    this.onRulerSnapAnchorsChanged,
   });
 
   @override
@@ -353,6 +357,14 @@ class CanvasEditorState extends State<CanvasEditor>
     _root.attach(_rootState);
     _performFullLayout();
     _rootState.addListener(_performFullLayout);
+    _rulerSnapAnchors.addListener(_onRulerSnapAnchorsChanged);
+    if (widget.initialRulerSnapAnchors != null) {
+      _rulerSnapAnchors.value = widget.initialRulerSnapAnchors!;
+    }
+  }
+
+  void _onRulerSnapAnchorsChanged() {
+    widget.onRulerSnapAnchorsChanged?.call(_rulerSnapAnchors.value);
   }
 
   void _performFullLayout() {
@@ -408,11 +420,30 @@ class CanvasEditorState extends State<CanvasEditor>
   void removeRulerSnapAnchor(CanvasSnapGuideline point) {
     _rulerSnapAnchors.mutate(
       (value) {
-        value.remove(point);
+        return value.remove(point);
       },
     );
     if (selectedSnapAnchor == point) {
       selectedSnapAnchor = null;
+    }
+  }
+
+  @override
+  void removeObject(CanvasItemState item) {
+    var parent = item.parent;
+    setState(() {
+      for (var i = _selections.length - 1; i >= 0; i--) {
+        var selection = _selections[i];
+        var newSelection = selection.removeSelection(item);
+        if (newSelection.isEmpty) {
+          _selections.removeAt(i);
+        } else {
+          _selections[i] = newSelection;
+        }
+      }
+    });
+    if (parent is CanvasObjectState) {
+      parent.item.removeChild(item.item);
     }
   }
 
@@ -427,6 +458,9 @@ class CanvasEditorState extends State<CanvasEditor>
       _root.attach(_rootState);
       _performFullLayout();
       _rootState.addListener(_performFullLayout);
+      _selections.clear();
+      _selectionBoxes.clear();
+      _rulerSnapAnchors.value.clear();
     }
     if (oldWidget.focusNode != widget.focusNode) {
       if (oldWidget.focusNode == null) {
@@ -505,11 +539,21 @@ class CanvasEditorState extends State<CanvasEditor>
           context: context,
         ),
         CanvasRemoveRulerSnapAnchorIntent: Action.overridable(
-          defaultAction: CanvasRemoveRulerSnapAnchorAction(),
+          defaultAction: CanvasRemoveRulerSnapAnchorAction(
+            editor: this,
+          ),
           context: context,
         ),
         CanvasCreateRulerSnapAnchorIntent: Action.overridable(
-          defaultAction: CanvasCreateRulerSnapAnchorAction(),
+          defaultAction: CanvasCreateRulerSnapAnchorAction(
+            editor: this,
+          ),
+          context: context,
+        ),
+        CanvasDeleteSelectedObjectsIntent: Action.overridable(
+          defaultAction: CanvasDeleteSelectedObjectsAction(
+            editor: this,
+          ),
           context: context,
         ),
       },
@@ -702,6 +746,9 @@ class CanvasEditorState extends State<CanvasEditor>
                                             widget.scrollAsZoom) {
                                           onPointerScroll(event, this);
                                         }
+                                      },
+                                      onPointerDown: (event) {
+                                        _focusNode.requestFocus();
                                       },
                                     ),
                                   ],

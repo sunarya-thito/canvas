@@ -2,42 +2,73 @@ import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/ruler.dart';
 import 'package:flutter/widgets.dart';
 
+class CanvasDeleteSelectedObjectsIntent extends Intent {
+  const CanvasDeleteSelectedObjectsIntent();
+}
+
+class CanvasDeleteSelectedObjectsAction
+    extends Action<CanvasDeleteSelectedObjectsIntent> {
+  final CanvasEditorHandler editor;
+
+  CanvasDeleteSelectedObjectsAction({
+    required this.editor,
+  });
+
+  @override
+  void invoke(covariant CanvasDeleteSelectedObjectsIntent intent) {
+    var localSelection = editor.localSelection;
+    if (localSelection != null) {
+      for (var group in localSelection.groups) {
+        for (var item in group.selectedItems) {
+          editor.removeObject(item);
+        }
+      }
+    }
+  }
+}
+
 class CanvasCreateRulerSnapAnchorIntent extends Intent {
   final double offset;
   final Axis direction;
-  final CanvasEditorHandler editor;
 
   const CanvasCreateRulerSnapAnchorIntent({
     required this.offset,
     required this.direction,
-    required this.editor,
   });
 }
 
 class CanvasCreateRulerSnapAnchorAction
     extends Action<CanvasCreateRulerSnapAnchorIntent> {
+  final CanvasEditorHandler editor;
+
+  CanvasCreateRulerSnapAnchorAction({
+    required this.editor,
+  });
+
   @override
   CanvasSnapGuideline invoke(
       covariant CanvasCreateRulerSnapAnchorIntent intent) {
-    return intent.editor.createRulerSnapAnchor(intent.offset, intent.direction);
+    return editor.createRulerSnapAnchor(intent.offset, intent.direction);
   }
 }
 
 class CanvasRemoveRulerSnapAnchorIntent extends Intent {
   final CanvasSnapGuideline point;
-  final CanvasEditorHandler editor;
 
   const CanvasRemoveRulerSnapAnchorIntent({
     required this.point,
-    required this.editor,
   });
 }
 
 class CanvasRemoveRulerSnapAnchorAction
     extends Action<CanvasRemoveRulerSnapAnchorIntent> {
+  final CanvasEditorHandler editor;
+  CanvasRemoveRulerSnapAnchorAction({
+    required this.editor,
+  });
   @override
   void invoke(covariant CanvasRemoveRulerSnapAnchorIntent intent) {
-    intent.editor.removeRulerSnapAnchor(intent.point);
+    editor.removeRulerSnapAnchor(intent.point);
   }
 }
 

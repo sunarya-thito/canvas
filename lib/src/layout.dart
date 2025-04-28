@@ -270,6 +270,12 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
   } else {
     left = 0;
   }
+  if (width.isNegative) {
+    left -= width;
+  }
+  if (height.isNegative) {
+    top -= height;
+  }
   child.layout(
       BoxConstraints(
         minWidth: width,
@@ -287,9 +293,9 @@ class FixedLayout extends CanvasLayout {
   });
   @override
   CanvasLayoutResult performLayout(CanvasObjectState state,
-      BoxConstraints constraints, TextDirection textDirection) {
-    constraints =
-        state.item.layoutData.computeInnerConstraints(state, constraints);
+      BoxConstraints originalConstraints, TextDirection textDirection) {
+    var constraints =
+        state.item.layoutData.reduceConstraints(state, originalConstraints);
     var paddedSize = Size(
       constraints.maxWidth - padding.horizontal,
       constraints.maxHeight - padding.vertical,
@@ -308,7 +314,7 @@ class FixedLayout extends CanvasLayout {
       }
       child = child.parentData.nextSibling;
     }
-    return CanvasLayoutResult(constraints.biggestAllowNegative);
+    return CanvasLayoutResult(originalConstraints.biggestAllowNegative);
   }
 
   @override
@@ -537,12 +543,10 @@ class FlexLayout extends CanvasLayout {
 
   @override
   CanvasLayoutResult performLayout(CanvasObjectState state,
-      BoxConstraints constraints, TextDirection textDirection) {
+      BoxConstraints originalConstraints, TextDirection textDirection) {
     // TODO: scrollable area
-    constraints =
-        state.item.layoutData.computeInnerConstraints(state, constraints);
-    final watch = Stopwatch();
-    watch.start();
+    var constraints =
+        state.item.layoutData.reduceConstraints(state, originalConstraints);
     var padding = EdgeInsetsDirectional.only(
       start: this.padding.left,
       top: this.padding.top,
@@ -761,10 +765,8 @@ class FlexLayout extends CanvasLayout {
       child = _resolveNextChild(child, textDirection);
     }
 
-    watch.stop();
-
     return CanvasFlexLayoutResult(
-      constraints.biggestAllowNegative,
+      originalConstraints.biggestAllowNegative,
       flexUnit,
       totalFlex,
       totalWidth - totalUsedMainSize - totalMainPadding,
@@ -941,10 +943,9 @@ class FlexLayout extends CanvasLayout {
   }
 
   (double start, double end) _getGlobalRange(CanvasItemState child) {
-    var editorTransform = child.globalEditorTransform;
-    var topLeft = transformOffset(Offset.zero, editorTransform);
-    var bottomRight = transformOffset(
-        Offset(child.size.width, child.size.height), editorTransform);
+    var editorBounds = child.localEditorBoundingBox;
+    var topLeft = editorBounds.topLeft;
+    var bottomRight = editorBounds.bottomRight;
     var start = direction == Axis.horizontal ? topLeft.dx : topLeft.dy;
     var end = direction == Axis.horizontal ? bottomRight.dx : bottomRight.dy;
     return (start, end);

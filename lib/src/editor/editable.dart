@@ -195,7 +195,8 @@ class EditableCanvasObjectState extends CanvasObjectState
       valueGetter: () =>
           rotationFromShear(item.layoutData.shear ?? Offset.zero) * 180 / pi,
       valueSetter: (value) {
-        item.layoutData = item.layoutData.withShear(Rotation(value * pi / 180));
+        var newRotation = value * pi / 180;
+        item.layoutData = item.layoutData.rotate(this, newRotation);
       },
       listenable: this,
     );

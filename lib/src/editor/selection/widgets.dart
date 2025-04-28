@@ -64,27 +64,46 @@ class _SelectionTransformControlWidgetState
   void initState() {
     super.initState();
     _extraControls = [];
-    // _extraControls = widget.selection
-    //     .buildControls(
-    //         editor: widget.editor,
-    //         box: widget.selectionGroup.getTransformControlBox(
-    //             parentTransform: widget.parentTransform))
-    //     .toList();
+    for (var item in widget.selectionGroup.selectedItems) {
+      item.addListener(_update);
+    }
   }
 
   @override
   void didUpdateWidget(covariant SelectionTransformControlWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selection != widget.selection) {}
+    if (oldWidget.selection != widget.selection) {
+      for (var item in oldWidget.selectionGroup.selectedItems) {
+        item.removeListener(_update);
+      }
+      for (var item in widget.selectionGroup.selectedItems) {
+        item.addListener(_update);
+      }
+    }
+  }
+
+  void _update() {
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    for (var item in widget.selectionGroup.selectedItems) {
+      item.removeListener(_update);
+    }
+    super.dispose();
   }
 
   Polygon _createDiagonalHandlePolygon(Offset center, Size size, Offset shear,
-      {EdgeInsets? expand}) {
+      {EdgeInsets? expand,
+      bool flipHorizontal = false,
+      bool flipVertical = false}) {
     Matrix4 matrix = Matrix4.identity();
     Offset origin = size.center(Offset.zero);
     matrix.translate(center.dx, center.dy);
-    matrix = computeShearMatrix(shear.dx, shear.dy, parent: matrix);
     matrix.translate(-origin.dx, -origin.dy);
+    matrix =
+        computeShearMatrix(shear.dx, shear.dy, parent: matrix, origin: center);
     double top = expand == null ? 0 : -expand.top;
     double left = expand == null ? 0 : -expand.left;
     double width = size.width + (expand?.horizontal ?? 0);
@@ -103,7 +122,8 @@ class _SelectionTransformControlWidgetState
         : Size(itemSize.width * widget.zoom, size.height);
     Offset origin = handleSize.center(Offset.zero);
     matrix.translate(center.dx, center.dy);
-    matrix = computeShearMatrix(shear.dx, shear.dy, parent: matrix);
+    matrix =
+        computeShearMatrix(shear.dx, shear.dy, parent: matrix, origin: center);
     matrix.translate(-origin.dx, -origin.dy);
     double top = expand == null ? 0 : -expand.top;
     double left = expand == null ? 0 : -expand.left;
@@ -116,9 +136,18 @@ class _SelectionTransformControlWidgetState
 
   Widget _buildDiagonalHandle(CanvasThemeData theme, Offset center, Size size,
       Offset shear, DirectionalCursor cursor,
-      {EdgeInsets? expand, bool fill = true}) {
-    Polygon polygon =
-        _createDiagonalHandlePolygon(center, size, shear, expand: expand);
+      {EdgeInsets? expand,
+      bool fill = true,
+      bool flipHorizontal = false,
+      bool flipVertical = false}) {
+    Polygon polygon = _createDiagonalHandlePolygon(
+      center,
+      size,
+      shear,
+      expand: expand,
+      flipHorizontal: flipHorizontal,
+      flipVertical: flipVertical,
+    );
     return MouseRegion(
       cursor: cursor.rotateByAngle(rotationFromShear(shear)).cursor,
       hitTestBehavior: HitTestBehavior.deferToChild,
@@ -206,50 +235,93 @@ class _SelectionTransformControlWidgetState
         final flipHorizontal = size.width.isNegative;
         final flipVertical = size.height.isNegative;
         final editor = widget.editor;
-        final boundsInfoRotation =
-            (bottomLeftHandleCenter - bottomRightHandleCenter).direction;
+        final singleSelection = widget.selection.singleSelection;
+        var rotation = singleSelection == null
+            ? 0.0
+            : rotationFromShear(
+                singleSelection.item.layoutData.shear ?? Offset.zero);
+
         final boundsInfoSize =
             (bottomLeftHandleCenter - bottomRightHandleCenter).distance;
+        int rotationAdjustment =
+            (wrapRotation(rotation + pi / 4) / (pi / 2)).floor();
+
+        Offset alwaysBottomCenter;
+        if (rotationAdjustment == 0) {
+          alwaysBottomCenter = flipVertical
+              ? flipHorizontal
+                  ? topRightHandleCenter
+                  : topLeftHandleCenter
+              : flipHorizontal
+                  ? bottomRightHandleCenter
+                  : bottomLeftHandleCenter;
+        } else if (rotationAdjustment == 1) {
+          alwaysBottomCenter = flipVertical
+              ? flipHorizontal
+                  ? bottomRightHandleCenter
+                  : bottomLeftHandleCenter
+              : flipHorizontal
+                  ? topRightHandleCenter
+                  : topLeftHandleCenter;
+        } else if (rotationAdjustment == 2) {
+          alwaysBottomCenter = flipVertical
+              ? flipHorizontal
+                  ? bottomLeftHandleCenter
+                  : bottomRightHandleCenter
+              : flipHorizontal
+                  ? topLeftHandleCenter
+                  : topRightHandleCenter;
+        } else {
+          alwaysBottomCenter = flipVertical
+              ? flipHorizontal
+                  ? topLeftHandleCenter
+                  : topRightHandleCenter
+              : flipHorizontal
+                  ? bottomLeftHandleCenter
+                  : bottomRightHandleCenter;
+        }
         return Stack(
           fit: StackFit.passthrough,
           children: [
-            GroupWidget(
-              children: [
-                Transform.translate(
-                  offset: bottomLeftHandleCenter,
-                  child: Transform.rotate(
-                    angle: boundsInfoRotation + pi,
-                    alignment: Alignment.topLeft,
-                    child: IntrinsicHeight(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minWidth: boundsInfoSize,
-                        ),
-                        child: Center(
-                          widthFactor: 0,
-                          child: Container(
-                            margin: EdgeInsets.only(top: 8),
-                            decoration:
-                                theme.transformControl.boundsInfoDecoraation,
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            child: Text(
-                                '${_toStringDouble(box.size.width)} x ${_toStringDouble(box.size.height)}'),
+            if (widget.selection.editorOffset.value.delta == Offset.zero)
+              GroupWidget(
+                children: [
+                  Transform.translate(
+                    offset: alwaysBottomCenter,
+                    child: Transform.rotate(
+                      angle: -rotation + (rotationAdjustment * pi / 2),
+                      alignment: Alignment.topLeft,
+                      child: IntrinsicHeight(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minWidth: boundsInfoSize,
+                          ),
+                          child: Center(
+                            widthFactor: 0,
+                            child: Container(
+                              margin: EdgeInsets.only(top: 8),
+                              decoration:
+                                  theme.transformControl.boundsInfoDecoraation,
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              child: Text(
+                                '${_toStringDouble(box.size.width)} x ${_toStringDouble(box.size.height)}',
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
             for (var item in widget.selectionGroup.selectedItems)
               Builder(
                 builder: (context) {
                   var globalTransform =
                       widget.parentTransform * item.globalEditorTransform;
                   Polygon polygon =
-                      Polygon.fromRect(Offset.zero & item.innerSize);
+                      Polygon.fromRect(Offset.zero & item.elementSize);
                   polygon = polygon.transform(globalTransform);
                   return widget.selection.editorOffset.value.delta ==
                           Offset.zero
@@ -360,6 +432,8 @@ class _SelectionTransformControlWidgetState
                 left: handleSize.width,
               ),
               fill: false,
+              flipHorizontal: flipHorizontal,
+              flipVertical: flipVertical,
             ),
             // rotate topRight
             _buildDiagonalHandle(
@@ -374,6 +448,8 @@ class _SelectionTransformControlWidgetState
                 right: handleSize.width,
               ),
               fill: false,
+              flipHorizontal: flipHorizontal,
+              flipVertical: flipVertical,
             ),
             // rotate bottomLeft
             _buildDiagonalHandle(
@@ -388,6 +464,8 @@ class _SelectionTransformControlWidgetState
                 left: handleSize.width,
               ),
               fill: false,
+              flipHorizontal: flipHorizontal,
+              flipVertical: flipVertical,
             ),
             // rotate bottomRight
             _buildDiagonalHandle(
@@ -402,6 +480,8 @@ class _SelectionTransformControlWidgetState
                 right: handleSize.width,
               ),
               fill: false,
+              flipHorizontal: flipHorizontal,
+              flipVertical: flipVertical,
             ),
             // topLeft
             _buildDiagonalHandle(

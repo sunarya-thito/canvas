@@ -54,17 +54,12 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   Widget build(BuildContext context) {
     assert(
         widget.state.hasSize, 'CanvasItem ${widget.state} not been laid out');
-    var innerSize = widget.state.innerSize;
-    Matrix4 transform = widget.overrideTransform ??
-        widget.state.item.layoutData.computeTranslatedMatrix(widget.state);
+    var innerSize = widget.state.elementSize;
+    Matrix4 transform = widget.overrideTransform ?? widget.state.transform;
     Offset? editorOffset = widget.state.editorOffset;
     if (editorOffset != null && widget.overrideTransform == null) {
       transform.translate(editorOffset.dx, editorOffset.dy);
     }
-    // Offset? reorderOffset = widget.state.reorderOffset;
-    // if (reorderOffset != null && widget.overrideTransform == null) {
-    //   transform.translate(reorderOffset.dx, reorderOffset.dy);
-    // }
     var editor = widget.state.editor;
     bool clipContent = widget.state is CanvasObjectState &&
         (widget.state as CanvasObjectState).item.clipContent;
@@ -78,20 +73,20 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
                 widget.overrideTransform != null
             ? 1
             : 0,
-        child: Transform(
-          transform: transform,
-          child: AnimatedValueBuilder(
-            value: widget.state.reorderOffsets,
-            lerp: Offset.lerp,
-            builder: (context, value, child) {
-              return Transform.translate(
-                offset: value ?? Offset.zero,
-                child: child!,
-              );
-            },
-            duration: widget.state.reorderOffsets == null
-                ? Duration.zero
-                : const Duration(milliseconds: 200),
+        child: AnimatedValueBuilder(
+          value: widget.state.reorderOffsets,
+          lerp: Offset.lerp,
+          builder: (context, value, child) {
+            return Transform.translate(
+              offset: value ?? Offset.zero,
+              child: child!,
+            );
+          },
+          duration: widget.state.reorderOffsets == null
+              ? Duration.zero
+              : const Duration(milliseconds: 200),
+          child: Transform(
+            transform: transform,
             child: AdaptiveSizedBox(
               size: innerSize,
               child: FreeHitClipRRect(

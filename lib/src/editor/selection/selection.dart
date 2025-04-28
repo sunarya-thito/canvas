@@ -91,7 +91,7 @@ class SelectionGroup {
   }) sync* {
     if (selectedItems.length == 1) {
       var first = selectedItems.first;
-      var transform = first.item.layoutData.computeTranslatedMatrix(first);
+      // var transform = first.item.layoutData.computeTranslatedMatrix(first);
       // yield* first.buildControls(
       //     editor: editor,
       //     parentTransform: parentTransform,
@@ -106,40 +106,30 @@ class SelectionGroup {
   TransformControlBox getTransformControlBox({Matrix4? parentTransform}) {
     if (selectedItems.length == 1) {
       CanvasItemState? current = selectedItems.first;
-      var transform = current.item.layoutData.computeTranslatedMatrix(
-        current,
-      );
+      var transform = current.transform;
       while (current != null) {
         var parent = current.parent;
         if (parent is CanvasItemState) {
-          transform = parent.item.layoutData.computeTranslatedMatrix(
-                parent,
-              ) *
-              transform;
+          transform = parent.transform * transform;
         }
         current = parent;
       }
       var first = selectedItems.first;
       return TransformControlBox(
-        size: first.innerSize,
+        size: first.elementSize,
         transform:
             parentTransform == null ? transform : parentTransform * transform,
       );
     }
     List<Offset> points = [];
     for (var item in selectedItems) {
-      var size = item.innerSize;
+      var size = item.elementSize;
       CanvasItemState? current = item;
-      var transform = item.item.layoutData.computeTranslatedMatrix(
-        current,
-      );
+      var transform = item.transform;
       while (current != null) {
         var parent = current.parent;
         if (parent is CanvasItemState) {
-          transform = parent.item.layoutData.computeTranslatedMatrix(
-                parent,
-              ) *
-              transform;
+          transform = parent.transform * transform;
         }
         current = parent;
       }

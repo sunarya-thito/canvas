@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/rendering.dart';
@@ -9,6 +10,21 @@ String optimalDoubleString(double d) {
     s = s.substring(0, s.length - 3);
   }
   return s;
+}
+
+String shearToString(Offset shear) {
+  double x = shear.dx * 180 / pi;
+  double y = shear.dy * 180 / pi;
+  if (x == -y) {
+    // its a rotation
+    return '(${optimalDoubleString(x)})';
+  }
+  return '(${optimalDoubleString(x)},${optimalDoubleString(y)})';
+}
+
+double wrapRotation(double angle) {
+  const tau = pi * 2;
+  return (angle % tau + tau) % tau;
 }
 
 extension SizeExtension on Size {

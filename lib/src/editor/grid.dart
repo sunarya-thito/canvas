@@ -238,13 +238,12 @@ class LayoutGridWidget extends StatelessWidget {
         if (state is! CanvasObjectState) {
           return SizedBox.shrink();
         }
-        Matrix4 transform = overrideTransform ??
-            state.item.layoutData.computeTranslatedMatrix(state);
+        Matrix4 transform = overrideTransform ?? state.transform;
         Offset? editorOffset = state.editorOffset;
         if (editorOffset != null && overrideTransform == null) {
           transform.translate(editorOffset.dx, editorOffset.dy);
         }
-        var innerSize = state.innerSize;
+        var innerSize = state.elementSize;
         bool clipContent = state.item.clipContent;
         BorderRadiusGeometry? borderRadius = state.item.borderRadius;
         return Visibility(

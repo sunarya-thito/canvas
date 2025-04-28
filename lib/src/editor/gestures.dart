@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:canvas/canvas.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/scheduler.dart';
@@ -200,5 +202,185 @@ class EditorMoveDragGestureHandler extends EditorDragGestureSession {
   @override
   MouseCursor get cursor {
     return SystemMouseCursors.grabbing;
+  }
+}
+
+class EditorCreateObjectDragGesture extends EditorDragGesture {
+  final CanvasItem Function(CanvasEditorHandler editor) createItem;
+  const EditorCreateObjectDragGesture({
+    required this.createItem,
+  });
+
+  @override
+  EditorDragGestureSession createState({required CanvasEditorHandler editor}) {
+    return EditorCreateObjectDragGestureHandler(
+      editor: editor,
+      createItem: createItem,
+    );
+  }
+
+  @override
+  bool get allowEditorInteraction => false;
+}
+
+class EditorCreateObjectDragGestureHandler extends EditorDragGestureSession {
+  final CanvasItem Function(CanvasEditorHandler editor) createItem;
+  EditorCreateObjectDragGestureHandler({
+    required super.editor,
+    required this.createItem,
+  });
+
+  late CanvasObjectState _parent;
+  late CanvasItem _item;
+  late CanvasLayoutData _layoutData;
+
+  @override
+  void onDragStart(Offset start) {
+    super.onDragStart(start);
+    start = editor.globalToLocal(start);
+    _item = createItem(editor);
+    CanvasHitTestResult result = CanvasHitTestResult();
+    editor.hitTest(result, start);
+    CanvasObjectState? hitParent;
+    for (var entry in result.path) {
+      if (entry.target is CanvasObjectState) {
+        var item = entry.target as CanvasObjectState;
+        hitParent = item;
+        break;
+      }
+    }
+    hitParent ??= editor.rootState;
+    _parent = hitParent;
+    var parentLayout = _parent.item.layout;
+    CanvasItemState? insertBeforeItem;
+    Matrix4 globalParentTransform = _parent.globalTransform;
+    var startOffset =
+        transformOffset(start, Matrix4.inverted(globalParentTransform));
+    if (parentLayout is FlexLayout) {
+      _layoutData = FixedLayoutData();
+      _item.layoutData = _layoutData;
+      // find the item before which to insert the new item
+      var child = _parent.firstChild;
+      var direction = parentLayout.direction;
+      while (child != null) {
+        if (child.item.layoutData is FixedLayoutData ||
+            child.item.layoutData is FlexLayoutData) {
+          var childOffset = direction == Axis.horizontal
+              ? child.parentData.position.dx
+              : child.parentData.position.dy;
+          var childSize = direction == Axis.horizontal
+              ? child.size.width
+              : child.size.height;
+          var childCenter = childOffset + childSize / 2;
+          double? previousCenter;
+          CanvasItemState? previousSibling = child.parentData.previousSibling;
+          while (previousSibling != null) {
+            if (previousSibling.item.layoutData is FixedLayoutData ||
+                previousSibling.item.layoutData is FlexLayoutData) {
+              var previousOffset = direction == Axis.horizontal
+                  ? previousSibling.parentData.position.dx
+                  : previousSibling.parentData.position.dy;
+              var previousSize = direction == Axis.horizontal
+                  ? previousSibling.size.width
+                  : previousSibling.size.height;
+              previousCenter = previousOffset + previousSize / 2;
+              break;
+            }
+            previousSibling = previousSibling.parentData.previousSibling;
+          }
+          double? nextCenter;
+          CanvasItemState? nextSibling = child.parentData.nextSibling;
+          while (nextSibling != null) {
+            if (nextSibling.item.layoutData is FixedLayoutData ||
+                nextSibling.item.layoutData is FlexLayoutData) {
+              var nextOffset = direction == Axis.horizontal
+                  ? nextSibling.parentData.position.dx
+                  : nextSibling.parentData.position.dy;
+              var nextSize = direction == Axis.horizontal
+                  ? nextSibling.size.width
+                  : nextSibling.size.height;
+              nextCenter = nextOffset + nextSize / 2;
+              break;
+            }
+            nextSibling = nextSibling.parentData.nextSibling;
+          }
+          var dragOffset =
+              direction == Axis.horizontal ? startOffset.dx : startOffset.dy;
+          if (previousCenter == null) {
+            if (dragOffset < childCenter) {
+              insertBeforeItem = child;
+              break;
+            }
+          } else {
+            if (dragOffset < childCenter && dragOffset > previousCenter) {
+              insertBeforeItem = child;
+              break;
+            }
+          }
+          if (nextCenter == null) {
+            if (dragOffset > childCenter) {
+              insertBeforeItem = nextSibling;
+              break;
+            }
+          } else {
+            if (dragOffset > childCenter && dragOffset < nextCenter) {
+              insertBeforeItem = nextSibling;
+              break;
+            }
+          }
+        }
+        child = child.parentData.nextSibling;
+      }
+    } else {
+      _layoutData = AbsoluteLayoutData(
+        top: startOffset.dy,
+        left: startOffset.dx,
+      );
+      _item.layoutData = _layoutData;
+    }
+    if (insertBeforeItem != null) {
+      _parent.item.insertBefore(_item, insertBeforeItem.item);
+    } else {
+      _parent.item.addChild(_item);
+    }
+  }
+
+  @override
+  void onDrag(Offset start, Offset end) {
+    super.onDrag(start, end);
+    start = editor.globalToLocal(start);
+    end = editor.globalToLocal(end);
+    Matrix4 globalParentTransform = _parent.globalTransform;
+    var startOffset =
+        transformOffset(start, Matrix4.inverted(globalParentTransform));
+    var endOffset =
+        transformOffset(end, Matrix4.inverted(globalParentTransform));
+    var newStartOffset = Offset(
+        min(startOffset.dx, endOffset.dx), min(startOffset.dy, endOffset.dy));
+    var newEndOffset = Offset(
+        max(startOffset.dx, endOffset.dx), max(startOffset.dy, endOffset.dy));
+    var delta = newEndOffset - newStartOffset;
+    var currentLayoutData = _layoutData;
+    if (currentLayoutData is FixedLayoutData) {
+      currentLayoutData = currentLayoutData.copyWith(
+        width: SizeConstraint.fixed(delta.dx),
+        height: SizeConstraint.fixed(delta.dy),
+      );
+    } else if (currentLayoutData is AbsoluteLayoutData) {
+      currentLayoutData = currentLayoutData.copyWith(
+        top: newStartOffset.dy,
+        left: newStartOffset.dx,
+        width: delta.dx,
+        height: delta.dy,
+      );
+    }
+    _layoutData = currentLayoutData;
+    _item.layoutData = _layoutData;
+  }
+
+  @override
+  void onDragCancel() {
+    super.onDragCancel();
+    _parent.item.removeChild(_item);
   }
 }

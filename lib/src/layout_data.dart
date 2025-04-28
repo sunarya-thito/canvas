@@ -43,150 +43,102 @@ abstract class CanvasLayoutData {
 
   bool get doesAffectParentLayout => true;
 
-  CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta);
-
   // dropTarget is local to the target
   CanvasLayoutData transferTo(
       CanvasItemState item, CanvasLayout targetLayout, Offset dropTarget);
 
-  BoxConstraints computeInnerConstraints(
+  BoxConstraints reduceConstraints(
       CanvasItemState item, BoxConstraints constraints) {
-    Size smallest = constraints.smallestAllowNegative;
-    Size bigest = constraints.biggestAllowNegative;
-    if (smallest == bigest) {
-      return BoxConstraints.tight(computeInnerSize(item, size: smallest));
+    var smallest = constraints.smallestAllowNegative;
+    var biggest = constraints.biggestAllowNegative;
+    if (smallest == biggest) {
+      return BoxConstraints.tight(
+          computeElementSize(smallest, computeElementTransform(smallest)));
     }
-    smallest = computeInnerSize(item, size: smallest);
-    bigest = computeInnerSize(item, size: bigest);
+    smallest = computeElementSize(smallest, computeElementTransform(smallest));
+    biggest = computeElementSize(biggest, computeElementTransform(biggest));
     return BoxConstraints(
       minWidth: smallest.width,
       minHeight: smallest.height,
-      maxWidth: bigest.width,
-      maxHeight: bigest.height,
+      maxWidth: biggest.width,
+      maxHeight: biggest.height,
     );
   }
 
-  Size computeInnerSize(CanvasItemState item, {Size? size}) {
-    size ??= item.size;
-    double width = size.width;
-    double height = size.height;
-    Matrix4 localMatrix = computeLocalMatrix(item, size: size);
-    Offset topLeft = transformOffset(Offset.zero, localMatrix);
-    Offset topRight = transformOffset(
-      Offset(width, 0),
-      localMatrix,
-    );
-    Offset bottomLeft = transformOffset(
-      Offset(0, height),
-      localMatrix,
-    );
-    Offset bottomRight = transformOffset(
-      Offset(width, height),
-      localMatrix,
-    );
-    double minX = min(
-      min(topLeft.dx, topRight.dx),
-      min(bottomLeft.dx, bottomRight.dx),
-    );
-    double minY = min(
-      min(topLeft.dy, topRight.dy),
-      min(bottomLeft.dy, bottomRight.dy),
-    );
-    double maxX = max(
-      max(topLeft.dx, topRight.dx),
-      max(bottomLeft.dx, bottomRight.dx),
-    );
-    double maxY = max(
-      max(topLeft.dy, topRight.dy),
-      max(bottomLeft.dy, bottomRight.dy),
-    );
-    return Size(
-      maxX - minX,
-      maxY - minY,
+  Size computeElementSize(Size boundingBoxSize, Matrix4 elementTransform) {
+    return computeFittingSizeFromMatrix(
+        matrix: elementTransform,
+        boundingBoxWidth: boundingBoxSize.width,
+        boundingBoxHeight: boundingBoxSize.height);
+  }
+
+  Matrix4 computeElementTransform(Size boundingBoxSize) {
+    return computeLocalElementTransform(
+      boundingBoxSize: boundingBoxSize,
+      shear: shear,
+      scale: scale,
     );
   }
 
-  Matrix4 computeLocalMatrix(CanvasItemState item,
-      {Alignment alignment = Alignment.center,
-      Matrix4? parentMatrix,
-      Size? size}) {
-    size ??= item.size;
-    Matrix4 transform = (parentMatrix ?? Matrix4.identity());
-    Offset origin = alignment.alongSize(size);
-    transform.translate(origin.dx, origin.dy);
+  static Matrix4 computeLocalElementTransform(
+      {Size boundingBoxSize = Size.zero, Offset? shear, Offset? scale}) {
+    Matrix4 transform = Matrix4.identity();
     if (shear != null) {
       transform *= computeShearMatrix(
-        shear!.dx,
-        shear!.dy,
+        shear.dx,
+        shear.dy,
+        size: boundingBoxSize,
+        alignment: Alignment.center,
       );
     }
-    transform.translate(-origin.dx, -origin.dy);
     if (scale != null) {
-      transform.scale(scale!.dx, scale!.dy);
+      transform.scale(scale.dx, scale.dy);
     }
-
     return transform;
   }
 
-  Matrix4 computeTranslatedMatrix(CanvasItemState item,
-      {Alignment alignment = Alignment.center, Matrix4? parentMatrix}) {
+  static Matrix4 computeAdjustmentTransform(
+      Size boundingBoxSize, Size innerSize) {
     Matrix4 transform = Matrix4.identity();
-    Offset origin = alignment.alongSize(item.size);
-    transform.translate(
-        item.parentData.position.dx, item.parentData.position.dy);
-    transform.translate(origin.dx, origin.dy);
-    if (shear != null) {
-      transform *= computeShearMatrix(
-        shear!.dx,
-        shear!.dy,
-      );
-    }
-    transform.translate(-origin.dx, -origin.dy);
-    var size = item.size;
-    Offset topLeft = transformOffset(Offset.zero, transform);
-    Offset topRight = transformOffset(Offset(size.width, 0), transform);
-    Offset bottomLeft = transformOffset(Offset(0, size.height), transform);
-    Offset bottomRight =
-        transformOffset(Offset(size.width, size.height), transform);
-    double minX = min(
-      min(topLeft.dx, topRight.dx),
-      min(bottomLeft.dx, bottomRight.dx),
-    );
-    double minY = min(
-      min(topLeft.dy, topRight.dy),
-      min(bottomLeft.dy, bottomRight.dy),
-    );
-    double maxX = max(
-      max(topLeft.dx, topRight.dx),
-      max(bottomLeft.dx, bottomRight.dx),
-    );
-    double maxY = max(
-      max(topLeft.dy, topRight.dy),
-      max(bottomLeft.dy, bottomRight.dy),
-    );
-    double newWidth = maxX - minX;
-    double newHeight = maxY - minY;
-    double diffWidth = newWidth - size.width;
-    double diffHeight = newHeight - size.height;
-    transform.translate(-diffWidth / 2, -diffHeight / 2);
-    if (parentMatrix != null) {
-      transform = parentMatrix * transform;
-    }
+    double dx = (boundingBoxSize.width - innerSize.width) / 2;
+    double dy = (boundingBoxSize.height - innerSize.height) / 2;
+    transform.translate(dx, dy);
     return transform;
   }
 
   CanvasLayoutData drag(Offset delta) => this;
 
-  CanvasLayoutData rotate(double delta) => this;
+  CanvasLayoutData rotate(CanvasItemState item, double newRotation) {
+    return skew(item, Rotation(newRotation));
+  }
 
-  CanvasLayoutData rescale(Offset delta,
-          {bool symmetric = false,
-          bool preserveAspectRatio = false,
-          required Alignment alignment}) =>
+  CanvasLayoutData skew(CanvasItemState item, Offset shear) {
+    var shearDelta = shear - (this.shear ?? Offset.zero);
+    var size = item.size; // bounding box
+    var transform = computeLocalElementTransform(
+      shear: shearDelta,
+      scale: scale,
+    );
+    var newBoundingBox =
+        computeBoundingBoxFromMatrix(matrix: transform, originalSize: size);
+    var deltaWidth = newBoundingBox.width - size.width;
+    var deltaHeight = newBoundingBox.height - size.height;
+    var halfDeltaWidth = deltaWidth / 2;
+    var halfDeltaHeight = deltaHeight / 2;
+    print('${shearToString(shearDelta)} $size -> $newBoundingBox');
+    return withShear(shear).handleResize(
+      item,
+      Offset(-halfDeltaWidth, -halfDeltaHeight),
+      Offset(deltaWidth, deltaHeight),
+    );
+  }
+
+  CanvasLayoutData handleResize(
+          CanvasItemState item, Offset positionDelta, Offset sizeDelta) =>
       this;
-
-  CanvasLayoutData handleResize(Offset positionDelta, Offset sizeDelta) => this;
-  CanvasLayoutData handleRescale(Offset positionDelta, Offset sizeDelta) =>
+  // TODO
+  CanvasLayoutData handleRescale(
+          CanvasItemState item, Offset positionDelta, Offset sizeDelta) =>
       this;
 }
 
@@ -265,26 +217,49 @@ class AbsoluteLayoutData extends CanvasLayoutData {
   }
 
   CanvasLayoutData move(CanvasItemState item, Offset delta) {
+    var top = this.top;
+    var left = this.left;
+    var right = this.right;
+    var bottom = this.bottom;
+    // make sure one axis is available
+    if (top == null && bottom == null) {
+      top = 0;
+    }
+    if (left == null && right == null) {
+      left = 0;
+    }
     return copyWith(
-      top: top == null ? null : top! + delta.dy,
-      left: left == null ? null : left! + delta.dx,
-      right: right == null ? null : right! - delta.dx,
-      bottom: bottom == null ? null : bottom! - delta.dy,
+      top: top == null ? null : top + delta.dy,
+      left: left == null ? null : left + delta.dx,
+      right: right == null ? null : right - delta.dx,
+      bottom: bottom == null ? null : bottom - delta.dy,
     );
   }
 
   @override
-  CanvasLayoutData resize(CanvasItemState item, EditorResizeDelta delta) {
-    Offset positionDelta = delta.positionDelta;
-    Size sizeDelta = delta.sizeDelta;
-    double? newTop;
-    double? newLeft;
-    double? newRight;
-    double? newBottom;
-    double? newWidth;
-    double? newHeight;
+  CanvasLayoutData handleResize(
+      CanvasItemState item, Offset positionDelta, Offset sizeDelta) {
+    double? newTop = top;
+    double? newLeft = left;
+    double? newRight = right;
+    double? newBottom = bottom;
+    double? newWidth = width;
+    double? newHeight = height;
+
+    if (newTop == null && newBottom == null) {
+      newTop = 0;
+    } else {
+      newHeight ??= 0;
+    }
+    if (newLeft == null && newRight == null) {
+      newLeft = 0;
+    } else {
+      newWidth ??= 0;
+    }
+
     if (left != null && right != null) {
-      double delta = sizeDelta.width / 2;
+      // equally distribute the delta to left and right
+      double delta = sizeDelta.dx / 2;
       newLeft = left! + delta;
       newRight = right! - delta;
     } else {
@@ -294,13 +269,13 @@ class AbsoluteLayoutData extends CanvasLayoutData {
       if (right != null) {
         newRight = right! - positionDelta.dx;
       }
-    }
-    if (width != null) {
-      newWidth = width! + sizeDelta.width;
+      if (width != null) {
+        newWidth = width! + sizeDelta.dx;
+      }
     }
     if (top != null && bottom != null) {
       // equally distribute the delta to top and bottom
-      double delta = sizeDelta.height / 2;
+      double delta = sizeDelta.dy / 2;
       newTop = top! + delta;
       newBottom = bottom! - delta;
     } else {
@@ -310,10 +285,11 @@ class AbsoluteLayoutData extends CanvasLayoutData {
       if (bottom != null) {
         newBottom = bottom! - positionDelta.dy;
       }
+      if (height != null) {
+        newHeight = height! + sizeDelta.dy;
+      }
     }
-    if (height != null) {
-      newHeight = height! + sizeDelta.height;
-    }
+
     return copyWith(
       top: newTop,
       left: newLeft,

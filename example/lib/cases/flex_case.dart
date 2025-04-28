@@ -9,14 +9,10 @@ class FlexTestCase extends TestCase {
   @override
   String get description => 'A test case for flex layout.';
 
-  @override
-  final CanvasRoot root = CanvasRoot();
-
-  late CanvasObject mainObject;
-
-  FlexTestCase() {
-    root.addChild(
-      mainObject = EditableCanvasObject(
+  CanvasRoot createRoot() {
+    final canvasRoot = CanvasRoot();
+    canvasRoot.addChild(
+      EditableCanvasObject(
         debugLabel: 'Main Object',
         layout: const FlexLayout(
           padding: EdgeInsets.all(60),
@@ -51,5 +47,6 @@ class FlexTestCase extends TestCase {
         ],
       ),
     );
+    return canvasRoot;
   }
 }
