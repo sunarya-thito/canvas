@@ -54,7 +54,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
   Widget build(BuildContext context) {
     assert(
         widget.state.hasSize, 'CanvasItem ${widget.state} not been laid out');
-    var innerSize = widget.state.elementSize;
+    var size = widget.state.size;
     Matrix4 transform = widget.overrideTransform ?? widget.state.transform;
     Offset? editorOffset = widget.state.editorOffset;
     if (editorOffset != null && widget.overrideTransform == null) {
@@ -88,7 +88,7 @@ class _CanvasItemWidgetState extends State<CanvasItemWidget> {
           child: Transform(
             transform: transform,
             child: AdaptiveSizedBox(
-              size: innerSize,
+              size: size,
               child: FreeHitClipRRect(
                 borderRadius: borderRadius ?? BorderRadius.zero,
                 clipBehavior: clipContent ? Clip.antiAlias : Clip.none,

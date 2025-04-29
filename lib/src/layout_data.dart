@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/external/widgets.dart';
 import 'package:flutter/widgets.dart';
@@ -47,31 +45,6 @@ abstract class CanvasLayoutData {
   CanvasLayoutData transferTo(
       CanvasItemState item, CanvasLayout targetLayout, Offset dropTarget);
 
-  BoxConstraints reduceConstraints(
-      CanvasItemState item, BoxConstraints constraints) {
-    var smallest = constraints.smallestAllowNegative;
-    var biggest = constraints.biggestAllowNegative;
-    if (smallest == biggest) {
-      return BoxConstraints.tight(
-          computeElementSize(smallest, computeElementTransform(smallest)));
-    }
-    smallest = computeElementSize(smallest, computeElementTransform(smallest));
-    biggest = computeElementSize(biggest, computeElementTransform(biggest));
-    return BoxConstraints(
-      minWidth: smallest.width,
-      minHeight: smallest.height,
-      maxWidth: biggest.width,
-      maxHeight: biggest.height,
-    );
-  }
-
-  Size computeElementSize(Size boundingBoxSize, Matrix4 elementTransform) {
-    return computeFittingSizeFromMatrix(
-        matrix: elementTransform,
-        boundingBoxWidth: boundingBoxSize.width,
-        boundingBoxHeight: boundingBoxSize.height);
-  }
-
   Matrix4 computeElementTransform(Size boundingBoxSize) {
     return computeLocalElementTransform(
       boundingBoxSize: boundingBoxSize,
@@ -97,15 +70,6 @@ abstract class CanvasLayoutData {
     return transform;
   }
 
-  static Matrix4 computeAdjustmentTransform(
-      Size boundingBoxSize, Size innerSize) {
-    Matrix4 transform = Matrix4.identity();
-    double dx = (boundingBoxSize.width - innerSize.width) / 2;
-    double dy = (boundingBoxSize.height - innerSize.height) / 2;
-    transform.translate(dx, dy);
-    return transform;
-  }
-
   CanvasLayoutData drag(Offset delta) => this;
 
   CanvasLayoutData rotate(CanvasItemState item, double newRotation) {
@@ -113,24 +77,16 @@ abstract class CanvasLayoutData {
   }
 
   CanvasLayoutData skew(CanvasItemState item, Offset shear) {
-    var shearDelta = shear - (this.shear ?? Offset.zero);
-    var size = item.size; // bounding box
-    var transform = computeLocalElementTransform(
-      shear: shearDelta,
-      scale: scale,
+    return withShear(shear);
+  }
+
+  Rect computeBoundingBox(Offset offset, Size size) {
+    Polygon polygon = Polygon.fromRect(
+      Rect.fromLTWH(offset.dx, offset.dy, size.width, size.height),
     );
-    var newBoundingBox =
-        computeBoundingBoxFromMatrix(matrix: transform, originalSize: size);
-    var deltaWidth = newBoundingBox.width - size.width;
-    var deltaHeight = newBoundingBox.height - size.height;
-    var halfDeltaWidth = deltaWidth / 2;
-    var halfDeltaHeight = deltaHeight / 2;
-    print('${shearToString(shearDelta)} $size -> $newBoundingBox');
-    return withShear(shear).handleResize(
-      item,
-      Offset(-halfDeltaWidth, -halfDeltaHeight),
-      Offset(deltaWidth, deltaHeight),
-    );
+    var transform = computeElementTransform(size);
+    var transformedPolygon = polygon.transform(transform);
+    return transformedPolygon.boundingBox;
   }
 
   CanvasLayoutData handleResize(

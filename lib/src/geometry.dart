@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:canvas/canvas.dart';
 import 'package:flutter/rendering.dart';
 import 'package:vector_math/vector_math_64.dart';
 
@@ -15,8 +16,6 @@ Rect normalizeRect(Rect rect) {
 }
 
 double rotationFromShear(Offset shear) {
-  // (rotation - (-rotation)) / 2
-  // (rotation + rotation) / 2
   return (shear.dx - shear.dy) / 2;
 }
 
@@ -39,91 +38,93 @@ Offset resizeShear(Size newOuterSize, Offset shear) {
   return Offset(newShearX, newShearY);
 }
 
-Size computeBoundingBoxFromMatrix({
-  required Matrix4 matrix,
-  required Size originalSize,
-  Alignment alignment = Alignment.center,
-}) {
-  // 1. Determine the origin point for alignment (e.g., center, topLeft)
-  final origin = alignment.alongSize(originalSize);
-
-  // 2. Define the corners of the box relative to origin
-  final corners = [
-    Vector3(-origin.dx, -origin.dy, 0), // top-left
-    Vector3(originalSize.width - origin.dx, -origin.dy, 0), // top-right
-    Vector3(-origin.dx, originalSize.height - origin.dy, 0), // bottom-left
-    Vector3(originalSize.width - origin.dx, originalSize.height - origin.dy,
-        0), // bottom-right
-  ];
-
-  // 3. Transform all 4 corners
-  final transformed = corners.map((corner) {
-    final result = matrix.transform3(corner);
-    return Offset(result.x, result.y);
-  }).toList();
-
-  // 4. Find bounding box that contains all transformed points
-  final xs = transformed.map((p) => p.dx);
-  final ys = transformed.map((p) => p.dy);
-
-  final minX = xs.reduce((a, b) => a < b ? a : b);
-  final maxX = xs.reduce((a, b) => a > b ? a : b);
-  final minY = ys.reduce((a, b) => a < b ? a : b);
-  final maxY = ys.reduce((a, b) => a > b ? a : b);
-
-  return Size(maxX - minX, maxY - minY);
-}
-
-Size computeFittingSizeFromMatrix({
-  required Matrix4 matrix,
-  required double boundingBoxWidth,
-  required double boundingBoxHeight,
-  Alignment alignment = Alignment.center,
-  BoxFit fit = BoxFit.cover,
-}) {
-  final aspectRatio = boundingBoxWidth / boundingBoxHeight;
-  assert(
-    fit == BoxFit.cover || fit == BoxFit.contain,
-    'Unsupported BoxFit: $fit',
-  );
-  final baseSize =
-      fit == BoxFit.cover ? Size(1.0, 1.0 / aspectRatio) : Size(1.0, 1.0);
-  final origin = alignment.alongSize(baseSize);
-
-  final corners = [
-    Vector3(-origin.dx, -origin.dy, 0),
-    Vector3(baseSize.width - origin.dx, -origin.dy, 0),
-    Vector3(-origin.dx, baseSize.height - origin.dy, 0),
-    Vector3(baseSize.width - origin.dx, baseSize.height - origin.dy, 0),
-  ];
-
-  final transformed = corners.map(matrix.transform3).toList();
-
-  final xs = transformed.map((p) => p.x);
-  final ys = transformed.map((p) => p.y);
-
-  final transformedWidth = xs.reduce(max) - xs.reduce(min);
-  final transformedHeight = ys.reduce(max) - ys.reduce(min);
-
-  final scaleX = boundingBoxWidth / transformedWidth;
-  final scaleY = boundingBoxHeight / transformedHeight;
-  final scale = max(scaleX, scaleY); // ✅ BoxFit.cover logic
-
-  // return Size(baseSize.width * scale, baseSize.height * scale);
-  double width = baseSize.width * scale;
-  double height = baseSize.height * scale;
-  if (width.isNaN || width.isInfinite) {
-    width = 0;
-  }
-  if (height.isNaN || height.isInfinite) {
-    height = 0;
-  }
-  return Size(width, height);
-}
-
 Offset normalizeOffset(Offset offset) {
   final double length = offset.distance;
   return length > 0 ? offset / length : offset;
+}
+
+class FittedSize extends Size {
+  final Size boundingBoxSize;
+
+  const FittedSize(this.boundingBoxSize, double width, double height)
+      : super(width, height);
+}
+
+extension FittedSizeExtension on Size {
+  Size get possibleBoundingBoxSize {
+    if (this is FittedSize) {
+      return (this as FittedSize).boundingBoxSize;
+    }
+    return this;
+  }
+}
+
+Size computeFittingSize(Size size, CanvasLayoutData layoutData,
+    {required bool fillWidth, required bool fillHeight}) {
+  Polygon polygon = Polygon.fromRect(Offset.zero & size);
+  Matrix4 transform = layoutData.computeElementTransform(size);
+  polygon = polygon.transform(transform);
+  Size newSize = polygon.boundingBoxSize;
+  double adjustScaleX;
+  double adjustScaleY;
+  if (fillWidth && fillHeight) {
+    adjustScaleX = size.width / newSize.width;
+    adjustScaleY = size.height / newSize.height;
+  } else if (fillHeight) {
+    adjustScaleX = size.width / newSize.width;
+    adjustScaleY = adjustScaleX;
+  } else if (fillWidth) {
+    adjustScaleY = size.height / newSize.height;
+    adjustScaleX = adjustScaleY;
+  } else {
+    return size;
+  }
+  if (adjustScaleY.isNaN ||
+      adjustScaleX.isNaN ||
+      (adjustScaleX == 1 && adjustScaleY == 1)) {
+    return size;
+  }
+  print(
+      'adjustScaleX: $adjustScaleX, adjustScaleY: $adjustScaleY, fillWidth: $fillWidth, $fillHeight');
+  polygon = polygon.scale(Offset(adjustScaleX, adjustScaleY));
+  Matrix4 inverted = Matrix4.inverted(transform);
+  polygon = polygon.transform(inverted);
+  var adjustedSize = polygon.boundingBoxSize;
+  return FittedSize(
+    size,
+    fillWidth ? adjustedSize.width : size.width,
+    fillHeight ? adjustedSize.height : size.height,
+  );
+}
+
+Size computeDirectionalFittingSize(Size size, CanvasLayoutData layoutData,
+    {required bool fillMain, required fillCross, required Axis direction}) {
+  if (direction == Axis.horizontal) {
+    return computeFittingSize(size, layoutData,
+        fillWidth: fillMain, fillHeight: fillCross);
+  } else {
+    return computeFittingSize(size, layoutData,
+        fillWidth: fillCross, fillHeight: fillMain);
+  }
+}
+
+Size computeBoundingBoxFromMatrix(Size size, Matrix4 matrix) {
+  Polygon polygon = Polygon.fromRect(Offset.zero & size);
+  polygon = polygon.transform(matrix);
+  return polygon.boundingBoxSize;
+}
+
+Size computeBoundingBox(Size size, CanvasLayoutData layoutData) {
+  Polygon polygon = Polygon.fromRect(Offset.zero & size);
+  if (layoutData.scale != null) {
+    polygon = polygon.scale(layoutData.scale!);
+  }
+  if (layoutData.shear != null) {
+    polygon = polygon.transform(
+      computeShearMatrix(layoutData.shear!.dx, layoutData.shear!.dy),
+    );
+  }
+  return polygon.boundingBoxSize;
 }
 
 Matrix4 computeShearMatrix(

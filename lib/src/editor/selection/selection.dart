@@ -104,9 +104,13 @@ class SelectionGroup {
   }
 
   TransformControlBox getTransformControlBox({Matrix4? parentTransform}) {
+    // TODO:
+    // 1. Compound selection with flex parent should use parent transform instead of global bounding box
+    // 2. Single selection with flex parent should use parent transform instead of item transform
     if (selectedItems.length == 1) {
       CanvasItemState? current = selectedItems.first;
       var transform = current.transform;
+      var size = current.size;
       while (current != null) {
         var parent = current.parent;
         if (parent is CanvasItemState) {
@@ -114,25 +118,24 @@ class SelectionGroup {
         }
         current = parent;
       }
-      var first = selectedItems.first;
       return TransformControlBox(
-        size: first.elementSize,
+        size: size,
         transform:
             parentTransform == null ? transform : parentTransform * transform,
       );
     }
     List<Offset> points = [];
     for (var item in selectedItems) {
-      var size = item.elementSize;
+      var size = item.size;
       CanvasItemState? current = item;
       var transform = item.transform;
-      while (current != null) {
-        var parent = current.parent;
-        if (parent is CanvasItemState) {
-          transform = parent.transform * transform;
-        }
-        current = parent;
-      }
+      // while (current != null) {
+      //   var parent = current.parent;
+      //   if (parent is CanvasItemState) {
+      //     transform = parent.transform * transform;
+      //   }
+      //   current = parent;
+      // }
       Polygon polygon = Polygon.fromRect(Offset.zero & size);
       polygon = polygon.transform(transform);
       points.addAll(polygon.points);
@@ -141,6 +144,7 @@ class SelectionGroup {
     Matrix4 transform =
         parentTransform == null ? Matrix4.identity() : parentTransform.clone();
     Rect boundingBox = polygon.boundingBox;
+    transform = transform * parent.globalTransform;
     transform.translate(boundingBox.topLeft.dx, boundingBox.topLeft.dy);
     return TransformControlBox(
       size: boundingBox.size,
@@ -357,30 +361,6 @@ class Selection {
       [...groups.expand((group) => group.selectedItems), item],
       client: client,
     );
-    // int? possibleGroup = _findPossibleGroup(item);
-    // List<SelectionGroup> newGroups;
-    // if (possibleGroup != null) {
-    //   newGroups = List.of(groups);
-    //   newGroups[possibleGroup] = SelectionGroup(
-    //     parent: newGroups[possibleGroup].parent,
-    //     selectedItems: [
-    //       ...newGroups[possibleGroup].selectedItems.where(
-    //             (selectedItem) => selectedItem != item,
-    //           ),
-    //       item,
-    //     ],
-    //   );
-    // } else {
-    //   newGroups = List.of(groups);
-    //   newGroups.add(SelectionGroup(
-    //     parent: item.parent!,
-    //     selectedItems: [item],
-    //   ));
-    // }
-    // return Selection(
-    //   groups: newGroups,
-    //   client: client,
-    // );
   }
 
   @override

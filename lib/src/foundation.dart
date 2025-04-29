@@ -340,11 +340,11 @@ class CanvasObject extends CanvasItem {
 
 class _CachedLayout {
   final CanvasLayoutResult layoutResult;
-  final BoxConstraints constraints;
+  final Size size;
   final TextDirection textDirection;
 
   _CachedLayout({
-    required this.constraints,
+    required this.size,
     required this.textDirection,
     required this.layoutResult,
   });
@@ -520,10 +520,7 @@ abstract class CanvasItemState
   }
 
   Matrix4 get elementTransform {
-    var elementTransform = item.layoutData.computeElementTransform(size);
-    var innerSize = item.layoutData.computeElementSize(size, elementTransform);
-    return elementTransform *
-        CanvasLayoutData.computeAdjustmentTransform(size, innerSize);
+    return item.layoutData.computeElementTransform(size);
   }
 
   Matrix4 get transform {
@@ -568,27 +565,27 @@ abstract class CanvasItemState
     if (parentTransform != null) {
       transform = (parentTransform * transform) as Matrix4;
     }
-    var innerSize = elementSize;
+    var size = this.size;
     Offset topLeft = transformOffset(Offset.zero, transform);
     if (!visitor(CanvasItemSnapAnchor(item: this, point: topLeft))) {
       return false;
     }
-    Offset topRight = transformOffset(Offset(innerSize.width, 0), transform);
+    Offset topRight = transformOffset(Offset(size.width, 0), transform);
     if (!visitor(CanvasItemSnapAnchor(item: this, point: topRight))) {
       return false;
     }
     Offset bottomRight =
-        transformOffset(Offset(innerSize.width, innerSize.height), transform);
+        transformOffset(Offset(size.width, size.height), transform);
     if (!visitor(CanvasItemSnapAnchor(item: this, point: bottomRight))) {
       return false;
     }
-    Offset bottomLeft = transformOffset(Offset(0, innerSize.height), transform);
+    Offset bottomLeft = transformOffset(Offset(0, size.height), transform);
     if (!visitor(CanvasItemSnapAnchor(item: this, point: bottomLeft))) {
       return false;
     }
     // center
-    Offset center = transformOffset(
-        Offset(innerSize.width / 2, innerSize.height / 2), transform);
+    Offset center =
+        transformOffset(Offset(size.width / 2, size.height / 2), transform);
     if (!visitor(CanvasItemSnapAnchor(item: this, point: center))) {
       return false;
     }
@@ -596,7 +593,7 @@ abstract class CanvasItemState
   }
 
   Path getPath(TextDirection textDirection) {
-    return Path()..addRect(Offset.zero & elementSize);
+    return Path()..addRect(Offset.zero & size);
   }
 
   // this is build when a single selection is created upon this item
@@ -607,7 +604,7 @@ abstract class CanvasItemState
   }) sync* {}
 
   Rect computeViewportBounds({Matrix4? parentTransform}) {
-    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Polygon polygon = Polygon.fromRect(Offset.zero & size);
     Matrix4 transform = this.transform;
     if (parentTransform != null) {
       transform = parentTransform * transform;
@@ -621,21 +618,21 @@ abstract class CanvasItemState
   }
 
   Rect get globalEditorBoundingBox {
-    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Polygon polygon = Polygon.fromRect(Offset.zero & size);
     Matrix4 transform = globalEditorTransform;
     polygon = polygon.transform(transform);
     return polygon.boundingBox;
   }
 
   Rect get localBoundingBox {
-    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Polygon polygon = Polygon.fromRect(Offset.zero & size);
     Matrix4 transform = localTransform;
     polygon = polygon.transform(transform);
     return polygon.boundingBox;
   }
 
   Rect get localEditorBoundingBox {
-    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Polygon polygon = Polygon.fromRect(Offset.zero & size);
     Matrix4 transform = localEditorTransform;
     polygon = polygon.transform(transform);
     return polygon.boundingBox;
@@ -655,11 +652,6 @@ abstract class CanvasItemState
 
   // Size get innerSize => item.layoutData.computeInnerSize(this);
 
-  Size get elementSize {
-    var elementTransform = item.layoutData.computeElementTransform(size);
-    return item.layoutData.computeElementSize(size, elementTransform);
-  }
-
   bool hitTestSelf(CanvasHitTestResult result, Offset position,
       {CanvasHitTestPredicate? test}) {
     if (editorOffset != null) {
@@ -671,7 +663,7 @@ abstract class CanvasItemState
         return false;
       }
     }
-    return elementSize.containsIgnoreSign(position);
+    return size.containsIgnoreSign(position);
   }
 
   void selectTest(
@@ -706,7 +698,7 @@ abstract class CanvasItemState
         child: Stack(
           children: [
             Text(
-                '${item.debugLabel}\n(${elementSize.width}, ${elementSize.height})\n${item.layoutData}'),
+                '${item.debugLabel}\n(${size.width}, ${size.height})\n${item.layoutData}'),
             Center(
               child: Container(
                 width: 10,
@@ -742,14 +734,14 @@ abstract class CanvasItemState
 
   Size get size {
     assert(_layoutResult != null, 'CanvasItem $this has not been laid out');
-    return item.constraints
-        .constrainAllowNegative(_layoutResult!.layoutResult.size);
+    // return item.constraints
+    //     .constrainAllowNegative(_layoutResult!.layoutResult.size);
+    return _layoutResult!.layoutResult.size;
   }
 
-  bool hasLayoutPerformedFor(
-      BoxConstraints constraints, TextDirection textDirection) {
+  bool hasLayoutPerformedFor(Size size, TextDirection textDirection) {
     return _layoutResult != null &&
-        _layoutResult!.constraints.equalsIgnoreSign(constraints) &&
+        _layoutResult!.size == size &&
         _layoutResult!.textDirection == textDirection;
   }
 
@@ -762,30 +754,28 @@ abstract class CanvasItemState
     assert(cached != null, 'CanvasItem $this has not been laid out');
     _reorderOffsetMap = null;
     forcePerformLayout(
-      cached!.constraints,
+      cached!.size,
       cached.textDirection,
     );
   }
 
-  void layout(BoxConstraints constraints, TextDirection textDirection) {
-    if (!hasLayoutPerformedFor(constraints, textDirection)) {
-      forcePerformLayout(constraints, textDirection);
+  void layout(Size size, TextDirection textDirection) {
+    if (!hasLayoutPerformedFor(size, textDirection)) {
+      forcePerformLayout(size, textDirection);
     }
   }
 
-  void forcePerformLayout(
-      BoxConstraints constraints, TextDirection textDirection) {
-    var layoutResult = forceLayout(constraints, textDirection);
+  void forcePerformLayout(Size size, TextDirection textDirection) {
+    var layoutResult = forceLayout(size, textDirection);
     _layoutResult = _CachedLayout(
-      constraints: constraints,
+      size: size,
       textDirection: textDirection,
       layoutResult: layoutResult,
     );
     notifyListeners();
   }
 
-  CanvasLayoutResult forceLayout(
-      BoxConstraints constraints, TextDirection textDirection);
+  CanvasLayoutResult forceLayout(Size size, TextDirection textDirection);
 
   double computeMinIntrinsicWidth(double height);
   double computeMaxIntrinsicWidth(double height);
@@ -885,7 +875,7 @@ class CanvasObjectState extends CanvasItemState {
 
   @override
   Rect computeViewportBounds({Matrix4? parentTransform}) {
-    Polygon polygon = Polygon.fromRect(Offset.zero & elementSize);
+    Polygon polygon = Polygon.fromRect(Offset.zero & size);
     Matrix4 transform = this.transform;
     if (parentTransform != null) {
       transform = parentTransform * transform;
@@ -926,18 +916,17 @@ class CanvasObjectState extends CanvasItemState {
   }
 
   @override
-  void layout(BoxConstraints constraints, TextDirection textDirection) {
-    if (!hasLayoutPerformedFor(constraints, textDirection)) {
-      forcePerformLayout(constraints, textDirection);
+  void layout(Size size, TextDirection textDirection) {
+    if (!hasLayoutPerformedFor(size, textDirection)) {
+      forcePerformLayout(size, textDirection);
     }
   }
 
   @override
-  void forcePerformLayout(
-      BoxConstraints constraints, TextDirection textDirection) {
-    var result = forceLayout(constraints, textDirection);
+  void forcePerformLayout(Size size, TextDirection textDirection) {
+    var result = forceLayout(size, textDirection);
     _layoutResult = _CachedLayout(
-      constraints: constraints,
+      size: size,
       textDirection: textDirection,
       layoutResult: result,
     );
@@ -962,7 +951,7 @@ class CanvasObjectState extends CanvasItemState {
   bool hitTestChildren(CanvasHitTestResult result, Offset position,
       {CanvasHitTestPredicate? test}) {
     if (item.clipContent) {
-      if (!elementSize.containsIgnoreSign(position)) {
+      if (!size.containsIgnoreSign(position)) {
         return false;
       }
     }
@@ -1047,8 +1036,7 @@ class CanvasObjectState extends CanvasItemState {
     if (resolvedBorderRadius == BorderRadius.zero) {
       return super.getPath(textDirection);
     }
-    return Path()
-      ..addRRect(resolvedBorderRadius.toRRect(Offset.zero & elementSize));
+    return Path()..addRRect(resolvedBorderRadius.toRRect(Offset.zero & size));
   }
 
   bool _suspendRelayout = false;
@@ -1279,9 +1267,8 @@ class CanvasObjectState extends CanvasItemState {
   }
 
   @override
-  CanvasLayoutResult forceLayout(
-      BoxConstraints constraints, TextDirection textDirection) {
-    return item.layout.performLayout(this, constraints, textDirection);
+  CanvasLayoutResult forceLayout(Size size, TextDirection textDirection) {
+    return item.layout.performLayout(this, size, textDirection);
   }
 
   @override

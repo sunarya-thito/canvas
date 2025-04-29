@@ -198,8 +198,8 @@ abstract class CanvasLayout {
   const CanvasLayout({this.padding = EdgeInsets.zero});
   CanvasParentData setupParentData(CanvasObjectState state,
       CanvasItemState child, CanvasParentData? parentData);
-  CanvasLayoutResult performLayout(CanvasObjectState state,
-      BoxConstraints constraints, TextDirection textDirection);
+  CanvasLayoutResult performLayout(
+      CanvasObjectState state, Size size, TextDirection textDirection);
   double computeMinIntrinsicWidth(CanvasObjectState state, double height);
   double computeMaxIntrinsicWidth(CanvasObjectState state, double height);
   double computeMinIntrinsicHeight(CanvasObjectState state, double width);
@@ -276,14 +276,7 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
   if (height.isNegative) {
     top -= height;
   }
-  child.layout(
-      BoxConstraints(
-        minWidth: width,
-        maxWidth: width,
-        minHeight: height,
-        maxHeight: height,
-      ),
-      textDirection);
+  child.layout(Size(width, height), textDirection);
   child.parentData.position = offset + Offset(left, top);
 }
 
@@ -292,13 +285,11 @@ class FixedLayout extends CanvasLayout {
     super.padding,
   });
   @override
-  CanvasLayoutResult performLayout(CanvasObjectState state,
-      BoxConstraints originalConstraints, TextDirection textDirection) {
-    var constraints =
-        state.item.layoutData.reduceConstraints(state, originalConstraints);
+  CanvasLayoutResult performLayout(
+      CanvasObjectState state, Size size, TextDirection textDirection) {
     var paddedSize = Size(
-      constraints.maxWidth - padding.horizontal,
-      constraints.maxHeight - padding.vertical,
+      size.width - padding.horizontal,
+      size.height - padding.vertical,
     );
     var paddingOffset = Offset(padding.left, padding.top);
     var child = state.firstChild;
@@ -308,13 +299,12 @@ class FixedLayout extends CanvasLayout {
         layoutAbsolutePositioning(
             child, paddedSize, paddingOffset, layoutData, textDirection);
       } else {
-        child.layout(constraints, textDirection);
-        assert(false, 'FixedLayout can only be used with AbsoluteLayoutData');
+        child.layout(size, textDirection);
         child.parentData.position = Offset.zero;
       }
       child = child.parentData.nextSibling;
     }
-    return CanvasLayoutResult(originalConstraints.biggestAllowNegative);
+    return CanvasLayoutResult(size);
   }
 
   @override
@@ -542,11 +532,8 @@ class FlexLayout extends CanvasLayout {
   }
 
   @override
-  CanvasLayoutResult performLayout(CanvasObjectState state,
-      BoxConstraints originalConstraints, TextDirection textDirection) {
-    // TODO: scrollable area
-    var constraints =
-        state.item.layoutData.reduceConstraints(state, originalConstraints);
+  CanvasLayoutResult performLayout(
+      CanvasObjectState state, Size size, TextDirection textDirection) {
     var padding = EdgeInsetsDirectional.only(
       start: this.padding.left,
       top: this.padding.top,
@@ -558,8 +545,8 @@ class FlexLayout extends CanvasLayout {
     var crossStartPadding = _getCrossStart(padding);
     var crossEndPadding = _getCrossEnd(padding);
     var gap = spacing;
-    var totalWidth = _getMain(constraints.biggestAllowNegative);
-    var crossSize = _getCross(constraints.biggestAllowNegative);
+    var totalWidth = _getMain(size);
+    var crossSize = _getCross(size);
 
     var offset = _createOffset(startPadding, crossStartPadding);
     var totalMainPadding = _getMainPadding(padding);
@@ -597,16 +584,20 @@ class FlexLayout extends CanvasLayout {
           child = _resolveNextChild(child, textDirection);
           continue;
         }
+        var fillCrossSize = false;
         var crossChildSize = _getCrossSizeConstraint(layoutData)?.computeSize(
                 child, _getMain(paddedSize), crossDirection, false) ??
             0;
         if (crossChildSize.isInfinite) {
           crossChildSize = _getCross(paddedSize);
+          fillCrossSize = true;
         }
         parentData.cachedCrossSize = crossChildSize;
-        var childSize = _createConstraints(mainChildSize, crossChildSize);
+        var childSize = _createSize(mainChildSize, crossChildSize);
+        childSize = computeDirectionalFittingSize(childSize, layoutData,
+            fillMain: false, fillCross: fillCrossSize, direction: direction);
         child.layout(childSize, textDirection);
-        totalFixedSize += _getMain(child.size);
+        totalFixedSize += _getMain(child.size.possibleBoundingBoxSize);
         totalAffectedChildren++;
       } else if (layoutData is AbsoluteLayoutData) {
         layoutAbsolutePositioning(
@@ -700,22 +691,30 @@ class FlexLayout extends CanvasLayout {
           var crossChildSize = _getCrossSizeConstraint(layoutData)?.computeSize(
                   child, _getMain(paddedSize), crossDirection, false) ??
               0;
+          var fillCrossSize = false;
           if (crossChildSize.isInfinite) {
             crossChildSize = _getCross(paddedSize);
+            fillCrossSize = true;
           }
           parentData.cachedCrossSize = crossChildSize;
           mainChildSize = parentData.mainSize.value;
-          var childSize = _createConstraints(mainChildSize, crossChildSize);
+          var childSize = _createSize(mainChildSize, crossChildSize);
+          childSize = computeDirectionalFittingSize(childSize, layoutData,
+              fillMain: true, fillCross: fillCrossSize, direction: direction);
           child.layout(childSize, textDirection);
         }
       } else if (layoutData is FlexLayoutData) {
         var mainChildSize = parentData.mainSize.value;
         var crossChildSize = layoutData.cross
             .computeSize(child, _getMain(paddedSize), crossDirection, false);
+        var fillCrossSize = false;
         if (crossChildSize.isInfinite) {
           crossChildSize = _getCross(paddedSize);
+          fillCrossSize = true;
         }
-        var childSize = _createConstraints(mainChildSize, crossChildSize);
+        var childSize = _createSize(mainChildSize, crossChildSize);
+        childSize = computeDirectionalFittingSize(childSize, layoutData,
+            fillMain: true, fillCross: fillCrossSize, direction: direction);
         child.layout(childSize, textDirection);
       }
       child = _resolveNextChild(child, textDirection);
@@ -742,7 +741,12 @@ class FlexLayout extends CanvasLayout {
       }
       var layoutData = child.item.layoutData;
       if (layoutData is FixedLayoutData || layoutData is FlexLayoutData) {
-        var childSize = child.size;
+        var originalSize = child.size;
+        var childSize = originalSize.possibleBoundingBoxSize;
+        var adjustPosition = Offset(
+          (childSize.width - originalSize.width) / 2,
+          (childSize.height - originalSize.height) / 2,
+        );
         double childCrossOffset;
         switch (crossAxisAlignment) {
           case FlexAlignment.start:
@@ -759,14 +763,15 @@ class FlexLayout extends CanvasLayout {
             childCrossOffset = crossSize - childSize.height - crossEndPadding;
             break;
         }
-        child.parentData.position = _createOffset(mainOffset, childCrossOffset);
+        child.parentData.position =
+            _createOffset(mainOffset, childCrossOffset) + adjustPosition;
         mainOffset += _getMain(childSize) + gap;
       }
       child = _resolveNextChild(child, textDirection);
     }
 
     return CanvasFlexLayoutResult(
-      originalConstraints.biggestAllowNegative,
+      size,
       flexUnit,
       totalFlex,
       totalWidth - totalUsedMainSize - totalMainPadding,
@@ -797,24 +802,6 @@ class FlexLayout extends CanvasLayout {
     return direction == Axis.horizontal
         ? Offset(main, cross)
         : Offset(cross, main);
-  }
-
-  BoxConstraints _createConstraints(double main, double cross) {
-    main = main.clamp(0, double.infinity);
-    cross = cross.clamp(0, double.infinity);
-    return direction == Axis.horizontal
-        ? BoxConstraints(
-            minWidth: main,
-            maxWidth: main,
-            minHeight: cross,
-            maxHeight: cross,
-          )
-        : BoxConstraints(
-            minWidth: cross,
-            maxWidth: cross,
-            minHeight: main,
-            maxHeight: main,
-          );
   }
 
   Size _createSize(double main, double cross) {

@@ -243,7 +243,6 @@ class LayoutGridWidget extends StatelessWidget {
         if (editorOffset != null && overrideTransform == null) {
           transform.translate(editorOffset.dx, editorOffset.dy);
         }
-        var innerSize = state.elementSize;
         bool clipContent = state.item.clipContent;
         BorderRadiusGeometry? borderRadius = state.item.borderRadius;
         return Visibility(
@@ -251,7 +250,7 @@ class LayoutGridWidget extends StatelessWidget {
           child: Transform(
             transform: transform,
             child: AdaptiveSizedBox(
-              size: innerSize,
+              size: state.size,
               child: FreeHitClipRRect(
                 borderRadius: borderRadius ?? BorderRadius.zero,
                 clipBehavior: clipContent ? Clip.antiAlias : Clip.none,

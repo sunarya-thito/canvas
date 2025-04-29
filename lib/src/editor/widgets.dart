@@ -61,7 +61,7 @@ class CanvasEditor extends StatefulWidget {
 
 class CanvasEditorState extends State<CanvasEditor>
     with TickerProviderStateMixin, CanvasEditorHandler {
-  static const rootConstraints = BoxConstraints.tightFor(height: 0, width: 0);
+  static const rootSize = Size.zero;
   late CanvasRoot _root;
   late CanvasRootState _rootState;
   late FocusNode _focusNode;
@@ -368,7 +368,7 @@ class CanvasEditorState extends State<CanvasEditor>
   }
 
   void _performFullLayout() {
-    _rootState.layout(rootConstraints, widget.textDirection);
+    _rootState.layout(rootSize, widget.textDirection);
   }
 
   @override

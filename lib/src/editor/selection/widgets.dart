@@ -135,7 +135,7 @@ class _SelectionTransformControlWidgetState
   }
 
   Widget _buildDiagonalHandle(CanvasThemeData theme, Offset center, Size size,
-      Offset shear, DirectionalCursor cursor,
+      Offset shear, DirectionalCursor cursor, double rotation,
       {EdgeInsets? expand,
       bool fill = true,
       bool flipHorizontal = false,
@@ -149,7 +149,7 @@ class _SelectionTransformControlWidgetState
       flipVertical: flipVertical,
     );
     return MouseRegion(
-      cursor: cursor.rotateByAngle(rotationFromShear(shear)).cursor,
+      cursor: cursor.rotateByAngle(rotation).cursor,
       hitTestBehavior: HitTestBehavior.deferToChild,
       child: GestureDetector(
         behavior: HitTestBehavior.deferToChild,
@@ -171,14 +171,22 @@ class _SelectionTransformControlWidgetState
     );
   }
 
-  Widget _buildHandle(CanvasThemeData theme, Offset center, Size size,
-      Size itemSize, Offset shear, Axis direction, DirectionalCursor cursor,
-      {EdgeInsets? expand, bool fill = false}) {
+  Widget _buildHandle(
+      CanvasThemeData theme,
+      Offset center,
+      Size size,
+      Size itemSize,
+      Offset shear,
+      Axis direction,
+      DirectionalCursor cursor,
+      double rotation,
+      {EdgeInsets? expand,
+      bool fill = false}) {
     Polygon polygon = _createHandlePolygon(
         center, size, itemSize, shear, direction,
         expand: expand);
     return MouseRegion(
-      cursor: cursor.rotateByAngle(rotationFromShear(shear)).cursor,
+      cursor: cursor.rotateByAngle(rotation).cursor,
       hitTestBehavior: HitTestBehavior.deferToChild,
       child: GestureDetector(
         behavior: HitTestBehavior.deferToChild,
@@ -235,18 +243,22 @@ class _SelectionTransformControlWidgetState
         final flipHorizontal = size.width.isNegative;
         final flipVertical = size.height.isNegative;
         final editor = widget.editor;
-        final singleSelection = widget.selection.singleSelection;
-        var rotation = singleSelection == null
-            ? 0.0
-            : rotationFromShear(
-                singleSelection.item.layoutData.shear ?? Offset.zero);
+        var rotationTestStart = Offset.zero;
+        var rotationTest = Offset(1, 0);
+        rotationTest = transformOffset(rotationTest, transform);
+        rotationTestStart = transformOffset(rotationTestStart, transform);
+        var rotation = -(rotationTest - rotationTestStart).direction;
 
-        final boundsInfoSize =
-            (bottomLeftHandleCenter - bottomRightHandleCenter).distance;
+        // final boundsInfoSize =
+        //     (bottomLeftHandleCenter - bottomRightHandleCenter).distance;
         int rotationAdjustment =
-            (wrapRotation(rotation + pi / 4) / (pi / 2)).floor();
+            (wrapRotation(rotation + pi / 4) / (pi / 2)).floor() % 4;
+
+        print(
+            'rotationAdjustment: $rotationAdjustment, $flipHorizontal: $flipHorizontal, flipVertical: $flipVertical');
 
         Offset alwaysBottomCenter;
+        double boundsInfoSize;
         if (rotationAdjustment == 0) {
           alwaysBottomCenter = flipVertical
               ? flipHorizontal
@@ -255,6 +267,8 @@ class _SelectionTransformControlWidgetState
               : flipHorizontal
                   ? bottomRightHandleCenter
                   : bottomLeftHandleCenter;
+          boundsInfoSize =
+              (bottomLeftHandleCenter - bottomRightHandleCenter).distance;
         } else if (rotationAdjustment == 1) {
           alwaysBottomCenter = flipVertical
               ? flipHorizontal
@@ -263,6 +277,8 @@ class _SelectionTransformControlWidgetState
               : flipHorizontal
                   ? topRightHandleCenter
                   : topLeftHandleCenter;
+          boundsInfoSize =
+              (topLeftHandleCenter - bottomLeftHandleCenter).distance;
         } else if (rotationAdjustment == 2) {
           alwaysBottomCenter = flipVertical
               ? flipHorizontal
@@ -271,6 +287,8 @@ class _SelectionTransformControlWidgetState
               : flipHorizontal
                   ? topLeftHandleCenter
                   : topRightHandleCenter;
+          boundsInfoSize =
+              (topRightHandleCenter - topLeftHandleCenter).distance;
         } else {
           alwaysBottomCenter = flipVertical
               ? flipHorizontal
@@ -279,6 +297,8 @@ class _SelectionTransformControlWidgetState
               : flipHorizontal
                   ? bottomLeftHandleCenter
                   : bottomRightHandleCenter;
+          boundsInfoSize =
+              (bottomRightHandleCenter - topRightHandleCenter).distance;
         }
         return Stack(
           fit: StackFit.passthrough,
@@ -320,8 +340,7 @@ class _SelectionTransformControlWidgetState
                 builder: (context) {
                   var globalTransform =
                       widget.parentTransform * item.globalEditorTransform;
-                  Polygon polygon =
-                      Polygon.fromRect(Offset.zero & item.elementSize);
+                  Polygon polygon = Polygon.fromRect(Offset.zero & item.size);
                   polygon = polygon.transform(globalTransform);
                   return widget.selection.editorOffset.value.delta ==
                           Offset.zero
@@ -385,6 +404,7 @@ class _SelectionTransformControlWidgetState
               Axis.horizontal,
               DirectionalCursor.top
                   .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
             ),
             // bottom
             _buildHandle(
@@ -396,6 +416,7 @@ class _SelectionTransformControlWidgetState
               Axis.horizontal,
               DirectionalCursor.bottom
                   .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
             ),
             // left
             _buildHandle(
@@ -407,6 +428,7 @@ class _SelectionTransformControlWidgetState
               Axis.vertical,
               DirectionalCursor.left
                   .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
             ),
             // right
             _buildHandle(
@@ -418,6 +440,7 @@ class _SelectionTransformControlWidgetState
               Axis.vertical,
               DirectionalCursor.right
                   .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
             ),
             // rotate topLeft
             _buildDiagonalHandle(
@@ -427,6 +450,7 @@ class _SelectionTransformControlWidgetState
               shear,
               DirectionalCursor.topRight
                   .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
               expand: EdgeInsets.only(
                 top: handleSize.height,
                 left: handleSize.width,
@@ -443,6 +467,7 @@ class _SelectionTransformControlWidgetState
               shear,
               DirectionalCursor.bottomRight
                   .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
               expand: EdgeInsets.only(
                 top: handleSize.height,
                 right: handleSize.width,
@@ -459,6 +484,7 @@ class _SelectionTransformControlWidgetState
               shear,
               DirectionalCursor.topLeft
                   .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
               expand: EdgeInsets.only(
                 bottom: handleSize.height,
                 left: handleSize.width,
@@ -475,6 +501,7 @@ class _SelectionTransformControlWidgetState
               shear,
               DirectionalCursor.bottomLeft
                   .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
               expand: EdgeInsets.only(
                 bottom: handleSize.height,
                 right: handleSize.width,
@@ -491,31 +518,38 @@ class _SelectionTransformControlWidgetState
               shear,
               DirectionalCursor.topLeft
                   .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
             ),
             // topRight
             _buildDiagonalHandle(
-                theme,
-                topRightHandleCenter,
-                handleSize,
-                shear,
-                DirectionalCursor.topRight
-                    .flip(horizontal: flipHorizontal, vertical: flipVertical)),
+              theme,
+              topRightHandleCenter,
+              handleSize,
+              shear,
+              DirectionalCursor.topRight
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
+            ),
             // bottomLeft
             _buildDiagonalHandle(
-                theme,
-                bottomLeftHandleCenter,
-                handleSize,
-                shear,
-                DirectionalCursor.bottomLeft
-                    .flip(horizontal: flipHorizontal, vertical: flipVertical)),
+              theme,
+              bottomLeftHandleCenter,
+              handleSize,
+              shear,
+              DirectionalCursor.bottomLeft
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
+            ),
             // bottomRight
             _buildDiagonalHandle(
-                theme,
-                bottomRightHandleCenter,
-                handleSize,
-                shear,
-                DirectionalCursor.bottomRight
-                    .flip(horizontal: flipHorizontal, vertical: flipVertical)),
+              theme,
+              bottomRightHandleCenter,
+              handleSize,
+              shear,
+              DirectionalCursor.bottomRight
+                  .flip(horizontal: flipHorizontal, vertical: flipVertical),
+              rotation,
+            ),
           ],
         );
       },
