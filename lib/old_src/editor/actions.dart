@@ -1,9 +1,6 @@
 import 'package:canvas/canvas.dart';
 import 'package:canvas/old_src/editor/ruler.dart';
-import 'package:canvas/src/editor/ruler/ruler.dart';
 import 'package:flutter/widgets.dart';
-
-import 'selection/selection.dart';
 
 class CanvasDeleteSelectedObjectsIntent extends Intent {
   const CanvasDeleteSelectedObjectsIntent();
@@ -22,8 +19,8 @@ class CanvasDeleteSelectedObjectsAction
     var localSelection = editor.localSelection;
     if (localSelection != null) {
       for (var group in localSelection.groups) {
-        for (var item in group.items) {
-          editor.disposeObject(item);
+        for (var item in group.selectedItems) {
+          editor.removeObject(item);
         }
       }
     }
@@ -88,7 +85,7 @@ class CanvasDeleteItemsAction extends Action<CanvasDeleteItemsIntent> {
   void invoke(covariant CanvasDeleteItemsIntent intent) {
     for (var item in intent.items) {
       var parent = item.parent;
-      if (parent is CanvasParentState) {
+      if (parent is CanvasObjectState) {
         parent.item.removeChild(item.item);
       }
     }
@@ -122,7 +119,7 @@ class CanvasUpdateLayoutDataAction
 }
 
 class CanvasUpdateChildrenIntent extends Intent {
-  final CanvasParent parent;
+  final CanvasObject parent;
   final List<CanvasItem> children;
 
   const CanvasUpdateChildrenIntent({
