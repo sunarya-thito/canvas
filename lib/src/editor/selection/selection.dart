@@ -14,7 +14,6 @@ class SelectionGroup {
   });
 
   TransformControlBox getTransformControlBox({Matrix4? parentTransform}) {
-    print('items: $items');
     if (items.length == 1) {
       CanvasItemState item = items.first;
       var transform = item.computeTransform(parentTransform: parentTransform);
@@ -125,8 +124,7 @@ class SelectionGroup {
 class Selection {
   final List<SelectionGroup> groups;
   final SelectionClient client;
-  final ValueNotifier<Delta> editorDragOffset =
-      ValueNotifier<Delta>(Delta.zero);
+  final ValueNotifier<Delta?> editorDragOffset = ValueNotifier(null);
 
   Selection({
     required this.groups,

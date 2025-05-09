@@ -37,7 +37,6 @@ abstract class EditorControlSession {
   void handleDragUpdate(Offset position, Size viewportSize) {
     _delta = _delta!.copyWith(end: position);
     _viewportSize = viewportSize;
-    onDragUpdate();
   }
 
   void handleDragEnd() {

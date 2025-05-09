@@ -1,6 +1,4 @@
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/editor/snap/absolute.dart';
-import 'package:canvas/src/editor/snap/snap.dart';
 import 'package:flutter/widgets.dart';
 
 class CanvasItemSnapAnchor extends AbsoluteSnapAnchor {

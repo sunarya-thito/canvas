@@ -172,6 +172,7 @@ class CanvasEditor with ChangeNotifier {
 
   void updateControlSession(Offset localPosition, Size viewportSize) {
     localPosition = viewportGlobalToLocal(this, viewportSize, localPosition);
+    _controlSession?.handleDragUpdate(localPosition, viewportSize);
     if (snappingConfiguration.enableSnapping) {
       var snapResult = snap(_controlSession!.visitSnapAnchor);
       snappingResult = snapResult;
@@ -180,6 +181,7 @@ class CanvasEditor with ChangeNotifier {
       }
     }
     _controlSession?.handleDragUpdate(localPosition, viewportSize);
+    _controlSession?.onDragUpdate();
   }
 
   void endControlSession() {
@@ -538,7 +540,7 @@ class CanvasEditor with ChangeNotifier {
     host((point) {
       visitSnapAnchor((other) {
         if (!point.canSnapInto(other)) {
-          return false;
+          return true;
         }
         point.visitLines((line) {
           other.visitLines((otherLine) {
@@ -571,16 +573,16 @@ class CanvasEditor with ChangeNotifier {
       if (entry.sourceLine.direction == Axis.horizontal) {
         if (entry.distance < minHorizontalDistance) {
           minHorizontalDistance = entry.distance;
-          horizontalSnap = entry.snapDelta.dx;
+          horizontalSnap = entry.snapDelta.dy;
         }
-      } else {
+      } else if (entry.sourceLine.direction == Axis.vertical) {
         if (entry.distance < minVerticalDistance) {
           minVerticalDistance = entry.distance;
           verticalSnap = entry.snapDelta.dx;
         }
       }
     }
-    Offset delta = Offset(horizontalSnap, verticalSnap);
+    Offset delta = Offset(verticalSnap, horizontalSnap);
     if (delta == Offset.zero) {
       return null;
     }

@@ -202,7 +202,7 @@ class _SelectionTransformControlWidgetState
           print(
               'onPanUpdate: ${rotatePoint(_totalDelta, rotation)}, rotation: ${rotation * 180 / pi}');
         },
-        child: widget.selection.editorDragOffset.value.delta == Offset.zero
+        child: widget.selection.editorDragOffset.value == null
             ? DecoratedPolygon(
                 polygon: polygon,
                 fillColor: fill ? theme.transformControl.controlColor : null,
@@ -270,9 +270,10 @@ class _SelectionTransformControlWidgetState
         ...widget.selectionGroup.items,
       ]),
       builder: (context, child) {
-        var delta = widget.selection.editorDragOffset.value;
+        var delta =
+            widget.selection.editorDragOffset.value?.delta ?? Offset.zero;
         var parentTransform = Matrix4.copy(widget.parentTransform);
-        parentTransform.translate(delta.deltaX, delta.deltaY);
+        parentTransform.translate(delta.dx, delta.dy);
         var box = widget.selectionGroup
             .getTransformControlBox(parentTransform: parentTransform);
         Size size = box.size;
@@ -349,7 +350,7 @@ class _SelectionTransformControlWidgetState
         return Stack(
           fit: StackFit.passthrough,
           children: [
-            if (widget.selection.editorDragOffset.value.delta == Offset.zero)
+            if (widget.selection.editorDragOffset.value == null)
               GroupWidget(
                 children: [
                   Transform.translate(
@@ -391,8 +392,7 @@ class _SelectionTransformControlWidgetState
                   List<Offset> polygonPoints =
                       _fromRect(Offset.zero & item.size);
                   polygonPoints = _transform(polygonPoints, globalTransform);
-                  return widget.selection.editorDragOffset.value.delta ==
-                          Offset.zero
+                  return widget.selection.editorDragOffset.value == null
                       ? DecoratedPolygon(
                           polygon: polygonPoints,
                           strokeColor:
@@ -433,16 +433,15 @@ class _SelectionTransformControlWidgetState
               onPanCancel: () {
                 editor.cancelControlSession();
               },
-              child:
-                  widget.selection.editorDragOffset.value.delta == Offset.zero
-                      ? DecoratedPolygon(
-                          polygon: points,
-                          strokeColor:
-                              theme.transformControl.controlBoundaryBorderColor,
-                          strokeWidth:
-                              theme.transformControl.controlBoundaryBorderWidth,
-                        )
-                      : null,
+              child: widget.selection.editorDragOffset.value == null
+                  ? DecoratedPolygon(
+                      polygon: points,
+                      strokeColor:
+                          theme.transformControl.controlBoundaryBorderColor,
+                      strokeWidth:
+                          theme.transformControl.controlBoundaryBorderWidth,
+                    )
+                  : null,
             ),
             // extra controls
             for (var control in _extraControls)

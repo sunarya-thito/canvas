@@ -234,7 +234,7 @@ class SelectionMoveControlSession extends EditorControlSession {
   }
 
   void _resetEditorOffset() {
-    selection.editorDragOffset.value = Delta.zero;
+    selection.editorDragOffset.value = null;
     for (var group in selection.groups) {
       for (var item in group.items) {
         item.dragOffset = null;
