@@ -1,26 +1,34 @@
 abstract class SizeConstraint {
   const SizeConstraint();
+  static const SizeConstraint intrinsic = IntrinsicSizeConstraint();
+  static ConstrainedSizeConstraint fixed(double size) =>
+      FixedSizeConstraint(size);
+  static SizeConstraint flex(double flex) => FlexSizeConstraint(flex: flex);
+  static ConstrainedSizeConstraint relative(double size) =>
+      RelativeSizeConstraint(size: size);
+  static SizeConstraint unconstrained = UnconstrainedSizeConstraint();
+  static SizeConstraint aspectRatio(double aspectRatio) =>
+      AspectRatioSizeConstraint(aspectRatio);
 }
 
 abstract class ConstrainedSizeConstraint extends SizeConstraint {
   const ConstrainedSizeConstraint();
-
-  double compute(double size);
 }
 
 class IntrinsicSizeConstraint extends SizeConstraint {
   const IntrinsicSizeConstraint();
 }
 
+class AspectRatioSizeConstraint extends ConstrainedSizeConstraint {
+  final double aspectRatio;
+
+  const AspectRatioSizeConstraint(this.aspectRatio);
+}
+
 class FixedSizeConstraint extends ConstrainedSizeConstraint {
   final double size;
 
   const FixedSizeConstraint(this.size);
-
-  @override
-  double compute(double size) {
-    return this.size;
-  }
 }
 
 class FlexSizeConstraint extends SizeConstraint {
@@ -41,9 +49,4 @@ class RelativeSizeConstraint extends ConstrainedSizeConstraint {
   const RelativeSizeConstraint({
     required this.size,
   });
-
-  @override
-  double compute(double parentSize) {
-    return size * parentSize;
-  }
 }

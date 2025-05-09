@@ -20,12 +20,14 @@ abstract class EditorGestureSession with ChangeNotifier {
   Size? _viewportSize;
 
   void handleDragStart(Offset position, Size viewportSize) {
+    position = viewportGlobalToLocal(editor, viewportSize, position);
     _delta = Delta(start: position, end: position);
     _viewportSize = viewportSize;
     onDragStart();
   }
 
   void handleDragUpdate(Offset position, Size viewportSize) {
+    position = viewportGlobalToLocal(editor, viewportSize, position);
     _delta = _delta!.copyWith(end: position);
     _viewportSize = viewportSize;
     onDragUpdate();

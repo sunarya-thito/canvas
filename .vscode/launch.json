@@ -5,6 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "border_test",
+            "type": "dart",
+            "request": "launch",
+            "program": "border_test/lib/main.dart"
+        },
+        {
             "name": "canvas",
             "request": "launch",
             "type": "dart"

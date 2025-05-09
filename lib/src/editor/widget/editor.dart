@@ -67,7 +67,32 @@ class _CanvasEditorWidgetState extends State<CanvasEditorWidget>
   Widget build(BuildContext context) {
     final theme = CanvasTheme.of(context);
     return Actions(
-        actions: {},
+        actions: {
+          CanvasDeleteSelectedObjectsIntent: Action.overridable(
+            defaultAction: CanvasDeleteSelectedObjectsAction(
+              editor: widget.editor,
+            ),
+            context: context,
+          ),
+          CanvasSelectAllIntent: Action.overridable(
+            defaultAction: CanvasSelectAllAction(
+              editor: widget.editor,
+            ),
+            context: context,
+          ),
+          CanvasDragIntent: Action.overridable(
+            defaultAction: CanvasDragAction(
+              editor: widget.editor,
+            ),
+            context: context,
+          ),
+          CanvasResizeIntent: Action.overridable(
+            defaultAction: CanvasResizeAction(
+              editor: widget.editor,
+            ),
+            context: context,
+          ),
+        },
         child: AnimatedValueBuilder(
           value: widget.showRuler ? 1.0 : 0.0,
           duration: const Duration(milliseconds: 200),
@@ -113,7 +138,18 @@ class _CanvasEditorWidgetState extends State<CanvasEditorWidget>
                                       GestureRecognizerFactoryWithHandlers<
                                           TertiaryPanGestureRecognizer>(
                                     () => TertiaryPanGestureRecognizer(),
-                                    (TertiaryPanGestureRecognizer instance) {
+                                    (instance) {
+                                      instance.onUpdate = (details) {
+                                        widget.editor
+                                            .dragViewport(details.delta);
+                                      };
+                                    },
+                                  ),
+                                  PanGestureRecognizer:
+                                      GestureRecognizerFactoryWithHandlers<
+                                          PanGestureRecognizer>(
+                                    () => PanGestureRecognizer(),
+                                    (PanGestureRecognizer instance) {
                                       instance.onStart = (details) {
                                         if (widget.editor.selectionMode !=
                                                 CanvasSelectionMode.multiple &&
@@ -153,17 +189,22 @@ class _CanvasEditorWidgetState extends State<CanvasEditorWidget>
                                         },
                                       ),
                                     ),
-                                    Transform(
-                                      transform: transform,
-                                      child: widget.editor.rootState
-                                          .renderEditor(context, widget.editor),
-                                    ),
-                                    Transform(
-                                      transform: transform,
-                                      child: LayoutGridWidget(
-                                        state: widget.editor.rootState,
-                                        editor: widget.editor,
-                                      ),
+                                    GroupWidget(
+                                      children: [
+                                        Transform(
+                                          transform: transform,
+                                          child: widget.editor.rootState
+                                              .renderEditor(
+                                                  context, widget.editor),
+                                        ),
+                                        Transform(
+                                          transform: transform,
+                                          child: LayoutGridWidget(
+                                            state: widget.editor.rootState,
+                                            editor: widget.editor,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                     for (var selected
                                         in widget.editor.selections)

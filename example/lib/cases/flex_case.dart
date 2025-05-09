@@ -9,69 +9,67 @@ class FlexTestCase extends TestCase {
   @override
   String get description => 'A test case for flex layout.';
 
-  CanvasRoot createRoot() {
-    final canvasRoot = CanvasRoot();
-    canvasRoot.addChild(
-      EditableCanvasObject(
-        debugLabel: 'Main Object',
-        layout: const FlexLayout(
-          padding: EdgeInsets.all(60),
-          spacing: 20,
-        ),
-        layoutData: const AbsoluteLayoutData(
-          width: 1400,
-          height: 600,
-        ),
-        children: [
-          EditableCanvasObject(
-            debugLabel: 'Child 1',
-            layoutData: const FixedLayoutData(
-              width: SizeConstraint.fixed(250),
-              height: SizeConstraint.unconstrained(),
-            ),
+  @override
+  CanvasEditor openEditor() {
+    return CanvasEditor(
+        root: CanvasRoot(children: [
+      CanvasFrame(
+          debugLabel: 'Main Frame',
+          layoutData: const ParentLayoutData(
+            size: Size(1400, 600),
           ),
-          EditableCanvasObject(
-            debugLabel: 'Child 2',
-            layoutData: const FlexLayoutData(
-              flex: 2,
-              cross: SizeConstraint.unconstrained(),
-            ),
+          layout: const FlexLayout(
+            padding: EdgeInsets.all(20),
+            spacing: 20,
           ),
-          EditableCanvasObject(
-            debugLabel: 'Child 3',
-            layoutData: const FlexLayoutData(
-              flex: 1,
-              cross: SizeConstraint.fixed(300),
+          children: [
+            CanvasFrame(
+              debugLabel: 'Child 1',
+              layoutData: FlexibleLayoutData(
+                width: SizeConstraint.fixed(250),
+                height: SizeConstraint.unconstrained,
+              ),
             ),
-          ),
-          EditableCanvasObject(
-            debugLabel: 'Child 4',
-            layoutData: const FixedLayoutData(
-              width: SizeConstraint.fixed(200),
-              height: SizeConstraint.fixed(200),
+            CanvasFrame(
+              debugLabel: 'Child 2',
+              layoutData: FlexibleLayoutData(
+                width: SizeConstraint.flex(2),
+                height: SizeConstraint.unconstrained,
+              ),
             ),
-          ),
-          EditableCanvasObject(
-            debugLabel: 'Abs Child 1',
-            layoutData: const AbsoluteLayoutData(
-              top: 20,
-              left: 20,
-              width: 100,
-              height: 100,
+            CanvasFrame(
+              debugLabel: 'Child 3',
+              layoutData: FlexibleLayoutData(
+                width: SizeConstraint.flex(1),
+                height: SizeConstraint.fixed(300),
+              ),
             ),
-          ),
-          EditableCanvasObject(
-            debugLabel: 'Abs Child 2',
-            layoutData: const AbsoluteLayoutData(
-              bottom: 20,
-              right: 20,
-              width: 100,
-              height: 100,
+            CanvasFrame(
+              debugLabel: 'Child 4',
+              layoutData: FlexibleLayoutData(
+                width: SizeConstraint.fixed(200),
+                height: SizeConstraint.fixed(200),
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-    return canvasRoot;
+            CanvasFrame(
+              debugLabel: 'Abs Child 1',
+              layoutData: AbsoluteLayoutData(
+                top: Position.absolute(20),
+                left: Position.absolute(20),
+                width: SizeConstraint.fixed(100),
+                height: SizeConstraint.fixed(100),
+              ),
+            ),
+            CanvasFrame(
+              debugLabel: 'Abs Child 2',
+              layoutData: AbsoluteLayoutData(
+                bottom: Position.absolute(20),
+                right: Position.absolute(20),
+                width: SizeConstraint.fixed(100),
+                height: SizeConstraint.fixed(100),
+              ),
+            ),
+          ])
+    ]));
   }
 }

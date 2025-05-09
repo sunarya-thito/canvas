@@ -1,10 +1,6 @@
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/editor/snap/selection.dart';
-import 'package:canvas/src/editor/snap/snap.dart';
-import 'package:canvas/src/layout/flex.dart';
+import 'package:canvas/src/item/frame.dart';
 import 'package:flutter/widgets.dart';
-
-import '../../selection/selection.dart';
 
 class SelectionMoveControlSession extends EditorControlSession {
   final Selection selection;
@@ -16,7 +12,7 @@ class SelectionMoveControlSession extends EditorControlSession {
   @override
   void visitSnapAnchor(SnapAnchorVisitor visitor) {
     var parent = _parentEnd;
-    if (parent != null && parent.item.layout is FlexLayout) {
+    if (parent is CanvasFrameState && parent.item.layout is FlexLayout) {
       return;
     }
     var offset = delta.delta;
@@ -134,7 +130,13 @@ class SelectionMoveControlSession extends EditorControlSession {
     selection.editorDragOffset.value = delta;
     CanvasParentState? targetReparent;
     if (editor.allowReparenting) {
-      CanvasItemState? targetHit = editor.findItemAt(delta.end);
+      CanvasItemState? targetHit = editor.findItemAt(
+        delta.end,
+        filter: (parent) {
+          return parent is CanvasParentState &&
+              selection.items.any((child) => parent.acceptReparent(child));
+        },
+      );
       for (var group in selection.groups) {
         for (var item in group.items) {
           var layoutData = item.item.layoutData;
@@ -165,10 +167,14 @@ class SelectionMoveControlSession extends EditorControlSession {
         var transform = Matrix4.inverted(item.computeGlobalTransform());
         var transformedDelta = delta.transform(transform);
         item.dragOffset = transformedDelta.delta;
-        item.targetReparent = targetReparent;
+        if (targetReparent != null && targetReparent.acceptReparent(item)) {
+          item.targetReparent = targetReparent;
+        } else {
+          item.targetReparent = null;
+        }
         if (item.targetReparent == null || item.targetReparent == item.parent) {
           var parent = item.parent;
-          if (parent is CanvasParentState) {
+          if (parent is CanvasFrameState) {
             var parentLayout = parent.item.layout;
             parentLayout.handleDrag(parent, item, delta);
           }
@@ -184,6 +190,66 @@ class SelectionMoveControlSession extends EditorControlSession {
           }
         }
       }
+    }
+  }
+
+  @override
+  void onDragEnd() {
+    for (var group in selection.groups) {
+      for (var item in group.items) {
+        var reorderTarget = item.targetReorderIndex;
+        if (reorderTarget != null) {
+          var parent = item.parent;
+          parent?.reorderItem(item, reorderTarget);
+          continue;
+        }
+        var reparentTarget = item.targetReparent;
+        if (reparentTarget != null && reparentTarget != item.parent) {
+          var oldParent = item.parent;
+          var commonParent = item.findCommonParent(reparentTarget);
+          if (commonParent != null) {
+            var reparentedTransform = commonParent.computeGlobalTransform() *
+                item.computeEditorGlobalTransformUntil(commonParent);
+            var reparentedLayoutData = item.item.layoutData
+                .transferTo(item, reparentTarget, reparentedTransform);
+            item.item.layoutData = reparentedLayoutData;
+            oldParent?.item.removeChild(item.item);
+            reparentTarget.item.addChild(item.item);
+          }
+          continue;
+        }
+        var layoutData = item.item.layoutData;
+        Matrix4 parentTransform =
+            item.parent?.computeGlobalTransform() ?? Matrix4.identity();
+        var offsetDelta = delta.transform(parentTransform);
+        item.item.layoutData = layoutData.drag(item, offsetDelta);
+      }
+    }
+    _resetEditorOffset();
+  }
+
+  @override
+  void onDragCancel() {
+    _resetEditorOffset();
+  }
+
+  void _resetEditorOffset() {
+    selection.editorDragOffset.value = Delta.zero;
+    for (var group in selection.groups) {
+      for (var item in group.items) {
+        item.dragOffset = null;
+        item.targetReparent = null;
+        item.targetReorderIndex = null;
+        item.clearReorderOffsets();
+        var parent = item.parent;
+        if (parent != null) {
+          for (var sibling in parent.children) {
+            sibling.clearReorderOffsets();
+            sibling.targetReorderIndex = null;
+          }
+        }
+      }
+      _stopReparenting();
     }
   }
 }

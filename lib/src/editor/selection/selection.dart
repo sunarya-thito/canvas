@@ -14,6 +14,7 @@ class SelectionGroup {
   });
 
   TransformControlBox getTransformControlBox({Matrix4? parentTransform}) {
+    print('items: $items');
     if (items.length == 1) {
       CanvasItemState item = items.first;
       var transform = item.computeTransform(parentTransform: parentTransform);
@@ -22,41 +23,64 @@ class SelectionGroup {
         transform: transform,
       );
     }
-    List<Offset> points = items
-        .map((item) {
-          var offset = item.parentData.position;
-          var size = item.size;
-          return [
-            offset,
-            offset + Offset(size.width, 0),
-            offset + Offset(size.width, size.height),
-            offset + Offset(0, size.height),
-          ];
-        })
-        .expand((e) => e)
-        .toList();
-    var transform = parent.computeTransform(parentTransform: parentTransform);
-    var transformedPoints = points.map((point) {
-      return transformOffset(point, transform);
-    }).toList();
-    var minX = transformedPoints
-        .map((point) => point.dx)
-        .reduce((a, b) => a < b ? a : b);
-    var minY = transformedPoints
-        .map((point) => point.dy)
-        .reduce((a, b) => a < b ? a : b);
-    var maxX = transformedPoints
-        .map((point) => point.dx)
-        .reduce((a, b) => a > b ? a : b);
-    var maxY = transformedPoints
-        .map((point) => point.dy)
-        .reduce((a, b) => a > b ? a : b);
+    // List<Offset> points = items
+    //     .map((item) {
+    //       var offset = item.parentData.position;
+    //       var size = item.size;
+    //       return [
+    //         offset,
+    //         offset + Offset(size.width, 0),
+    //         offset + Offset(size.width, size.height),
+    //         offset + Offset(0, size.height),
+    //       ];
+    //     })
+    //     .expand((e) => e)
+    //     .toList();
+    // var transform = parent.computeTransform(parentTransform: parentTransform);
+    // var transformedPoints = points.map((point) {
+    //   return transformOffset(point, transform);
+    // }).toList();
+    // var minX = transformedPoints
+    //     .map((point) => point.dx)
+    //     .reduce((a, b) => a < b ? a : b);
+    // var minY = transformedPoints
+    //     .map((point) => point.dy)
+    //     .reduce((a, b) => a < b ? a : b);
+    // var maxX = transformedPoints
+    //     .map((point) => point.dx)
+    //     .reduce((a, b) => a > b ? a : b);
+    // var maxY = transformedPoints
+    //     .map((point) => point.dy)
+    //     .reduce((a, b) => a > b ? a : b);
+    parentTransform =
+        parent.computeGlobalTransform(parentTransform: parentTransform);
+    Iterable<Offset> points = items.map(
+      (item) {
+        var transform = item.computeTransform(parentTransform: parentTransform);
+        Iterable<Offset> itemPoints = [
+          Offset(0, 0),
+          Offset(item.size.width, 0),
+          Offset(item.size.width, item.size.height),
+          Offset(0, item.size.height),
+        ];
+        itemPoints = itemPoints.map((point) {
+          return transformOffset(point, transform);
+        });
+        return itemPoints;
+      },
+    ).expand((e) => e);
+
+    var minX = points.map((point) => point.dx).reduce((a, b) => a < b ? a : b);
+    var minY = points.map((point) => point.dy).reduce((a, b) => a < b ? a : b);
+    var maxX = points.map((point) => point.dx).reduce((a, b) => a > b ? a : b);
+    var maxY = points.map((point) => point.dy).reduce((a, b) => a > b ? a : b);
     var width = maxX - minX;
     var height = maxY - minY;
     var size = Size(width, height);
+    parentTransform.translate(minX, minY);
     return TransformControlBox(
       size: size,
-      transform: transform,
+      transform: parentTransform,
     );
   }
 

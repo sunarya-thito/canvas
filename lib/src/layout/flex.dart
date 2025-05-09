@@ -2,29 +2,12 @@ import 'dart:math';
 
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/layout/fixed.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 enum FlexAlignment {
   start,
   center,
   end;
-}
-
-FlexAlignment _resolveFlexAlignment(
-    FlexAlignment alignment, TextDirection textDirection) {
-  switch (alignment) {
-    case FlexAlignment.start:
-      return textDirection == TextDirection.ltr
-          ? FlexAlignment.start
-          : FlexAlignment.end;
-    case FlexAlignment.center:
-      return FlexAlignment.center;
-    case FlexAlignment.end:
-      return textDirection == TextDirection.ltr
-          ? FlexAlignment.end
-          : FlexAlignment.start;
-  }
 }
 
 CanvasItemState? _nextFlexChild(CanvasItemState child) {
@@ -55,6 +38,34 @@ class FlexLayout extends CanvasLayout {
     this.spacing = 0.0,
     this.padding = EdgeInsets.zero,
   });
+
+  @override
+  bool debugAcceptLayoutData(CanvasItemState item, CanvasLayoutData data) {
+    return data is FlexibleLayoutData ||
+        data is AbsoluteLayoutData ||
+        data is ParentLayoutData;
+  }
+
+  @override
+  CanvasLayout copyWith({
+    ValueGetter<Axis>? direction,
+    ValueGetter<FlexAlignment>? mainAxisAlignment,
+    ValueGetter<FlexAlignment>? crossAxisAlignment,
+    ValueGetter<double>? spacing,
+    ValueGetter<EdgeInsets>? padding,
+  }) {
+    return FlexLayout(
+      direction: direction != null ? direction() : this.direction,
+      mainAxisAlignment: mainAxisAlignment != null
+          ? mainAxisAlignment()
+          : this.mainAxisAlignment,
+      crossAxisAlignment: crossAxisAlignment != null
+          ? crossAxisAlignment()
+          : this.crossAxisAlignment,
+      spacing: spacing != null ? spacing() : this.spacing,
+      padding: padding != null ? padding() : this.padding,
+    );
+  }
 
   @override
   CanvasParentData setupParentData(CanvasParentState state,
@@ -95,8 +106,7 @@ class FlexLayout extends CanvasLayout {
   }
 
   bool _shouldLayout(CanvasParentState parent, CanvasItemState child) {
-    return !(child.editorData.targetReparent != null &&
-        child.editorData.targetReparent != parent);
+    return !(child.targetReparent != null && child.targetReparent != parent);
   }
 
   Offset _createOffset(double main, double cross) {
@@ -189,12 +199,15 @@ class FlexLayout extends CanvasLayout {
         } else if (mainSizeConstraint is IntrinsicSizeConstraint) {
           mainChildSize = child.computeMinIntrinsicWidth(crossSize);
         } else if (mainSizeConstraint is RelativeSizeConstraint) {
-          mainChildSize = mainSizeConstraint.compute(paddedSize.width);
+          mainChildSize = mainSizeConstraint.size * paddedSize.width;
         } else if (mainSizeConstraint is FlexSizeConstraint) {
           totalFlex += mainSizeConstraint.flex;
           totalAffectedChildren++;
           child = child.parentData.nextSibling;
           continue;
+        } else if (mainSizeConstraint is AspectRatioSizeConstraint) {
+          // skip this for now
+          mainChildSize = 0.0;
         } else {
           throw UnimplementedError(
               'Unknown size constraint: $mainSizeConstraint');
@@ -208,26 +221,40 @@ class FlexLayout extends CanvasLayout {
         } else if (crossSizeConstraint is IntrinsicSizeConstraint) {
           crossChildSize = child.computeMinIntrinsicHeight(paddedSize.width);
         } else if (crossSizeConstraint is RelativeSizeConstraint) {
-          crossChildSize = crossSizeConstraint.compute(paddedSize.height);
+          crossChildSize = crossSizeConstraint.size * paddedSize.height;
         } else if (crossSizeConstraint is FlexSizeConstraint) {
           maxCrossFlex = max(maxCrossFlex, crossSizeConstraint.flex);
           hasCrossFlex = true;
           child = _nextFlexChild(child);
           continue;
+        } else if (crossSizeConstraint is AspectRatioSizeConstraint) {
+          if (mainSizeConstraint is AspectRatioSizeConstraint) {
+            throw UnsupportedError(
+                'Aspect ratio cannot be used with another aspect ratio');
+          }
+          var aspectRatio = crossSizeConstraint.aspectRatio;
+          crossChildSize = mainChildSize * aspectRatio;
         } else {
           throw UnimplementedError(
               'Unknown size constraint: $crossSizeConstraint');
         }
+        if (mainSizeConstraint is AspectRatioSizeConstraint) {
+          var aspectRatio = mainSizeConstraint.aspectRatio;
+          mainChildSize = crossChildSize * aspectRatio;
+          parentData.cachedMainSize = mainChildSize;
+        }
         var crossMin = _getMinCross(layoutData);
         var crossMax = _getMaxCross(layoutData);
-        crossChildSize = crossChildSize.clamp(crossMin, crossMax);
+        crossChildSize = clampIgnoreSign(crossChildSize, crossMin, crossMax);
         parentData.cachedCrossSize = crossChildSize;
         var childSize = _createSize(mainChildSize, crossChildSize);
-        child.layout(childSize);
+        child.layout(childSize.constrainIgnoreSign(layoutData.constraints));
         totalFixedSize += mainChildSize;
         totalAffectedChildren++;
       } else if (layoutData is AbsoluteLayoutData) {
         layoutAbsolutePositioning(child, paddedSize, offset, layoutData);
+      } else if (layoutData is ParentLayoutData) {
+        layoutParentPositioning(child, paddedSize, offset, layoutData);
       } else {
         throw UnimplementedError(
             'Unknown layout data: ${layoutData.runtimeType}');
@@ -260,10 +287,12 @@ class FlexLayout extends CanvasLayout {
               var crossChildSize = (flex / maxCrossFlex) * crossSize;
               var minCross = _getMinCross(layoutData);
               var maxCross = _getMaxCross(layoutData);
-              crossChildSize = crossChildSize.clamp(minCross, maxCross);
+              crossChildSize =
+                  clampIgnoreSign(crossChildSize, minCross, maxCross);
               var mainChildSize = parentData.cachedMainSize;
               var childSize = _createSize(mainChildSize, crossChildSize);
-              child.layout(childSize);
+              child.layout(
+                  childSize.constrainIgnoreSign(layoutData.constraints));
             }
           }
         }
@@ -336,18 +365,21 @@ class FlexLayout extends CanvasLayout {
           } else if (crossChildConstraint is IntrinsicSizeConstraint) {
             crossChildSize = child.computeMinIntrinsicHeight(paddedSize.width);
           } else if (crossChildConstraint is RelativeSizeConstraint) {
-            crossChildSize = crossChildConstraint.compute(paddedSize.height);
+            crossChildSize = crossChildConstraint.size * paddedSize.height;
+          } else if (crossChildConstraint is AspectRatioSizeConstraint) {
+            var aspectRatio = crossChildConstraint.aspectRatio;
+            crossChildSize = parentData.mainSize * aspectRatio;
           } else {
             throw UnimplementedError(
                 'Unknown size constraint: $crossChildConstraint');
           }
           var crossMin = _getMinCross(layoutData);
           var crossMax = _getMaxCross(layoutData);
-          crossChildSize = crossChildSize.clamp(crossMin, crossMax);
+          crossChildSize = clampIgnoreSign(crossChildSize, crossMin, crossMax);
           parentData.cachedCrossSize = crossChildSize;
           var mainChildSize = parentData.mainSize; // already clamped
           var childSize = _createSize(mainChildSize, crossChildSize);
-          child.layout(childSize);
+          child.layout(childSize.constrainIgnoreSign(layoutData.constraints));
         }
       }
       child = child.parentData.nextSibling;
@@ -424,8 +456,11 @@ class FlexLayout extends CanvasLayout {
     }
   }
 
-  double _computeIntrinsicSize(CanvasParentState state, double size,
-      double Function(CanvasItemState item, double size) computeIntrinsicSize) {
+  double _computeIntrinsicSize(
+      CanvasParentState state,
+      double size,
+      double Function(CanvasItemState item, double size) computeIntrinsicSize,
+      double Function() computeCrossIntrinsicSize) {
     var totalSpacing = 0;
     var child = state.firstChild;
     var totalSize = 0.0;
@@ -441,9 +476,12 @@ class FlexLayout extends CanvasLayout {
         } else if (mainSizeConstraint is IntrinsicSizeConstraint) {
           childSize = computeIntrinsicSize(child, size);
         } else if (mainSizeConstraint is RelativeSizeConstraint) {
-          childSize = mainSizeConstraint.compute(size);
+          childSize = 0;
         } else if (mainSizeConstraint is FlexSizeConstraint) {
           childSize = 0;
+        } else if (mainSizeConstraint is AspectRatioSizeConstraint) {
+          var aspectRatio = mainSizeConstraint.aspectRatio;
+          childSize = size * aspectRatio;
         } else {
           throw UnimplementedError(
               'Unknown size constraint: $mainSizeConstraint');
@@ -463,8 +501,11 @@ class FlexLayout extends CanvasLayout {
     return totalSize + spacing + _getMainPadding(padding);
   }
 
-  double _computeCrossIntrinsicSize(CanvasParentState state, double size,
-      double Function(CanvasItemState item, double size) computeIntrinsicSize) {
+  double _computeCrossIntrinsicSize(
+      CanvasParentState state,
+      double size,
+      double Function(CanvasItemState item, double size) computeIntrinsicSize,
+      double Function() computeCrossIntrinsicSize) {
     var totalSize = 0.0;
     var child = state.firstChild;
     while (child != null) {
@@ -482,6 +523,14 @@ class FlexLayout extends CanvasLayout {
           childSize = 0;
         } else if (crossSizeConstraint is FlexSizeConstraint) {
           childSize = 0;
+        } else if (crossSizeConstraint is AspectRatioSizeConstraint) {
+          var mainSizeConstraint = _getMainSizeConstraint(layoutData);
+          if (mainSizeConstraint is AspectRatioSizeConstraint) {
+            throw UnsupportedError(
+                'Aspect ratio cannot be used with another aspect ratio');
+          }
+          var aspectRatio = crossSizeConstraint.aspectRatio;
+          childSize = computeCrossIntrinsicSize() * aspectRatio;
         } else {
           throw UnimplementedError(
               'Unknown size constraint: $crossSizeConstraint');
@@ -500,36 +549,60 @@ class FlexLayout extends CanvasLayout {
   double computeMaxIntrinsicHeight(CanvasParentState state, double width) {
     return direction == Axis.horizontal
         ? _computeCrossIntrinsicSize(
-            state, width, (item, size) => item.computeMaxIntrinsicHeight(size))
+            state,
+            width,
+            (item, size) => item.computeMaxIntrinsicHeight(size),
+            () => computeMaxIntrinsicWidth(state, double.infinity))
         : _computeIntrinsicSize(
-            state, width, (item, size) => item.computeMaxIntrinsicHeight(size));
+            state,
+            width,
+            (item, size) => item.computeMaxIntrinsicHeight(size),
+            () => computeMaxIntrinsicWidth(state, double.infinity));
   }
 
   @override
   double computeMaxIntrinsicWidth(CanvasParentState state, double height) {
     return direction == Axis.horizontal
         ? _computeIntrinsicSize(
-            state, height, (item, size) => item.computeMaxIntrinsicWidth(size))
+            state,
+            height,
+            (item, size) => item.computeMaxIntrinsicWidth(size),
+            () => computeMaxIntrinsicHeight(state, double.infinity))
         : _computeCrossIntrinsicSize(
-            state, height, (item, size) => item.computeMaxIntrinsicWidth(size));
+            state,
+            height,
+            (item, size) => item.computeMaxIntrinsicWidth(size),
+            () => computeMaxIntrinsicHeight(state, double.infinity));
   }
 
   @override
   double computeMinIntrinsicHeight(CanvasParentState state, double width) {
     return direction == Axis.horizontal
         ? _computeCrossIntrinsicSize(
-            state, width, (item, size) => item.computeMinIntrinsicHeight(size))
+            state,
+            width,
+            (item, size) => item.computeMinIntrinsicHeight(size),
+            () => computeMinIntrinsicWidth(state, double.infinity))
         : _computeIntrinsicSize(
-            state, width, (item, size) => item.computeMinIntrinsicHeight(size));
+            state,
+            width,
+            (item, size) => item.computeMinIntrinsicHeight(size),
+            () => computeMinIntrinsicWidth(state, double.infinity));
   }
 
   @override
   double computeMinIntrinsicWidth(CanvasParentState state, double height) {
     return direction == Axis.horizontal
         ? _computeIntrinsicSize(
-            state, height, (item, size) => item.computeMinIntrinsicWidth(size))
+            state,
+            height,
+            (item, size) => item.computeMinIntrinsicWidth(size),
+            () => computeMinIntrinsicHeight(state, double.infinity))
         : _computeCrossIntrinsicSize(
-            state, height, (item, size) => item.computeMinIntrinsicWidth(size));
+            state,
+            height,
+            (item, size) => item.computeMinIntrinsicWidth(size),
+            () => computeMinIntrinsicHeight(state, double.infinity));
   }
 }
 

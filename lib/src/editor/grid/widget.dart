@@ -42,7 +42,7 @@ class LayoutGridWidget extends StatelessWidget {
       listenable: state,
       builder: (context, child) {
         var state = this.state;
-        if (state is! CanvasParentState) {
+        if (state is! CanvasFrameState) {
           return SizedBox.shrink();
         }
         Matrix4 transform = overrideTransform ?? state.computeTransform();

@@ -1,12 +1,6 @@
 import 'package:animation_kit/animation_kit.dart';
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/editor/control/sessions/selection_move.dart';
-import 'package:canvas/src/editor/widget/data.dart';
-import 'package:canvas/src/layout/flex.dart';
 import 'package:flutter/widgets.dart';
-
-import '../../editor/selection/selection.dart';
-import '../../widget_util.dart';
 
 class CanvasItemWidget extends StatelessWidget {
   final CanvasItemState item;
@@ -24,15 +18,17 @@ class CanvasItemWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: item,
+      child: child,
       builder: (context, child) {
         Matrix4 transform = this.transform ?? item.computeEditorTransform();
-        var size = item.size;
         return FreeHitIgnorePointer(
           ignoring: item.item.locked,
           child: FreeHitOpacity(
-            opacity: item.targetReparent == null || this.transform != null
+            opacity: item.targetReparent is! CanvasFrameState ||
+                    this.transform != null
                 ? 1
-                : item.targetReparent!.item.layout is FlexLayout
+                : (item.targetReparent as CanvasFrameState).item.layout
+                        is FlexLayout
                     ? 0.5
                     : 0,
             child: AnimatedValueBuilder(
@@ -49,10 +45,7 @@ class CanvasItemWidget extends StatelessWidget {
               },
               child: Transform(
                 transform: transform,
-                child: AdaptiveSizedBox(
-                  size: size,
-                  child: child ?? const SizedBox.shrink(),
-                ),
+                child: child ?? const SizedBox.shrink(),
               ),
             ),
           ),
@@ -82,25 +75,26 @@ class CanvasItemEditorWidget extends StatelessWidget {
         editor.handleItemClick(item);
       },
       onPanStart: (details) {
-        if (editor.localSelection?.contains(item) == false) {
+        if (editor.localSelection?.contains(item) != true) {
           editor.setToLocalSelection(item);
         }
         Selection? local = editor.localSelection;
         if (local != null) {
-          var viewportSize = CanvasEditorWidgetData.find(context).viewportSize;
+          final editorData = CanvasEditorWidgetData.find(context);
           editor.startControlSession(
               SelectionMoveControlSession(selection: local),
-              details,
-              viewportSize);
+              editorData.globalToLocal(details.globalPosition),
+              editorData.viewportSize);
         }
       },
       onPanUpdate: (details) {
-        var viewportSize = CanvasEditorWidgetData.find(context).viewportSize;
-        editor.updateControlSession(details, viewportSize);
+        final editorData = CanvasEditorWidgetData.find(context);
+        editor.updateControlSession(
+            editorData.globalToLocal(details.globalPosition),
+            editorData.viewportSize);
       },
       onPanEnd: (details) {
-        var viewportSize = CanvasEditorWidgetData.find(context).viewportSize;
-        editor.endControlSession(details, viewportSize);
+        editor.endControlSession();
       },
       onPanCancel: () {
         editor.cancelControlSession();

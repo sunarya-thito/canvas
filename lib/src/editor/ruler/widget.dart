@@ -36,43 +36,46 @@ class _CanvasRulerState extends State<CanvasRuler> {
   CanvasSnapGuideline? _hoveredPoint;
 
   Widget _buildDraggable(double width, Axis direction) {
-    return MouseRegion(
-      hitTestBehavior: HitTestBehavior.translucent,
-      cursor: _draggingSession != null
-          ? SystemMouseCursors.noDrop
-          : direction == Axis.horizontal
-              ? SystemMouseCursors.resizeUpDown
-              : SystemMouseCursors.resizeLeftRight,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onPanStart: (details) {
-          final editorData = CanvasEditorWidgetData.find(context);
-          setState(() {
-            widget.editor.startControlSession(
-                _draggingSession =
-                    RulerCreateSnapAnchorControlSession(direction: direction),
+    return IgnorePointer(
+      ignoring: widget.editor.selectionMode == CanvasSelectionMode.multiple,
+      child: MouseRegion(
+        hitTestBehavior: HitTestBehavior.translucent,
+        cursor: _draggingSession != null
+            ? SystemMouseCursors.noDrop
+            : direction == Axis.horizontal
+                ? SystemMouseCursors.resizeUpDown
+                : SystemMouseCursors.resizeLeftRight,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onPanStart: (details) {
+            final editorData = CanvasEditorWidgetData.find(context);
+            setState(() {
+              widget.editor.startControlSession(
+                  _draggingSession =
+                      RulerCreateSnapAnchorControlSession(direction: direction),
+                  editorData.globalToLocal(details.globalPosition),
+                  editorData.viewportSize);
+            });
+          },
+          onPanUpdate: (details) {
+            final editorData = CanvasEditorWidgetData.find(context);
+            widget.editor.updateControlSession(
                 editorData.globalToLocal(details.globalPosition),
                 editorData.viewportSize);
-          });
-        },
-        onPanUpdate: (details) {
-          final editorData = CanvasEditorWidgetData.find(context);
-          widget.editor.updateControlSession(
-              editorData.globalToLocal(details.globalPosition),
-              editorData.viewportSize);
-        },
-        onPanEnd: (details) {
-          setState(() {
-            widget.editor.endControlSession();
-            _draggingSession = null;
-          });
-        },
-        onPanCancel: () {
-          setState(() {
-            widget.editor.cancelControlSession();
-            _draggingSession = null;
-          });
-        },
+          },
+          onPanEnd: (details) {
+            setState(() {
+              widget.editor.endControlSession();
+              _draggingSession = null;
+            });
+          },
+          onPanCancel: () {
+            setState(() {
+              widget.editor.cancelControlSession();
+              _draggingSession = null;
+            });
+          },
+        ),
       ),
     );
   }

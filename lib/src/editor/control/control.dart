@@ -19,7 +19,7 @@ abstract class EditorControlSession {
 
   Delta get delta {
     assert(_delta != null, 'Session not started');
-    return _delta!.transform(editor.computeTransform(viewportSize));
+    return _delta!;
   }
 
   void handleStartSession(CanvasEditor editor, Size viewportSize) {

@@ -1,11 +1,5 @@
-import 'dart:ui';
-
 import 'package:canvas/canvas.dart';
-import 'package:canvas/src/layout/constraint.dart';
-import 'package:canvas/src/layout/position.dart';
-import 'package:canvas/src/util.dart';
-import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 
 abstract class CanvasLayoutData {
   final Offset? shear;
@@ -19,13 +13,18 @@ abstract class CanvasLayoutData {
   });
 
   CanvasLayoutData copyWith({
-    Offset? shear,
-    Offset? scale,
-    BoxConstraints? constraints,
+    ValueGetter<Offset?>? shear,
+    ValueGetter<Offset?>? scale,
+    ValueGetter<BoxConstraints?>? constraints,
   });
 
   CanvasLayoutData transferTo(
-      CanvasItemState item, CanvasLayout targetLayout, Offset dropTarget) {
+      CanvasItemState item, CanvasParentState targetParent, Matrix4 transform) {
+    return this;
+  }
+
+  CanvasLayoutData handleLayoutChange(
+      CanvasItemState item, CanvasLayout layout) {
     return this;
   }
 
@@ -38,6 +37,51 @@ abstract class CanvasLayoutData {
       matrix = matrix * Matrix4.diagonal3Values(scale!.dx, scale!.dy, 1);
     }
     return matrix;
+  }
+
+  CanvasLayoutData drag(CanvasItemState item, Delta delta) {
+    return this;
+  }
+}
+
+class ParentLayoutData extends CanvasLayoutData {
+  final Offset offset;
+  final Size size;
+  const ParentLayoutData({
+    super.shear,
+    super.scale,
+    super.constraints,
+    this.offset = Offset.zero,
+    this.size = Size.zero,
+  });
+
+  @override
+  CanvasLayoutData copyWith({
+    ValueGetter<Offset?>? shear,
+    ValueGetter<Offset?>? scale,
+    ValueGetter<BoxConstraints?>? constraints,
+    ValueGetter<Offset>? offset,
+    ValueGetter<Size>? size,
+  }) {
+    return ParentLayoutData(
+      shear: shear != null ? shear() : this.shear,
+      scale: scale != null ? scale() : this.scale,
+      constraints: constraints != null ? constraints() : this.constraints,
+      offset: offset != null ? offset() : this.offset,
+      size: size != null ? size() : this.size,
+    );
+  }
+
+  @override
+  CanvasLayoutData drag(CanvasItemState item, Delta delta) {
+    return copyWith(
+      offset: () => offset + delta.delta,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'ParentLayoutData{offset: $offset, size: $size, shear: $shear, scale: $scale, constraints: $constraints}';
   }
 }
 
@@ -66,30 +110,70 @@ class AbsoluteLayoutData extends CanvasLayoutData {
   });
 
   @override
+  CanvasLayoutData drag(CanvasItemState item, Delta delta) {
+    return copyWith(
+      top: () => top?.shift(delta.delta.dy, item.size.height),
+      left: () => left?.shift(delta.delta.dx, item.size.width),
+      right: () => right?.shift(-delta.delta.dx, item.size.width),
+      bottom: () => bottom?.shift(-delta.delta.dy, item.size.height),
+    );
+  }
+
+  @override
+  CanvasLayoutData handleLayoutChange(
+      CanvasItemState item, CanvasLayout layout) {
+    if (layout is FlexLayout) {
+      return FlexibleLayoutData(
+        width: FixedSizeConstraint(item.size.width),
+        height: FixedSizeConstraint(item.size.height),
+        shear: shear,
+        scale: scale,
+        constraints: constraints,
+      );
+    }
+    return super.handleLayoutChange(item, layout);
+  }
+
+  @override
   CanvasLayoutData copyWith({
-    Offset? shear,
-    Offset? scale,
-    BoxConstraints? constraints,
+    ValueGetter<Offset?>? shear,
+    ValueGetter<Offset?>? scale,
+    ValueGetter<BoxConstraints?>? constraints,
+    ValueGetter<Position?>? top,
+    ValueGetter<Position?>? left,
+    ValueGetter<Position?>? right,
+    ValueGetter<Position?>? bottom,
+    ValueGetter<ConstrainedSizeConstraint?>? width,
+    ValueGetter<ConstrainedSizeConstraint?>? height,
+    ValueGetter<bool>? scaleHorizontal,
+    ValueGetter<bool>? scaleVertical,
   }) {
     return AbsoluteLayoutData(
-      top: top,
-      left: left,
-      right: right,
-      bottom: bottom,
-      width: width,
-      height: height,
-      scaleHorizontal: scaleHorizontal,
-      scaleVertical: scaleVertical,
-      shear: shear ?? this.shear,
-      scale: scale ?? this.scale,
-      constraints: constraints ?? this.constraints,
+      top: top != null ? top() : this.top,
+      left: left != null ? left() : this.left,
+      right: right != null ? right() : this.right,
+      bottom: bottom != null ? bottom() : this.bottom,
+      width: width != null ? width() : this.width,
+      height: height != null ? height() : this.height,
+      scaleHorizontal:
+          scaleHorizontal != null ? scaleHorizontal() : this.scaleHorizontal,
+      scaleVertical:
+          scaleVertical != null ? scaleVertical() : this.scaleVertical,
+      shear: shear != null ? shear() : this.shear,
+      scale: scale != null ? scale() : this.scale,
+      constraints: constraints != null ? constraints() : this.constraints,
     );
+  }
+
+  @override
+  String toString() {
+    return 'AbsoluteLayoutData{top: $top, left: $left, right: $right, bottom: $bottom, width: $width, height: $height, shear: $shear, scale: $scale, constraints: $constraints}';
   }
 }
 
 class FlexibleLayoutData extends CanvasLayoutData {
-  final ConstrainedSizeConstraint width;
-  final ConstrainedSizeConstraint height;
+  final SizeConstraint width;
+  final SizeConstraint height;
 
   const FlexibleLayoutData({
     this.width = const FixedSizeConstraint(0),
@@ -100,17 +184,36 @@ class FlexibleLayoutData extends CanvasLayoutData {
   });
 
   @override
+  CanvasLayoutData handleLayoutChange(
+      CanvasItemState item, CanvasLayout layout) {
+    if (item is FixedLayout) {
+      return AbsoluteLayoutData(
+        top: AbsolutePosition(item.parentData.position.dy),
+        left: AbsolutePosition(item.parentData.position.dx),
+        width: FixedSizeConstraint(item.size.width),
+        height: FixedSizeConstraint(item.size.height),
+        shear: shear,
+        scale: scale,
+        constraints: constraints,
+      );
+    }
+    return super.handleLayoutChange(item, layout);
+  }
+
+  @override
   CanvasLayoutData copyWith({
-    Offset? shear,
-    Offset? scale,
-    BoxConstraints? constraints,
+    ValueGetter<Offset?>? shear,
+    ValueGetter<Offset?>? scale,
+    ValueGetter<BoxConstraints?>? constraints,
+    ValueGetter<SizeConstraint>? width,
+    ValueGetter<SizeConstraint>? height,
   }) {
     return FlexibleLayoutData(
-      width: width,
-      height: height,
-      shear: shear ?? this.shear,
-      scale: scale ?? this.scale,
-      constraints: constraints ?? this.constraints,
+      width: width != null ? width() : this.width,
+      height: height != null ? height() : this.height,
+      shear: shear != null ? shear() : this.shear,
+      scale: scale != null ? scale() : this.scale,
+      constraints: constraints != null ? constraints() : this.constraints,
     );
   }
 }
@@ -133,22 +236,23 @@ class PathLayoutData extends CanvasLayoutData {
 
   @override
   CanvasLayoutData copyWith({
-    Offset? shear,
-    Offset? scale,
-    BoxConstraints? constraints,
-    double? index,
-    bool? rotateAlongPath,
-    Offset? offset,
-    Alignment? alignment,
+    ValueGetter<Offset?>? shear,
+    ValueGetter<Offset?>? scale,
+    ValueGetter<BoxConstraints?>? constraints,
+    ValueGetter<double>? index,
+    ValueGetter<bool>? rotateAlongPath,
+    ValueGetter<Offset>? offset,
+    ValueGetter<Alignment>? alignment,
   }) {
     return PathLayoutData(
-      index: index ?? this.index,
-      rotateAlongPath: rotateAlongPath ?? this.rotateAlongPath,
-      offset: offset ?? this.offset,
-      alignment: alignment ?? this.alignment,
-      shear: shear ?? this.shear,
-      scale: scale ?? this.scale,
-      constraints: constraints ?? this.constraints,
+      index: index != null ? index() : this.index,
+      rotateAlongPath:
+          rotateAlongPath != null ? rotateAlongPath() : this.rotateAlongPath,
+      offset: offset != null ? offset() : this.offset,
+      alignment: alignment != null ? alignment() : this.alignment,
+      shear: shear != null ? shear() : this.shear,
+      scale: scale != null ? scale() : this.scale,
+      constraints: constraints != null ? constraints() : this.constraints,
     );
   }
 }

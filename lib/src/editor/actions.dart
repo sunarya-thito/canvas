@@ -1,9 +1,5 @@
 import 'package:canvas/canvas.dart';
-import 'package:canvas/old_src/editor/ruler.dart';
-import 'package:canvas/src/editor/ruler/ruler.dart';
 import 'package:flutter/widgets.dart';
-
-import 'selection/selection.dart';
 
 class CanvasDeleteSelectedObjectsIntent extends Intent {
   const CanvasDeleteSelectedObjectsIntent();
@@ -21,120 +17,70 @@ class CanvasDeleteSelectedObjectsAction
   void invoke(covariant CanvasDeleteSelectedObjectsIntent intent) {
     var localSelection = editor.localSelection;
     if (localSelection != null) {
-      for (var group in localSelection.groups) {
-        for (var item in group.items) {
-          editor.disposeObject(item);
-        }
-      }
+      editor.disposeObjects(localSelection.items);
+    }
+    var selectedSnapGuideline = editor.selectedSnapGuideline;
+    if (selectedSnapGuideline != null) {
+      editor.removeRulerSnapAnchor(selectedSnapGuideline);
     }
   }
 }
 
-class CanvasCreateRulerSnapAnchorIntent extends Intent {
-  final double offset;
-  final Axis direction;
-
-  const CanvasCreateRulerSnapAnchorIntent({
-    required this.offset,
-    required this.direction,
-  });
+class CanvasSelectAllIntent extends Intent {
+  const CanvasSelectAllIntent();
 }
 
-class CanvasCreateRulerSnapAnchorAction
-    extends Action<CanvasCreateRulerSnapAnchorIntent> {
+class CanvasSelectAllAction extends Action<CanvasSelectAllIntent> {
   final CanvasEditor editor;
 
-  CanvasCreateRulerSnapAnchorAction({
+  CanvasSelectAllAction({
     required this.editor,
   });
 
   @override
-  CanvasSnapGuideline invoke(
-      covariant CanvasCreateRulerSnapAnchorIntent intent) {
-    return editor.createRulerSnapAnchor(intent.offset, intent.direction);
+  void invoke(covariant CanvasSelectAllIntent intent) {
+    editor.selectAll();
   }
 }
 
-class CanvasRemoveRulerSnapAnchorIntent extends Intent {
-  final CanvasSnapGuideline point;
+class CanvasDragIntent extends Intent {
+  final Offset delta;
 
-  const CanvasRemoveRulerSnapAnchorIntent({
-    required this.point,
-  });
+  const CanvasDragIntent(this.delta);
 }
 
-class CanvasRemoveRulerSnapAnchorAction
-    extends Action<CanvasRemoveRulerSnapAnchorIntent> {
+class CanvasDragAction extends Action<CanvasDragIntent> {
   final CanvasEditor editor;
-  CanvasRemoveRulerSnapAnchorAction({
+
+  CanvasDragAction({
     required this.editor,
   });
+
   @override
-  void invoke(covariant CanvasRemoveRulerSnapAnchorIntent intent) {
-    editor.removeRulerSnapAnchor(intent.point);
+  void invoke(covariant CanvasDragIntent intent) {
+    // TODO
   }
 }
 
-class CanvasDeleteItemsIntent extends Intent {
-  final List<CanvasItemState> items;
+class CanvasResizeIntent extends Intent {
+  final Offset delta;
+  final Alignment alignment;
 
-  const CanvasDeleteItemsIntent({
-    required this.items,
+  const CanvasResizeIntent({
+    required this.delta,
+    required this.alignment,
   });
 }
 
-class CanvasDeleteItemsAction extends Action<CanvasDeleteItemsIntent> {
+class CanvasResizeAction extends Action<CanvasResizeIntent> {
+  final CanvasEditor editor;
+
+  CanvasResizeAction({
+    required this.editor,
+  });
+
   @override
-  void invoke(covariant CanvasDeleteItemsIntent intent) {
-    for (var item in intent.items) {
-      var parent = item.parent;
-      if (parent is CanvasParentState) {
-        parent.item.removeChild(item.item);
-      }
-    }
-  }
-}
-
-class CanvasUpdateLayoutDataIntent extends Intent {
-  final CanvasItem item;
-  final CanvasLayoutData layoutData;
-
-  const CanvasUpdateLayoutDataIntent({
-    required this.item,
-    required this.layoutData,
-  });
-}
-
-class CanvasSetLocalSelectionIntent extends Intent {
-  final Selection selection;
-
-  const CanvasSetLocalSelectionIntent({
-    required this.selection,
-  });
-}
-
-class CanvasUpdateLayoutDataAction
-    extends Action<CanvasUpdateLayoutDataIntent> {
-  @override
-  void invoke(covariant CanvasUpdateLayoutDataIntent intent) {
-    intent.item.layoutData = intent.layoutData;
-  }
-}
-
-class CanvasUpdateChildrenIntent extends Intent {
-  final CanvasParent parent;
-  final List<CanvasItem> children;
-
-  const CanvasUpdateChildrenIntent({
-    required this.parent,
-    required this.children,
-  });
-}
-
-class CanvasUpdateChildrenAction extends Action<CanvasUpdateChildrenIntent> {
-  @override
-  bool invoke(covariant CanvasUpdateChildrenIntent intent) {
-    intent.parent.children = intent.children;
-    return true;
+  void invoke(covariant CanvasResizeIntent intent) {
+    // TODO
   }
 }

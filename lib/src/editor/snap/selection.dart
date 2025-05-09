@@ -27,10 +27,12 @@ class SelectionSnapAnchor extends AbsoluteSnapAnchor {
     if (other is CanvasItemSnapAnchor) {
       var otherItem = other.item;
       var groupParent = group.parent;
-      var layout = groupParent.item.layout;
-      if (layout is FlexLayout) {
-        if (groupParent.children.contains(otherItem)) {
-          return false;
+      if (groupParent is CanvasFrameState) {
+        var layout = groupParent.item.layout;
+        if (layout is FlexLayout) {
+          if (groupParent.children.contains(otherItem)) {
+            return false;
+          }
         }
       }
     }

@@ -21,10 +21,10 @@ class AbsoluteSnapAnchor extends SnapAnchor {
 
   @override
   void visitLines(SnappingLineVisitor visitor) {
-    if (!visitor(SnappingLine(offset: point.dy, direction: Axis.horizontal))) {
+    if (!visitor(SnappingLine(offset: point.dx, direction: Axis.horizontal))) {
       return;
     }
-    if (!visitor(SnappingLine(offset: point.dx, direction: Axis.vertical))) {
+    if (!visitor(SnappingLine(offset: point.dy, direction: Axis.vertical))) {
       return;
     }
   }

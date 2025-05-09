@@ -29,7 +29,6 @@ class SelectionWidget extends StatelessWidget {
             Listenable.merge([selectionBox.start, selectionBox.end, editor]),
         builder: (context, child) {
           Rect rect = selectionBox.rect;
-          print('rebuild selection rect: $rect');
           Offset topLeft =
               viewportLocalToGlobal(editor, viewportSize, rect.topLeft);
           Offset bottomRight =
@@ -405,10 +404,12 @@ class _SelectionTransformControlWidgetState
                 },
               ),
             GestureDetector(
-              onTapUp: (details) {
+              onTapDown: (details) {
                 final editorData = CanvasEditorWidgetData.find(context);
                 CanvasItemState? item = editor.findItemAt(viewportGlobalToLocal(
-                    editor, editorData.viewportSize, details.localPosition));
+                    editor,
+                    editorData.viewportSize,
+                    editorData.globalToLocal(details.globalPosition)));
                 if (item != null) {
                   editor.handleItemClick(item);
                 }

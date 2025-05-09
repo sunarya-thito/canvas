@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:canvas/canvas.dart';
 import 'package:example/cases/empty_case.dart';
 import 'package:example/cases/flex_case.dart';
@@ -8,7 +10,8 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 abstract class TestCase extends ChangeNotifier {
   String get name;
   String get description;
-  CanvasRoot createRoot();
+  // CanvasParent createRoot();
+  CanvasEditor openEditor();
 }
 
 class CanvasExampleApp extends StatefulWidget {
@@ -19,7 +22,6 @@ class CanvasExampleApp extends StatefulWidget {
 }
 
 class _CanvasExampleAppState extends State<CanvasExampleApp> {
-  final CanvasEditorController controller = CanvasEditorController();
   final List<TestCase> testCases = [
     FlexTestCase(),
     EmptyCase(),
@@ -28,22 +30,34 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
   Selection? _localSelection;
 
   bool _showRuler = false;
-  bool _allowReparenting = true;
-  bool _symmetricResize = false;
-  bool _proportionalResize = false;
-  bool _multiSelect = false;
-  bool _enableSnapping = true;
+  // bool _allowReparenting = true;
+  // bool _symmetricResize = false;
+  // bool _proportionalResize = false;
+  // bool _multiSelect = false;
+  // bool _enableSnapping = true;
 
   int _objectCount = 0;
 
   int _dragMode = 0; // 0 = select, 1 = move, 2 = create object
 
-  CanvasRoot? _canvasRoot;
+  // CanvasRoot? _canvasRoot;
+  CanvasEditor? _editor;
+  StreamSubscription<CanvasEvent>? _eventSubscription;
 
   void _setSelectedCase(int newCase) {
-    controller.value = const CanvasEditorTransform();
     _selectedCase = newCase;
-    _canvasRoot = testCases[newCase].createRoot();
+    _eventSubscription?.cancel();
+    _editor?.dispose();
+    _editor = testCases[newCase].openEditor();
+    _eventSubscription = _editor!.listen(_listenEvent);
+  }
+
+  void _listenEvent(CanvasEvent event) {
+    if (event is CanvasLocalSelectionChangedNotification) {
+      setState(() {
+        _localSelection = event.selection;
+      });
+    }
   }
 
   void _closeCase() {
@@ -142,10 +156,14 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                             .call,
                     child: Toggle(
                       style: const ButtonStyle.ghostIcon(),
-                      value: _enableSnapping,
+                      value: _editor?.snappingConfiguration.enableSnapping ??
+                          false,
                       onChanged: (value) {
                         setState(() {
-                          _enableSnapping = value;
+                          _editor?.snappingConfiguration =
+                              SnappingConfiguration(
+                            enableSnapping: value,
+                          );
                         });
                       },
                       child: const Icon(LucideIcons.grid2x2X),
@@ -158,10 +176,10 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                             .call,
                     child: Toggle(
                       style: const ButtonStyle.ghostIcon(),
-                      value: _allowReparenting,
+                      value: _editor?.allowReparenting ?? false,
                       onChanged: (value) {
                         setState(() {
-                          _allowReparenting = value;
+                          _editor?.allowReparenting = value;
                         });
                       },
                       child: const Icon(LucideIcons.link),
@@ -174,10 +192,10 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                             .call,
                     child: Toggle(
                       style: const ButtonStyle.ghostIcon(),
-                      value: _symmetricResize,
+                      value: _editor?.symmetricResize ?? false,
                       onChanged: (value) {
                         setState(() {
-                          _symmetricResize = value;
+                          _editor?.symmetricResize = value;
                         });
                       },
                       child: const Icon(LucideIcons.squareArrowOutUpRight),
@@ -189,10 +207,10 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                         .call,
                     child: Toggle(
                       style: const ButtonStyle.ghostIcon(),
-                      value: _proportionalResize,
+                      value: _editor?.proportionalResize ?? false,
                       onChanged: (value) {
                         setState(() {
-                          _proportionalResize = value;
+                          _editor?.proportionalResize = value;
                         });
                       },
                       child: const Icon(LucideIcons.ratio),
@@ -204,10 +222,13 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                         .call,
                     child: Toggle(
                       style: const ButtonStyle.ghostIcon(),
-                      value: _multiSelect,
+                      value: _editor?.selectionMode ==
+                          CanvasSelectionMode.multiple,
                       onChanged: (value) {
                         setState(() {
-                          _multiSelect = value;
+                          _editor?.selectionMode = value
+                              ? CanvasSelectionMode.multiple
+                              : CanvasSelectionMode.single;
                         });
                       },
                       child: const Icon(LucideIcons.copyCheck),
@@ -264,11 +285,7 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                     child: IconButton.ghost(
                       icon: const Icon(LucideIcons.refreshCw),
                       onPressed: () {
-                        setState(() {
-                          controller.value = const CanvasEditorTransform();
-                          _canvasRoot = testCases[_selectedCase!].createRoot();
-                          _localSelection = null;
-                        });
+                        _setSelectedCase(_selectedCase!);
                       },
                     ),
                   ),
@@ -291,36 +308,28 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                         SingleActivator(LogicalKeyboardKey.delete):
                             CanvasDeleteSelectedObjectsIntent(),
                       },
-                      child: CanvasEditor(
-                        allowReparenting: _allowReparenting,
-                        symmetricResize: _symmetricResize,
-                        proportionalResize: _proportionalResize,
-                        selectionMode: _multiSelect
-                            ? CanvasSelectionMode.multiple
-                            : CanvasSelectionMode.single,
-                        snappingConfiguration: SnappingConfiguration(
-                          enableSnapping: _enableSnapping,
-                        ),
+                      child: CanvasEditorWidget(
                         showRuler: _showRuler,
-                        controller: controller,
-                        gesture: _dragMode == 0
-                            ? const EditorSelectDragGesture()
-                            : _dragMode == 1
-                                ? const EditorMoveDragGesture()
-                                : EditorCreateObjectDragGesture(
-                                    createItem: (editor) {
-                                      return EditableCanvasObject(
-                                        debugLabel:
-                                            'New Object ${++_objectCount}',
-                                      );
-                                    },
-                                  ),
-                        onLocalSelectionChanged: (value) {
-                          setState(() {
-                            _localSelection = value;
-                          });
-                        },
-                        root: _canvasRoot!,
+                        editor: _editor!,
+                        // controller: controller,
+                        // gesture: _dragMode == 0
+                        //     ? const EditorSelectDragGesture()
+                        //     : _dragMode == 1
+                        //         ? const EditorMoveDragGesture()
+                        //         : EditorCreateObjectDragGesture(
+                        //             createItem: (editor) {
+                        //               return EditableCanvasObject(
+                        //                 debugLabel:
+                        //                     'New Object ${++_objectCount}',
+                        //               );
+                        //             },
+                        //           ),
+                        // onLocalSelectionChanged: (value) {
+                        //   setState(() {
+                        //     _localSelection = value;
+                        //   });
+                        // },
+                        // root: _canvasRoot!,
                       ),
                     ),
                   ),
@@ -332,31 +341,36 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                               child: Text('Select an Object'),
                             )
                           : ListenableBuilder(
-                              listenable: Listenable.merge(
-                                  _localSelection!.selectedItems),
+                              listenable:
+                                  Listenable.merge(_localSelection!.items),
                               builder: (context, _) {
                                 return ListView(
                                   padding: const EdgeInsets.all(8),
                                   children: [
-                                    ..._localSelection!.editableProperties.map(
-                                      (property) {
+                                    ...EditablePropertyProvider.providers.map(
+                                      (provider) {
+                                        var property =
+                                            provider.createCompoundProperty(
+                                                _localSelection!.items);
                                         return ListenableBuilder(
-                                          listenable: property,
+                                          listenable: Listenable.merge([
+                                            property,
+                                          ]),
                                           builder: (context, _) {
+                                            if (property == null) {
+                                              return const SizedBox.shrink();
+                                            }
                                             return Container(
                                               key: ValueKey(_PropertyKey(
                                                   property.owner,
-                                                  property.key)),
+                                                  property.provider.key)),
                                               padding:
                                                   EdgeInsets.only(bottom: 8),
                                               child: Column(
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.stretch,
                                                 children: [
-                                                  Text((property.key
-                                                              as ValueKey<
-                                                                  String>)
-                                                          .value)
+                                                  Text(property.provider.key)
                                                       .small
                                                       .muted,
                                                   gap(4),
@@ -380,8 +394,8 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
 }
 
 class _PropertyKey {
-  final EditorPropertyOwner item;
-  final Key key;
+  final Object item;
+  final String key;
 
   const _PropertyKey(this.item, this.key);
 

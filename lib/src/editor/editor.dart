@@ -62,6 +62,7 @@ class CanvasEditor with ChangeNotifier {
         _snappingConfiguration = SnappingConfiguration() {
     _rootState = root.createState();
     root.attach(_rootState);
+    _rootState.layout(Size.zero);
   }
 
   SnappingResult? get snappingResult => _snappingResult;
@@ -84,7 +85,7 @@ class CanvasEditor with ChangeNotifier {
   }
 
   void handleCursorPosition(Offset position, Size size) {
-    if (_controlSession?.shiftViewport == false) {
+    if (_controlSession?.shiftViewport != true) {
       _shift = Offset.zero;
       return;
     }
@@ -147,17 +148,22 @@ class CanvasEditor with ChangeNotifier {
 
   CanvasItemState get rootState => _rootState;
   EditorControlSession? get controlSession => _controlSession;
-  CanvasItemState? findItemAt(Offset position) {
+  CanvasItemState? findItemAt(Offset position,
+      {bool Function(CanvasItemState)? filter}) {
     CanvasHitTestResult result = CanvasHitTestResult();
     hitTest(result, position);
-    if (result.path.isNotEmpty) {
-      return result.path.first.target;
+    for (var entry in result.path) {
+      var item = entry.target;
+      if (filter == null || filter(item)) {
+        return item;
+      }
     }
     return null;
   }
 
   void startControlSession(
       EditorControlSession session, Offset localPosition, Size viewportSize) {
+    localPosition = viewportGlobalToLocal(this, viewportSize, localPosition);
     cancelControlSession();
     _controlSession = session;
     _controlSession!.handleStartSession(this, viewportSize);
@@ -165,17 +171,27 @@ class CanvasEditor with ChangeNotifier {
   }
 
   void updateControlSession(Offset localPosition, Size viewportSize) {
+    localPosition = viewportGlobalToLocal(this, viewportSize, localPosition);
+    if (snappingConfiguration.enableSnapping) {
+      var snapResult = snap(_controlSession!.visitSnapAnchor);
+      snappingResult = snapResult;
+      if (snapResult != null) {
+        localPosition -= snapResult.snapDelta;
+      }
+    }
     _controlSession?.handleDragUpdate(localPosition, viewportSize);
   }
 
   void endControlSession() {
     _controlSession?.handleDragEnd();
     _controlSession = null;
+    snappingResult = null;
   }
 
   void cancelControlSession() {
     _controlSession?.handleDragCancel();
     _controlSession = null;
+    snappingResult = null;
   }
 
   EditorGesture get gesture => _gesture;
@@ -194,6 +210,7 @@ class CanvasEditor with ChangeNotifier {
 
   EditorGestureSession? get gestureSession => _gestureSession;
   void startGestureSession(Offset localPosition, Size viewportSize) {
+    localPosition = viewportGlobalToLocal(this, viewportSize, localPosition);
     cancelGestureSession();
     _gestureSession = gesture.createSession(this);
     _gestureSession!.handleDragStart(localPosition, viewportSize);
@@ -201,13 +218,15 @@ class CanvasEditor with ChangeNotifier {
 
   void updateGestureSession(Offset localPosition, Size viewportSize) {
     localPosition = viewportGlobalToLocal(this, viewportSize, localPosition);
-    if (!gesture.interceptPointerEvents) {
+    if (!gesture.interceptPointerEvents &&
+        snappingConfiguration.enableSnapping &&
+        gesture.allowSnapping) {
       var snapResult = snap((visitor) {
         return visitor(AbsoluteSnapAnchor(point: localPosition));
       });
       snappingResult = snapResult;
       if (snapResult != null) {
-        // TODO
+        localPosition -= snapResult.snapDelta;
       }
     }
     _gestureSession?.handleDragUpdate(localPosition, viewportSize);
@@ -216,11 +235,13 @@ class CanvasEditor with ChangeNotifier {
   void endGestureSession() {
     _gestureSession?.handleDragEnd();
     _gestureSession = null;
+    _snappingResult = null;
   }
 
   void cancelGestureSession() {
     _gestureSession?.handleDragCancel();
     _gestureSession = null;
+    _snappingResult = null;
   }
 
   List<Selection> get selections => List.unmodifiable(_selections);
@@ -254,10 +275,15 @@ class CanvasEditor with ChangeNotifier {
   }
 
   set localSelection(Selection? selection) {
+    if (selection != null) {
+      _selectedSnapGuideline = null;
+    }
     removeSelection(SelectionClient.local);
     if (selection != null) {
       addSelection(selection);
     }
+    dispatchEvent(CanvasLocalSelectionChangedNotification(
+        editor: this, selection: selection));
   }
 
   void addToLocalSelection(CanvasItemState item) {
@@ -366,11 +392,6 @@ class CanvasEditor with ChangeNotifier {
     }
   }
 
-  // Size get size => _size;
-  // set size(Size value) {
-  //   _size = value;
-  // }
-
   double get zoom => _zoom;
   set zoom(double value) {
     if (_zoom != value) {
@@ -432,6 +453,31 @@ class CanvasEditor with ChangeNotifier {
     }
     parent?.item.removeChild(item.item);
     notifyListeners();
+    dispatchEvent(CanvasItemsDeletedNotification(
+      editor: this,
+      items: [item],
+    ));
+  }
+
+  void disposeObjects(List<CanvasItemState> items) {
+    for (var item in items) {
+      var parent = item.parent;
+      for (var i = _selections.length - 1; i >= 0; i--) {
+        var selection = _selections[i];
+        var newSelection = selection.removeSelection(item);
+        if (newSelection.isEmpty) {
+          _selections.removeAt(i);
+        } else {
+          _selections[i] = newSelection;
+        }
+      }
+      parent?.item.removeChild(item.item);
+    }
+    notifyListeners();
+    dispatchEvent(CanvasItemsDeletedNotification(
+      editor: this,
+      items: items,
+    ));
   }
 
   void hitTest(CanvasHitTestResult result, Offset position) {
@@ -442,15 +488,6 @@ class CanvasEditor with ChangeNotifier {
     rootState.selectTest(result, path);
   }
 
-  // Matrix4 get transform {
-  //   Offset editorCenter = Offset(size.width / 2, size.height / 2);
-  //   Matrix4 transform = Matrix4.identity();
-  //   transform.translate(offset.dx, offset.dy);
-  //   transform.scale(zoom, zoom, 1.0);
-  //   transform.translate(editorCenter.dx, editorCenter.dy);
-  //   return transform;
-  // }
-
   Matrix4 computeTransform(Size viewportSize) {
     Matrix4 transform = Matrix4.identity();
     transform.translate(offset.dx, offset.dy);
@@ -459,10 +496,6 @@ class CanvasEditor with ChangeNotifier {
     return transform;
   }
 
-  // Rect get bounds {
-  //   Matrix4 transform = this.transform;
-  //   return rootState.computeGlobalBounds(transform);
-  // }
   Rect computeBounds(Size viewportSize) {
     Matrix4 transform = computeTransform(viewportSize);
     return rootState.computeGlobalBounds(transform);
@@ -479,6 +512,10 @@ class CanvasEditor with ChangeNotifier {
   void removeRulerSnapAnchor(CanvasSnapGuideline anchor) {
     if (_rulerSnapAnchors.remove(anchor)) {
       notifyListeners();
+      dispatchEvent(CanvasRulerSnapGuidelineDeletedNotification(
+        editor: this,
+        guideline: anchor,
+      ));
     }
   }
 
@@ -487,6 +524,7 @@ class CanvasEditor with ChangeNotifier {
   CanvasSnapGuideline? get selectedSnapGuideline => _selectedSnapGuideline;
   set selectedSnapGuideline(CanvasSnapGuideline? value) {
     if (_selectedSnapGuideline != value) {
+      localSelection = null;
       _selectedSnapGuideline = value;
       notifyListeners();
     }
@@ -533,7 +571,7 @@ class CanvasEditor with ChangeNotifier {
       if (entry.sourceLine.direction == Axis.horizontal) {
         if (entry.distance < minHorizontalDistance) {
           minHorizontalDistance = entry.distance;
-          horizontalSnap = entry.snapDelta.dy;
+          horizontalSnap = entry.snapDelta.dx;
         }
       } else {
         if (entry.distance < minVerticalDistance) {
@@ -631,5 +669,17 @@ class CanvasEditor with ChangeNotifier {
       bool? cancelOnError}) {
     return _eventController.stream.listen(onData,
         onError: onError, onDone: onDone, cancelOnError: cancelOnError);
+  }
+
+  void selectAll() {
+    if (rootState is CanvasParentState) {
+      var parent = rootState as CanvasParentState;
+      localSelection = Selection.fromSelection(
+        parent.children.where((child) => !child.item.locked).toList(),
+        client: SelectionClient.local,
+      );
+    } else {
+      localSelection = null;
+    }
   }
 }

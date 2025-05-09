@@ -34,7 +34,7 @@ class EditorCreateObjectDragGestureSession extends EditorGestureSession {
     this.itemFactory,
   );
 
-  late CanvasParentState _parent;
+  late CanvasFrameState _parent;
   late CanvasItem _item;
   late CanvasLayoutData _layoutData;
 
@@ -44,16 +44,16 @@ class EditorCreateObjectDragGestureSession extends EditorGestureSession {
     _item.allowSnapping = false;
     CanvasHitTestResult result = CanvasHitTestResult();
     editor.hitTest(result, delta.start);
-    CanvasParentState? hitParent;
+    CanvasFrameState? hitParent;
     for (var entry in result.path) {
-      if (entry.target is CanvasParentState) {
-        var item = entry.target as CanvasParentState;
+      if (entry.target is CanvasFrameState) {
+        var item = entry.target as CanvasFrameState;
         hitParent = item;
         break;
       }
     }
     var rootState = editor.rootState;
-    if (rootState is CanvasParentState) {
+    if (rootState is CanvasFrameState) {
       hitParent ??= rootState;
     }
     if (hitParent == null) {

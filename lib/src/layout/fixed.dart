@@ -16,7 +16,21 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
   var dataWidth = layoutData.width;
   var dataHeight = layoutData.height;
   if (dataWidth != null) {
-    width = dataWidth.compute(parentSize.width);
+    // width = dataWidth.compute(parentSize.width);
+    if (dataWidth is FixedSizeConstraint) {
+      width = dataWidth.size;
+    } else if (dataWidth is RelativeSizeConstraint) {
+      width = dataWidth.size * parentSize.width;
+    } else if (dataWidth is AspectRatioSizeConstraint) {
+      if (dataHeight is AspectRatioSizeConstraint) {
+        throw ArgumentError(
+            'Cannot use AspectRatioSizeConstraint for both width and height.');
+      }
+      width = 0; // temporary value, will be calculated later
+    } else {
+      throw ArgumentError(
+          'Unsupported size constraint type: ${dataWidth.runtimeType}');
+    }
   } else if (dataLeft != null && dataRight != null) {
     if (layoutData.scaleHorizontal) {
       double scaledLeft = parentSize.width * dataLeft.compute(parentSize.width);
@@ -32,7 +46,21 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
     width = child.computeMinIntrinsicWidth(parentSize.height);
   }
   if (dataHeight != null) {
-    height = dataHeight.compute(parentSize.height);
+    // height = dataHeight.compute(parentSize.height);
+    if (dataHeight is FixedSizeConstraint) {
+      height = dataHeight.size;
+    } else if (dataHeight is RelativeSizeConstraint) {
+      height = dataHeight.size * parentSize.height;
+    } else if (dataHeight is AspectRatioSizeConstraint) {
+      if (dataWidth is AspectRatioSizeConstraint) {
+        throw ArgumentError(
+            'Cannot use AspectRatioSizeConstraint for both width and height.');
+      }
+      height = 0; // temporary value, will be calculated later
+    } else {
+      throw ArgumentError(
+          'Unsupported size constraint type: ${dataHeight.runtimeType}');
+    }
   } else if (dataTop != null && dataBottom != null) {
     if (layoutData.scaleVertical) {
       double scaledTop = parentSize.height * dataTop.compute(parentSize.height);
@@ -46,6 +74,11 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
     }
   } else {
     height = child.computeMinIntrinsicHeight(parentSize.width);
+  }
+  if (dataWidth is AspectRatioSizeConstraint) {
+    width = height * dataWidth.aspectRatio;
+  } else if (dataHeight is AspectRatioSizeConstraint) {
+    height = width * dataHeight.aspectRatio;
   }
   if (dataTop != null) {
     if (layoutData.scaleVertical && dataBottom != null) {
@@ -87,7 +120,7 @@ void layoutAbsolutePositioning(CanvasItemState child, Size parentSize,
   if (height.isNegative) {
     top -= height;
   }
-  child.layout(Size(width, height));
+  child.layout(Size(width, height).constrainIgnoreSign(layoutData.constraints));
   child.parentData.position = Offset(left + offset.dx, top + offset.dy);
 }
 
@@ -98,6 +131,18 @@ class FixedLayout extends CanvasLayout {
   const FixedLayout({
     this.padding = EdgeInsets.zero,
   });
+
+  @override
+  CanvasLayout copyWith({ValueGetter<EdgeInsets>? padding}) {
+    return FixedLayout(
+      padding: padding != null ? padding() : this.padding,
+    );
+  }
+
+  @override
+  bool debugAcceptLayoutData(CanvasItemState item, CanvasLayoutData data) {
+    return data is AbsoluteLayoutData || data is ParentLayoutData;
+  }
 
   double _computeIntrinsicSize(
       CanvasParentState state,
@@ -197,6 +242,13 @@ class FixedLayout extends CanvasLayout {
       var layoutData = child.item.layoutData;
       if (layoutData is AbsoluteLayoutData) {
         layoutAbsolutePositioning(
+          child,
+          paddedSize,
+          paddingOffset,
+          layoutData,
+        );
+      } else if (layoutData is ParentLayoutData) {
+        layoutParentPositioning(
           child,
           paddedSize,
           paddingOffset,
