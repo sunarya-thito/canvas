@@ -16,41 +16,13 @@ class SelectionGroup {
   TransformControlBox getTransformControlBox({Matrix4? parentTransform}) {
     if (items.length == 1) {
       CanvasItemState item = items.first;
-      var transform = item.computeTransform(parentTransform: parentTransform);
+      var transform =
+          item.computeGlobalTransform(parentTransform: parentTransform);
       return TransformControlBox(
         size: item.size,
         transform: transform,
       );
     }
-    // List<Offset> points = items
-    //     .map((item) {
-    //       var offset = item.parentData.position;
-    //       var size = item.size;
-    //       return [
-    //         offset,
-    //         offset + Offset(size.width, 0),
-    //         offset + Offset(size.width, size.height),
-    //         offset + Offset(0, size.height),
-    //       ];
-    //     })
-    //     .expand((e) => e)
-    //     .toList();
-    // var transform = parent.computeTransform(parentTransform: parentTransform);
-    // var transformedPoints = points.map((point) {
-    //   return transformOffset(point, transform);
-    // }).toList();
-    // var minX = transformedPoints
-    //     .map((point) => point.dx)
-    //     .reduce((a, b) => a < b ? a : b);
-    // var minY = transformedPoints
-    //     .map((point) => point.dy)
-    //     .reduce((a, b) => a < b ? a : b);
-    // var maxX = transformedPoints
-    //     .map((point) => point.dx)
-    //     .reduce((a, b) => a > b ? a : b);
-    // var maxY = transformedPoints
-    //     .map((point) => point.dy)
-    //     .reduce((a, b) => a > b ? a : b);
     parentTransform =
         parent.computeGlobalTransform(parentTransform: parentTransform);
     Iterable<Offset> points = items.map(

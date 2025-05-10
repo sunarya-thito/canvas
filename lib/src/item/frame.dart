@@ -4,14 +4,12 @@ import 'dart:ui';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/item/widget/frame.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/src/widgets/framework.dart';
 import 'package:flutter/widgets.dart';
-import 'package:vector_math/vector_math_64.dart';
 
 class CanvasFrame extends CanvasParent {
   CanvasLayout _layout;
   List<LayoutGrid> _layoutGrids;
-  bool _clipContent = false;
+  bool _clipContent;
 
   CanvasFrame({
     super.layoutData,
@@ -20,7 +18,7 @@ class CanvasFrame extends CanvasParent {
     super.children,
     CanvasLayout layout = const FixedLayout(),
     List<LayoutGrid> layoutGrids = const [],
-    bool clipContent = false,
+    bool clipContent = true,
   })  : _layout = layout,
         _layoutGrids = List.of(layoutGrids),
         _clipContent = clipContent;

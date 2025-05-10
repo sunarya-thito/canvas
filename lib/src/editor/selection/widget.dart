@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/control/extra.dart';
 import 'package:canvas/src/editor/control/sessions/selection_move.dart';
+import 'package:canvas/src/editor/control/widget.dart';
 import 'package:canvas/src/editor/selection/box.dart';
 import 'package:canvas/src/editor/selection/selection.dart';
 import 'package:canvas/src/editor/widget/data.dart';
@@ -403,45 +404,29 @@ class _SelectionTransformControlWidgetState
                       : SizedBox.shrink();
                 },
               ),
-            GestureDetector(
-              onTapDown: (details) {
-                final editorData = CanvasEditorWidgetData.find(context);
-                CanvasItemState? item = editor.findItemAt(viewportGlobalToLocal(
-                    editor,
-                    editorData.viewportSize,
-                    editorData.globalToLocal(details.globalPosition)));
-                if (item != null) {
-                  editor.handleItemClick(item);
-                }
-              },
-              onPanStart: (details) {
-                final editorData = CanvasEditorWidgetData.find(context);
-                editor.startControlSession(
-                    SelectionMoveControlSession(selection: widget.selection),
-                    editorData.globalToLocal(details.globalPosition),
-                    editorData.viewportSize);
-              },
-              onPanUpdate: (details) {
-                final editorData = CanvasEditorWidgetData.find(context);
-                editor.updateControlSession(
-                    editorData.globalToLocal(details.globalPosition),
-                    editorData.viewportSize);
-              },
-              onPanEnd: (details) {
-                editor.endControlSession();
-              },
-              onPanCancel: () {
-                editor.cancelControlSession();
-              },
-              child: widget.selection.editorDragOffset.value == null
-                  ? DecoratedPolygon(
-                      polygon: points,
-                      strokeColor:
-                          theme.transformControl.controlBoundaryBorderColor,
-                      strokeWidth:
-                          theme.transformControl.controlBoundaryBorderWidth,
-                    )
-                  : null,
+            CanvasEditorControlRecognizer(
+              sessionFactory: () =>
+                  SelectionMoveControlSession(selection: widget.selection),
+              child: GestureDetector(
+                onTapDown: (details) {
+                  final editorData = CanvasEditorWidgetData.find(context);
+                  CanvasItemState? item = editor.findItemAt(
+                      viewportGlobalToLocal(editor, editorData.viewportSize,
+                          editorData.globalToLocal(details.globalPosition)));
+                  if (item != null) {
+                    editor.handleItemClick(item);
+                  }
+                },
+                child: widget.selection.editorDragOffset.value == null
+                    ? DecoratedPolygon(
+                        polygon: points,
+                        strokeColor:
+                            theme.transformControl.controlBoundaryBorderColor,
+                        strokeWidth:
+                            theme.transformControl.controlBoundaryBorderWidth,
+                      )
+                    : null,
+              ),
             ),
             // extra controls
             for (var control in _extraControls)

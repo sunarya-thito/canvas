@@ -1,3 +1,4 @@
+import 'package:canvas/canvas.dart';
 import 'package:data_widget/data_widget.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -13,9 +14,11 @@ class CanvasEditorWidgetData {
 
   final Size viewportSize;
   final PointTransformer globalToLocal;
+  final CanvasEditor editor;
 
   const CanvasEditorWidgetData({
     required this.viewportSize,
     required this.globalToLocal,
+    required this.editor,
   });
 }

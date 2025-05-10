@@ -128,13 +128,18 @@ class CanvasParentState extends CanvasItemState {
       key: ValueKey(this),
       item: this,
       transform: transform,
-      child: renderParent(
-        context,
-        [
-          if (content != null) content,
-          for (var child in children.sorted(sortChildren))
-            child.render(context),
-        ],
+      child: ListenableBuilder(
+        listenable: this,
+        builder: (context, child) {
+          return renderParent(
+            context,
+            [
+              if (content != null) content,
+              for (var child in children.sorted(sortChildren))
+                child.render(context),
+            ],
+          );
+        },
       ),
     );
   }
@@ -153,20 +158,26 @@ class CanvasParentState extends CanvasItemState {
       key: ValueKey(this),
       item: this,
       transform: transform,
-      child: renderParent(
-        context,
-        [
-          CanvasItemEditorWidget(
-            item: this,
-            editor: editor,
-            child: AdaptiveSizedBox(
-              size: size,
-              child: renderContent(context) ?? const SizedBox.shrink(),
-            ),
+      child: ListenableBuilder(
+        listenable: this,
+        builder: (context, child) {
+          return renderParent(
+            context,
+            [
+              child!,
+              for (var child in children.sorted(sortChildren))
+                child.renderEditor(context, editor),
+            ],
+          );
+        },
+        child: CanvasItemEditorWidget(
+          item: this,
+          editor: editor,
+          child: AdaptiveSizedBox(
+            size: size,
+            child: renderContent(context) ?? const SizedBox.shrink(),
           ),
-          for (var child in children.sorted(sortChildren))
-            child.renderEditor(context, editor),
-        ],
+        ),
       ),
     );
   }
@@ -242,8 +253,6 @@ class CanvasParentState extends CanvasItemState {
     _firstChildNode = newLastChildNode?.first;
     _lastChildNode = newLastChildNode?.last;
 
-    print('Children updated: $this -> $children');
-
     assert(() {
       _validateNonCircularChildren();
       return true;
@@ -257,6 +266,26 @@ class CanvasParentState extends CanvasItemState {
         _validateNonCircularSiblings(child.value);
       }
     }
+  }
+
+  @override
+  bool visitSnapAnchor(SnapAnchorVisitor visitor, {Matrix4? parentTransform}) {
+    if (dragOffset != null || parentHasEditorOffset || !item.allowSnapping) {
+      return true;
+    }
+    if (!super.visitSnapAnchor(visitor, parentTransform: parentTransform)) {
+      return false;
+    }
+    var child = firstChild;
+    while (child != null) {
+      if (!child.visitSnapAnchor(visitor,
+          parentTransform:
+              computeTransform(parentTransform: parentTransform))) {
+        return false;
+      }
+      child = child.parentData.nextSibling;
+    }
+    return true;
   }
 
   void _validateNonCircularSiblings(CanvasItemState child) {

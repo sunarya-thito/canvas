@@ -381,9 +381,23 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
     return false;
   }
 
+  bool visitGlobalSnapAnchor(SnapAnchorVisitor visitor,
+      {Matrix4? parentTransform}) {
+    var parent = this.parent;
+    if (parent != null) {
+      if (parentTransform == null) {
+        parentTransform = parent.computeEditorGlobalTransform();
+      } else {
+        parentTransform =
+            parentTransform * parent.computeEditorGlobalTransform();
+      }
+    }
+    return visitSnapAnchor(visitor, parentTransform: parentTransform);
+  }
+
   bool visitSnapAnchor(SnapAnchorVisitor visitor, {Matrix4? parentTransform}) {
     if (dragOffset != null || parentHasEditorOffset || !item.allowSnapping) {
-      return false;
+      return true;
     }
     var transform = computeTransform(parentTransform: parentTransform);
     var size = this.size;

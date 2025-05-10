@@ -100,10 +100,16 @@ class _CanvasEditorWidgetState extends State<CanvasEditorWidget>
           builder: (context, showRuler, _) {
             return LayoutBuilder(
               builder: (context, constraints) {
-                var size = constraints.biggest;
+                var size = Size(
+                  constraints.biggest.width -
+                      theme.ruler.rulerWidth * showRuler,
+                  constraints.biggest.height -
+                      theme.ruler.rulerWidth * showRuler,
+                );
                 return Data.inherit(
                   data: CanvasEditorWidgetData(
                     viewportSize: size,
+                    editor: widget.editor,
                     globalToLocal: (position) {
                       var renderBox = _viewportKey.currentContext
                           ?.findRenderObject() as RenderBox?;

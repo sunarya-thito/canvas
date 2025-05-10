@@ -47,14 +47,3 @@ class CanvasParentWidget extends StatelessWidget {
     );
   }
 }
-
-int _sortChildren(CanvasItemState a, CanvasItemState b) {
-  // if it has editorOffset, it should be on top
-  if (a.dragOffset != null && b.dragOffset == null) {
-    return 1;
-  }
-  if (a.dragOffset == null && b.dragOffset != null) {
-    return -1;
-  }
-  return 0;
-}
