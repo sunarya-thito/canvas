@@ -346,7 +346,7 @@ class CanvasEditor with ChangeNotifier {
               return findHitTestResult(child) != PathOverlap.none;
             });
         if ((hasAnyOverlapChildren && entry.overlap == PathOverlap.full) ||
-            (!hasAnyOverlapChildren && entry.overlap == PathOverlap.partial)) {
+            (!hasAnyOverlapChildren && entry.overlap != PathOverlap.none)) {
           selected.add(item);
         }
       }

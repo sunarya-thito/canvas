@@ -134,7 +134,11 @@ class CanvasParentState extends CanvasItemState {
           return renderParent(
             context,
             [
-              if (content != null) content,
+              if (content != null)
+                AdaptiveSizedBox(
+                  size: size,
+                  child: content,
+                ),
               for (var child in children.sorted(sortChildren))
                 child.render(context),
             ],
@@ -164,20 +168,19 @@ class CanvasParentState extends CanvasItemState {
           return renderParent(
             context,
             [
-              child!,
+              CanvasItemEditorWidget(
+                item: this,
+                editor: editor,
+                child: AdaptiveSizedBox(
+                  size: size,
+                  child: renderContent(context) ?? const SizedBox.shrink(),
+                ),
+              ),
               for (var child in children.sorted(sortChildren))
                 child.renderEditor(context, editor),
             ],
           );
         },
-        child: CanvasItemEditorWidget(
-          item: this,
-          editor: editor,
-          child: AdaptiveSizedBox(
-            size: size,
-            child: renderContent(context) ?? const SizedBox.shrink(),
-          ),
-        ),
       ),
     );
   }

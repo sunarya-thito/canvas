@@ -18,7 +18,7 @@ class CanvasFrame extends CanvasParent {
     super.children,
     CanvasLayout layout = const FixedLayout(),
     List<LayoutGrid> layoutGrids = const [],
-    bool clipContent = true,
+    bool clipContent = false,
   })  : _layout = layout,
         _layoutGrids = List.of(layoutGrids),
         _clipContent = clipContent;
@@ -85,23 +85,26 @@ class CanvasFrameState extends CanvasParentState {
 
   @override
   Widget? renderContent(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _generateColor(item.hashCode),
-        border: Border.all(
-          color: Color.fromARGB(115, 0, 0, 0),
-          width: 2,
+    return LayoutBuilder(builder: (context, constraints) {
+      return Container(
+        decoration: BoxDecoration(
+          color: _generateColor(item.hashCode),
+          border: Border.all(
+            color: Color.fromARGB(115, 0, 0, 0),
+            width: 2,
+          ),
         ),
-      ),
-      child: Text(
-        'Frame (${item.debugLabel})',
-      ),
-    );
+        child: Text(
+          'Frame (${item.debugLabel})',
+        ),
+      );
+    });
   }
 
   @override
-  void forceLayout(Size size) {
-    item.layout.performLayout(this, size);
-    super.forceLayout(size);
+  Size forceLayout(Size size) {
+    var result = item.layout.performLayout(this, size);
+    // return super.forceLayout(size);
+    return result;
   }
 }

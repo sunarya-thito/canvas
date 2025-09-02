@@ -53,6 +53,10 @@ class Delta {
     required this.end,
   });
 
+  const Delta.fromOffset(Offset offset)
+      : start = Offset.zero,
+        end = offset;
+
   Delta copyWith({
     Offset? start,
     Offset? end,

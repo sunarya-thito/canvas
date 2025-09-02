@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:canvas/canvas.dart';
 import 'package:example/cases/empty_case.dart';
 import 'package:example/cases/flex_case.dart';
+import 'package:example/cases/performance_case.dart';
 import 'package:example/property.dart';
 import 'package:flutter/services.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
@@ -25,6 +26,7 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
   final List<TestCase> testCases = [
     FlexTestCase(),
     EmptyCase(),
+    PerformanceCase(),
   ];
   int? _selectedCase;
   Selection? _localSelection;
@@ -285,7 +287,9 @@ class _CanvasExampleAppState extends State<CanvasExampleApp> {
                     child: IconButton.ghost(
                       icon: const Icon(LucideIcons.refreshCw),
                       onPressed: () {
-                        _setSelectedCase(_selectedCase!);
+                        setState(() {
+                          _setSelectedCase(_selectedCase!);
+                        });
                       },
                     ),
                   ),

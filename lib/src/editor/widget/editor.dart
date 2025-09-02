@@ -1,5 +1,6 @@
 import 'package:animation_kit/animation_kit.dart';
 import 'package:canvas/canvas.dart';
+import 'package:canvas/src/editor/debug/debug.dart';
 import 'package:canvas/src/editor/editor.dart';
 import 'package:canvas/src/editor/grid/grid.dart';
 import 'package:canvas/src/editor/grid/widget.dart';
@@ -296,6 +297,7 @@ class _CanvasEditorWidgetState extends State<CanvasEditorWidget>
                                         }
                                       },
                                     ),
+                                    PointDebugger(parentTransform: transform)
                                   ],
                                 ),
                               ),

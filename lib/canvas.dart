@@ -66,4 +66,5 @@ export 'src/layout/position.dart';
 export 'src/shape.dart';
 export 'src/util.dart';
 export 'src/widget_util.dart';
-export 'src/item/root.dart';
+export 'src/layout/data/absolute.dart';
+export 'src/layout/data/flex.dart';

@@ -149,6 +149,7 @@ class SelectionMoveControlSession extends EditorControlSession {
           }
         }
       }
+      targetHit ??= editor.rootState;
       if (targetHit is CanvasParentState &&
           (targetHit != _parentStart || _lockReparenting)) {
         targetReparent = targetHit;

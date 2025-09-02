@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:canvas/src/util.dart';
 import 'package:flutter/widgets.dart';
 
 typedef SnappingLineVisitor = bool Function(SnappingLine line);
@@ -42,13 +43,18 @@ class SnappingResult {
 class SnappingConfiguration {
   static const List<double> defaultAngleSnapping = [
     0,
-    pi / 6, // deg: 30
-    pi / 4, // deg: 45
-    pi / 3, // deg: 60
-    pi / 2, // deg: 90
+    45 / 180 * pi,
+    90 / 180 * pi,
+    135 / 180 * pi,
+    180 / 180 * pi,
+    225 / 180 * pi,
+    270 / 180 * pi,
+    315 / 180 * pi,
+    360 / 180 * pi,
   ];
   final double
       snappingDistance; // must be scaled with viewport zoom since we're at it
+  final double angleSnappingDistance; // in radians
   final bool enableSnapping;
   final List<double> angleSnapping;
   final bool rotatedSnap;
@@ -56,9 +62,22 @@ class SnappingConfiguration {
   const SnappingConfiguration({
     this.enableSnapping = true,
     this.snappingDistance = 10,
+    this.angleSnappingDistance = 5 / 180 * pi,
     this.angleSnapping = defaultAngleSnapping,
     this.rotatedSnap = true,
   });
+
+  double snapRotation(double angle) {
+    if (angleSnapping.isEmpty) return angle;
+    double wrapped = wrapRotation(angle);
+    for (var snap in angleSnapping) {
+      double delta = wrapped - snap;
+      if (delta.abs() < angleSnappingDistance) {
+        return angle - delta;
+      }
+    }
+    return angle;
+  }
 }
 
 class SnappingLine {

@@ -3,11 +3,14 @@ import 'dart:math';
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/control/extra.dart';
 import 'package:canvas/src/editor/control/sessions/selection_move.dart';
+import 'package:canvas/src/editor/control/sessions/selection_resize.dart';
+import 'package:canvas/src/editor/control/sessions/selection_rotate.dart';
 import 'package:canvas/src/editor/control/widget.dart';
 import 'package:canvas/src/editor/selection/box.dart';
 import 'package:canvas/src/editor/selection/selection.dart';
 import 'package:canvas/src/editor/widget/data.dart';
 import 'package:canvas/src/widget_util.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 
 class SelectionWidget extends StatelessWidget {
@@ -132,8 +135,8 @@ class _SelectionTransformControlWidgetState
     Matrix4 matrix = Matrix4.identity();
     Offset origin = size.center(Offset.zero);
     matrix.translate(center.dx, center.dy);
+    matrix = matrix * computeShearMatrix(shear);
     matrix.translate(-origin.dx, -origin.dy);
-    matrix = matrix * computeOrigin(computeShearMatrix(shear), origin);
     double top = expand == null ? 0 : -expand.top;
     double left = expand == null ? 0 : -expand.left;
     double width = size.width + (expand?.horizontal ?? 0);
@@ -159,22 +162,26 @@ class _SelectionTransformControlWidgetState
         : Size(itemSize.width * widget.zoom, size.height);
     Offset origin = handleSize.center(Offset.zero);
     matrix.translate(center.dx, center.dy);
-    matrix = matrix * computeOrigin(computeShearMatrix(shear), origin);
+    matrix = matrix * computeShearMatrix(shear);
     matrix.translate(-origin.dx, -origin.dy);
     double top = expand == null ? 0 : -expand.top;
     double left = expand == null ? 0 : -expand.left;
     double width = handleSize.width + (expand?.horizontal ?? 0);
     double height = handleSize.height + (expand?.vertical ?? 0);
-    // Polygon polygon = Polygon.fromRect(Offset(left, top) & Size(width, height));
-    // polygon = polygon.transform(matrix);
-    // return polygon;
     List<Offset> points = _fromRect(Offset(left, top) & Size(width, height));
     points = _transform(points, matrix);
     return points;
   }
 
-  Widget _buildDiagonalHandle(CanvasThemeData theme, Offset center, Size size,
-      Offset shear, DirectionalCursor cursor, double rotation,
+  Widget _buildDiagonalHandle(
+      CanvasThemeData theme,
+      Alignment anchor,
+      TransformControlBox box,
+      Offset center,
+      Size size,
+      Offset shear,
+      DirectionalCursor cursor,
+      double rotation,
       {EdgeInsets? expand,
       bool fill = true,
       bool flipHorizontal = false,
@@ -190,19 +197,12 @@ class _SelectionTransformControlWidgetState
     return MouseRegion(
       cursor: cursor.rotateByAngle(rotation).cursor,
       hitTestBehavior: HitTestBehavior.deferToChild,
-      child: GestureDetector(
+      child: EditorControlRecognizer(
         behavior: HitTestBehavior.deferToChild,
-        onTap: () {
-          print('onTap: ${widget.selectionGroup}');
-        },
-        onPanStart: (details) {
-          _totalDelta = Offset.zero;
-        },
-        onPanUpdate: (details) {
-          _totalDelta += details.delta;
-          print(
-              'onPanUpdate: ${rotatePoint(_totalDelta, rotation)}, rotation: ${rotation * 180 / pi}');
-        },
+        sessionFactory: () => expand == null
+            ? SelectionResizeControlSession(widget.selection, anchor)
+            : SelectionRotateControlSession(
+                selection: widget.selection, group: widget.selectionGroup),
         child: widget.selection.editorDragOffset.value == null
             ? DecoratedPolygon(
                 polygon: polygon,
@@ -221,6 +221,8 @@ class _SelectionTransformControlWidgetState
 
   Widget _buildHandle(
       CanvasThemeData theme,
+      Alignment anchor,
+      TransformControlBox box,
       Offset center,
       Size size,
       Size itemSize,
@@ -236,16 +238,10 @@ class _SelectionTransformControlWidgetState
     return MouseRegion(
       cursor: cursor.rotateByAngle(rotation).cursor,
       hitTestBehavior: HitTestBehavior.deferToChild,
-      child: GestureDetector(
+      child: EditorControlRecognizer(
         behavior: HitTestBehavior.deferToChild,
-        onPanStart: (details) {
-          _totalDelta = Offset.zero;
-        },
-        onPanUpdate: (details) {
-          _totalDelta += details.delta;
-          print(
-              'onPanUpdate: ${rotatePoint(_totalDelta, rotation)}, rotation: ${rotation * 180 / pi}');
-        },
+        sessionFactory: () =>
+            SelectionResizeControlSession(widget.selection, anchor),
         child: DecoratedPolygon(
           polygon: polygon,
           fillColor: fill ? theme.transformControl.controlColor : null,
@@ -256,19 +252,12 @@ class _SelectionTransformControlWidgetState
     );
   }
 
-  String _toStringDouble(double d) {
-    if (d.floorToDouble() == d) {
-      return d.toStringAsFixed(0);
-    }
-    return d.toStringAsFixed(2);
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([
         widget.selection.editorDragOffset,
-        ...widget.selectionGroup.items,
+        widget.selection,
       ]),
       builder: (context, child) {
         var delta =
@@ -373,7 +362,7 @@ class _SelectionTransformControlWidgetState
                               padding: EdgeInsets.symmetric(
                                   horizontal: 6, vertical: 2),
                               child: Text(
-                                '${_toStringDouble(box.size.width)} x ${_toStringDouble(box.size.height)}',
+                                '${optimalDoubleString(box.size.width)} x ${optimalDoubleString(box.size.height)}',
                               ),
                             ),
                           ),
@@ -404,7 +393,7 @@ class _SelectionTransformControlWidgetState
                       : SizedBox.shrink();
                 },
               ),
-            CanvasEditorControlRecognizer(
+            EditorControlRecognizer(
               sessionFactory: () =>
                   SelectionMoveControlSession(selection: widget.selection),
               child: GestureDetector(
@@ -434,6 +423,8 @@ class _SelectionTransformControlWidgetState
             // top
             _buildHandle(
               theme,
+              Alignment.topCenter,
+              box,
               topHandleCenter,
               handleSize,
               size,
@@ -446,6 +437,8 @@ class _SelectionTransformControlWidgetState
             // bottom
             _buildHandle(
               theme,
+              Alignment.bottomCenter,
+              box,
               (bottomLeftHandleCenter + bottomRightHandleCenter) * 0.5,
               handleSize,
               size,
@@ -458,6 +451,8 @@ class _SelectionTransformControlWidgetState
             // left
             _buildHandle(
               theme,
+              Alignment.centerLeft,
+              box,
               (topLeftHandleCenter + bottomLeftHandleCenter) * 0.5,
               handleSize,
               size,
@@ -470,6 +465,8 @@ class _SelectionTransformControlWidgetState
             // right
             _buildHandle(
               theme,
+              Alignment.centerRight,
+              box,
               (topRightHandleCenter + bottomRightHandleCenter) * 0.5,
               handleSize,
               size,
@@ -482,6 +479,8 @@ class _SelectionTransformControlWidgetState
             // rotate topLeft
             _buildDiagonalHandle(
               theme,
+              Alignment.topLeft,
+              box,
               topLeftHandleCenter,
               handleSize,
               shear,
@@ -499,6 +498,8 @@ class _SelectionTransformControlWidgetState
             // rotate topRight
             _buildDiagonalHandle(
               theme,
+              Alignment.topRight,
+              box,
               topRightHandleCenter,
               handleSize,
               shear,
@@ -516,6 +517,8 @@ class _SelectionTransformControlWidgetState
             // rotate bottomLeft
             _buildDiagonalHandle(
               theme,
+              Alignment.bottomLeft,
+              box,
               bottomLeftHandleCenter,
               handleSize,
               shear,
@@ -533,6 +536,8 @@ class _SelectionTransformControlWidgetState
             // rotate bottomRight
             _buildDiagonalHandle(
               theme,
+              Alignment.bottomRight,
+              box,
               bottomRightHandleCenter,
               handleSize,
               shear,
@@ -550,6 +555,8 @@ class _SelectionTransformControlWidgetState
             // topLeft
             _buildDiagonalHandle(
               theme,
+              Alignment.topLeft,
+              box,
               topLeftHandleCenter,
               handleSize,
               shear,
@@ -560,6 +567,8 @@ class _SelectionTransformControlWidgetState
             // topRight
             _buildDiagonalHandle(
               theme,
+              Alignment.topRight,
+              box,
               topRightHandleCenter,
               handleSize,
               shear,
@@ -570,6 +579,8 @@ class _SelectionTransformControlWidgetState
             // bottomLeft
             _buildDiagonalHandle(
               theme,
+              Alignment.bottomLeft,
+              box,
               bottomLeftHandleCenter,
               handleSize,
               shear,
@@ -580,6 +591,8 @@ class _SelectionTransformControlWidgetState
             // bottomRight
             _buildDiagonalHandle(
               theme,
+              Alignment.bottomRight,
+              box,
               bottomRightHandleCenter,
               handleSize,
               shear,

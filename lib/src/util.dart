@@ -91,8 +91,14 @@ int sortChildren(CanvasItemState a, CanvasItemState b) {
 }
 
 Offset computeShearFromMatrix(Matrix4 matrix) {
-  final shearX = atan(matrix.entry(0, 1) / matrix.entry(1, 1));
-  final shearY = atan(matrix.entry(1, 0) / matrix.entry(0, 0));
+  var shearX = atan(matrix.entry(0, 1) / matrix.entry(1, 1));
+  var shearY = atan(matrix.entry(1, 0) / matrix.entry(0, 0));
+  if (matrix.entry(1, 1) < 0) {
+    var tempX = shearX;
+    var tempY = shearY;
+    shearX = (pi / 2) - tempY + (pi / 2);
+    shearY = (pi / 2) - tempX + (pi / 2);
+  }
   return Offset(shearX, shearY);
 }
 
@@ -104,6 +110,8 @@ Offset scaleFromMatrix(Matrix4 matrix) {
   return Offset(scaleX, scaleY);
 }
 
+/// Wraps an angle in radians to the range [0, 2π).
+/// This is useful for ensuring that angles are within a standard range,
 double wrapRotation(double angle) {
   const tau = pi * 2;
   return (angle % tau + tau) % tau;
@@ -551,4 +559,65 @@ void paintCustomBorder(
     _BorderSide.bottom,
     borderTypes[3],
   );
+}
+
+class FlexSize extends Size {
+  final double flexUnit;
+
+  const FlexSize(
+    super.width,
+    super.height,
+    this.flexUnit,
+  );
+
+  @override
+  OffsetBase operator -(OffsetBase other) {
+    if (other is Size) {
+      return Offset(width - other.width, height - other.height);
+    }
+    if (other is Offset) {
+      return FlexSize(width - other.dx, height - other.dy, flexUnit);
+    }
+    throw ArgumentError(other);
+  }
+
+  @override
+  Size operator +(Offset other) {
+    return FlexSize(width + other.dx, height + other.dy, flexUnit);
+  }
+
+  @override
+  Size operator *(double operand) {
+    return FlexSize(width * operand, height * operand, flexUnit);
+  }
+
+  @override
+  Size operator /(double operand) {
+    return FlexSize(width / operand, height / operand, flexUnit);
+  }
+
+  @override
+  Size operator ~/(double operand) {
+    return FlexSize(
+      (width ~/ operand).toDouble(),
+      (height ~/ operand).toDouble(),
+      flexUnit,
+    );
+  }
+
+  @override
+  Size operator %(double operand) {
+    return FlexSize(width % operand, height % operand, flexUnit);
+  }
+
+  @override
+  Size get flipped {
+    return FlexSize(height, width, flexUnit);
+  }
+}
+
+extension Matrix4Extension on Matrix4 {
+  Matrix4 get inverted {
+    return Matrix4.inverted(this);
+  }
 }

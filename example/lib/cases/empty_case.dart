@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:canvas/canvas.dart';
@@ -12,12 +13,23 @@ class EmptyCase extends TestCase {
 
   @override
   CanvasEditor openEditor() {
-    final root = CanvasRoot(children: [
+    final root = CanvasFrame(children: [
       CanvasFrame(
           debugLabel: 'Empty Frame',
-          layoutData: const ParentLayoutData(
-            size: Size(100, 100),
+          layoutData: AbsoluteLayoutData(
+            width: SizeConstraint.fixed(200),
+            height: SizeConstraint.fixed(200),
+            top: Position.absolute(0),
+            left: Position.absolute(0),
           )),
+      CanvasFrame(
+          debugLabel: 'Empty Frame 2',
+          layoutData: AbsoluteLayoutData(
+            width: SizeConstraint.fixed(200),
+            height: SizeConstraint.fixed(200),
+            top: Position.absolute(400),
+            left: Position.absolute(300),
+          ).rotateBy(45 * pi / 180)),
     ]);
     return CanvasEditor(root: root);
   }

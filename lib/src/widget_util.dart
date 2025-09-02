@@ -45,7 +45,7 @@ class PolygonPainter extends CustomPainter {
 
   @override
   bool? hitTest(Offset position) {
-    return polygon.contains(position);
+    return path.contains(position);
   }
 
   Path get path {

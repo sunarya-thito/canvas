@@ -360,7 +360,7 @@ class _RulerPainter extends CustomPainter {
     Rect? selectionRect;
     if (selection != null && rulerWidth > 0) {
       overrideWithSelection = selection!.singleSelection != null;
-      selectionRect = selection!.computeBoundingBox(
+      selectionRect = selection!.computeEditorBoundingBox(
         parentTransform: editorTransform,
       );
     }

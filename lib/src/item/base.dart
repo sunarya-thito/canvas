@@ -111,6 +111,10 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
 
   CanvasParentData? get unmountableParentData => _parentData;
 
+  CanvasLayoutData? sessionOldLayoutData;
+  Offset? sessionOrigin;
+  Offset? sessionCenter;
+
   void markForDisposal() {
     _markedForDisposal = true;
   }
@@ -125,6 +129,32 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
     required this.item,
     required this.parent,
   });
+
+  @override
+  void notifyListeners() {
+    if (_markedForDisposal) {
+      return;
+    }
+    super.notifyListeners();
+  }
+
+  @override
+  void addListener(VoidCallback listener) {
+    if (_markedForDisposal) {
+      return;
+    }
+    super.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    if (_markedForDisposal) {
+      // no need to remove listener if marked for disposal
+      // because it will be removed anyway
+      return;
+    }
+    super.removeListener(listener);
+  }
 
   Path getPath() {
     return Path()..addRect(Offset.zero & size);
@@ -174,6 +204,20 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
     return Rect.fromLTRB(minX, minY, maxX, maxY);
   }
 
+  bool isOffstage({Matrix4? parentTransform, required Rect viewport}) {
+    Rect bounds = computeEditorGlobalBounds(parentTransform);
+    if (bounds.isEmpty) {
+      return true;
+    }
+    if (bounds.left > viewport.right ||
+        bounds.right < viewport.left ||
+        bounds.top > viewport.bottom ||
+        bounds.bottom < viewport.top) {
+      return true;
+    }
+    return false;
+  }
+
   double computeMaxIntrinsicHeight(double width) {
     return 0;
   }
@@ -193,7 +237,13 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
   Matrix4 computeTransform({Matrix4? parentTransform}) {
     var transform = Matrix4.identity();
     transform.translate(parentData.position.dx, parentData.position.dy);
-    transform.multiply(item.layoutData.transform);
+    transform.multiply(item.layoutData.computeTransform(size));
+    return parentTransform != null ? parentTransform * transform : transform;
+  }
+
+  Matrix4 computeLayoutTransform({Matrix4? parentTransform}) {
+    var transform = Matrix4.identity();
+    transform.translate(parentData.position.dx, parentData.position.dy);
     return parentTransform != null ? parentTransform * transform : transform;
   }
 
@@ -226,6 +276,13 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
     return parentTransform != null ? parentTransform * transform : transform;
   }
 
+  Matrix4 computeParentTransform() {
+    if (parent == null) {
+      return Matrix4.identity();
+    }
+    return parent!.computeGlobalTransform();
+  }
+
   Matrix4 computeEditorGlobalTransformUntil(CanvasParentState topParent) {
     var transform = computeEditorTransform(parentTransform: null);
     var parent = this.parent;
@@ -256,6 +313,25 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
     return Rect.fromLTRB(minX, minY, maxX, maxY);
   }
 
+  Rect computeEditorGlobalBounds([Matrix4? parentTransform]) {
+    List<Offset> points = [
+      Offset(0, 0),
+      Offset(size.width, 0),
+      Offset(size.width, size.height),
+      Offset(0, size.height),
+    ];
+    Matrix4 transform =
+        computeEditorGlobalTransform(parentTransform: parentTransform);
+    for (int i = 0; i < points.length; i++) {
+      points[i] = transformOffset(points[i], transform);
+    }
+    double minX = points.map((e) => e.dx).reduce((a, b) => a < b ? a : b);
+    double minY = points.map((e) => e.dy).reduce((a, b) => a < b ? a : b);
+    double maxX = points.map((e) => e.dx).reduce((a, b) => a > b ? a : b);
+    double maxY = points.map((e) => e.dy).reduce((a, b) => a > b ? a : b);
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
   CanvasParentState? findCommonParent(CanvasItemState other) {
     CanvasItemState? current = this;
     while (current != null) {
@@ -275,8 +351,8 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
     return null;
   }
 
-  void forceLayout(Size size) {
-    notifyListeners();
+  Size forceLayout(Size size) {
+    return size;
   }
 
   void notify() {
@@ -316,11 +392,7 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
   }
 
   void layout(Size size) {
-    if (_size != size) {
-      _size = size;
-      print('performing layout on $this with size $size');
-      forceLayout(size);
-    }
+    _size = forceLayout(size);
   }
 
   CanvasParentData get parentData {
@@ -333,9 +405,10 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
       if (parent != null) {
         parent!.relayout();
       } else {
-        forceLayout(_size!);
+        _size = forceLayout(_size!);
       }
     }
+    notifyListeners();
   }
 
   void selectTest(CanvasHitTestResult result, Path path) {
@@ -370,6 +443,12 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
     return _size!;
   }
 
+  set size(Size value) {
+    if (_size != value) {
+      _size = value;
+    }
+  }
+
   bool get parentHasEditorOffset {
     CanvasParentState? parent = this.parent;
     while (parent != null) {
@@ -396,7 +475,10 @@ class CanvasItemState with ChangeNotifier implements HitTestTarget {
   }
 
   bool visitSnapAnchor(SnapAnchorVisitor visitor, {Matrix4? parentTransform}) {
-    if (dragOffset != null || parentHasEditorOffset || !item.allowSnapping) {
+    if (dragOffset != null ||
+        parentHasEditorOffset ||
+        !item.allowSnapping ||
+        parent == null) {
       return true;
     }
     var transform = computeTransform(parentTransform: parentTransform);

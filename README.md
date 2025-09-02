@@ -6,5 +6,6 @@ Canvas is a Flutter package that provides an editor toolkit like Canva and Figma
 - 
 
 ## TODO
-- [ ] Fix reparent cancel causes order of the dragged target messed up
-- [ ] When reparenting to flex, add as flexible object (do not reparent, just create 50% ghost)
+- [ ] Anchor point for flexible child is at center
+- [ ] Anchor point for absolute child is at top left
+- [ ] When rotating absolute child, also rotate the position

@@ -1,10 +1,13 @@
 import 'package:canvas/canvas.dart';
 import 'package:canvas/src/editor/control/box.dart';
+import 'package:canvas/src/editor/debug/debug.dart';
+import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'client.dart';
 
-class SelectionGroup {
+class SelectionGroup implements Listenable {
   final CanvasParentState parent;
   final List<CanvasItemState> items;
 
@@ -12,6 +15,22 @@ class SelectionGroup {
     required this.parent,
     required this.items,
   });
+
+  @override
+  void addListener(VoidCallback listener) {
+    parent.addListener(listener);
+    for (var item in items) {
+      item.addListener(listener);
+    }
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    parent.removeListener(listener);
+    for (var item in items) {
+      item.removeListener(listener);
+    }
+  }
 
   TransformControlBox getTransformControlBox({Matrix4? parentTransform}) {
     if (items.length == 1) {
@@ -23,11 +42,9 @@ class SelectionGroup {
         transform: transform,
       );
     }
-    parentTransform =
-        parent.computeGlobalTransform(parentTransform: parentTransform);
     Iterable<Offset> points = items.map(
       (item) {
-        var transform = item.computeTransform(parentTransform: parentTransform);
+        var transform = item.computeTransform();
         Iterable<Offset> itemPoints = [
           Offset(0, 0),
           Offset(item.size.width, 0),
@@ -40,7 +57,9 @@ class SelectionGroup {
         return itemPoints;
       },
     ).expand((e) => e);
-
+    var transform =
+        parentTransform == null ? Matrix4.identity() : parentTransform.clone();
+    transform = transform * parent.computeGlobalTransform();
     var minX = points.map((point) => point.dx).reduce((a, b) => a < b ? a : b);
     var minY = points.map((point) => point.dy).reduce((a, b) => a < b ? a : b);
     var maxX = points.map((point) => point.dx).reduce((a, b) => a > b ? a : b);
@@ -48,52 +67,34 @@ class SelectionGroup {
     var width = maxX - minX;
     var height = maxY - minY;
     var size = Size(width, height);
-    parentTransform.translate(minX, minY);
+    transform.translate(minX, minY);
     return TransformControlBox(
       size: size,
-      transform: parentTransform,
+      transform: transform,
     );
   }
 
-  Rect computeBoundingBox({Matrix4? parentTransform}) {
+  Rect computeEditorBoundingBox({Matrix4? parentTransform}) {
     if (items.length == 1) {
-      return items.first.computeGlobalBounds(parentTransform);
+      return items.first.computeEditorGlobalBounds(parentTransform);
     }
-    List<Offset> points = items
-        .map((item) {
-          var offset = item.parentData.position;
-          var size = item.size;
-          return [
-            offset,
-            offset + Offset(size.width, 0),
-            offset + Offset(size.width, size.height),
-            offset + Offset(0, size.height),
-          ];
-        })
-        .expand((e) => e)
-        .toList();
-    var transform =
-        parent.computeGlobalTransform(parentTransform: parentTransform);
-    var transformedPoints = points.map((point) {
-      return transformOffset(point, transform);
-    }).toList();
-    var minX = transformedPoints
-        .map((point) => point.dx)
-        .reduce((a, b) => a < b ? a : b);
-    var minY = transformedPoints
-        .map((point) => point.dy)
-        .reduce((a, b) => a < b ? a : b);
-    var maxX = transformedPoints
-        .map((point) => point.dx)
-        .reduce((a, b) => a > b ? a : b);
-    var maxY = transformedPoints
-        .map((point) => point.dy)
-        .reduce((a, b) => a > b ? a : b);
-    return Rect.fromLTRB(minX, minY, maxX, maxY);
+    Rect? boundingBox;
+    for (var item in items) {
+      Rect itemBoundingBox = item.computeEditorGlobalBounds(parentTransform);
+      if (boundingBox == null) {
+        boundingBox = itemBoundingBox;
+      } else {
+        boundingBox = boundingBox.expandToInclude(itemBoundingBox);
+      }
+    }
+    if (boundingBox == null) {
+      return Rect.zero;
+    }
+    return boundingBox;
   }
 }
 
-class Selection {
+class Selection implements Listenable {
   final List<SelectionGroup> groups;
   final SelectionClient client;
   final ValueNotifier<Delta?> editorDragOffset = ValueNotifier(null);
@@ -105,6 +106,34 @@ class Selection {
 
   List<CanvasItemState> get items {
     return groups.expand((group) => group.items).toList();
+  }
+
+  @override
+  int get hashCode => items.hashCode;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! Selection) {
+      return false;
+    }
+    return listEquals(
+      items,
+      other.items,
+    );
+  }
+
+  @override
+  void addListener(VoidCallback listener) {
+    for (var group in groups) {
+      group.addListener(listener);
+    }
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    for (var group in groups) {
+      group.removeListener(listener);
+    }
   }
 
   CanvasItemState? get singleSelection {
@@ -202,7 +231,27 @@ class Selection {
     Rect? boundingBox;
     for (var group in groups) {
       Rect groupBoundingBox =
-          group.computeBoundingBox(parentTransform: parentTransform);
+          group.computeEditorBoundingBox(parentTransform: parentTransform);
+      if (boundingBox == null) {
+        boundingBox = groupBoundingBox;
+      } else {
+        boundingBox = boundingBox.expandToInclude(groupBoundingBox);
+      }
+    }
+    return boundingBox ?? Rect.zero;
+  }
+
+  Rect computeEditorBoundingBox({Matrix4? parentTransform}) {
+    if (isEmpty) {
+      return Rect.zero;
+    }
+    if (isSingleSelection) {
+      return singleSelection!.computeEditorGlobalBounds(parentTransform);
+    }
+    Rect? boundingBox;
+    for (var group in groups) {
+      Rect groupBoundingBox =
+          group.computeEditorBoundingBox(parentTransform: parentTransform);
       if (boundingBox == null) {
         boundingBox = groupBoundingBox;
       } else {

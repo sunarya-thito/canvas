@@ -1,5 +1,5 @@
 import 'package:canvas/canvas.dart';
-import 'package:collection/collection.dart';
+import 'package:data_widget/data_widget.dart';
 import 'package:flutter/widgets.dart';
 
 class CanvasFrameWidget extends StatelessWidget {

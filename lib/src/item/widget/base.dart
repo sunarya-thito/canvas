@@ -1,5 +1,6 @@
 import 'package:animation_kit/animation_kit.dart';
 import 'package:canvas/canvas.dart';
+import 'package:data_widget/data_widget.dart';
 import 'package:flutter/widgets.dart';
 
 class CanvasItemWidget extends StatelessWidget {
@@ -69,37 +70,43 @@ class CanvasItemEditorWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: () {
-        editor.handleItemClick(item);
-      },
-      onPanStart: (details) {
-        if (editor.localSelection?.contains(item) != true) {
-          editor.setToLocalSelection(item);
-        }
-        Selection? local = editor.localSelection;
-        if (local != null) {
+    final data = Data.of<CanvasEditorWidgetData>(context);
+    return Offstage(
+      offstage: item.isOffstage(
+          viewport: Offset.zero & data.viewportSize,
+          parentTransform: editor.computeTransform(data.viewportSize)),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          editor.handleItemClick(item);
+        },
+        onPanStart: (details) {
+          if (editor.localSelection?.contains(item) != true) {
+            editor.setToLocalSelection(item);
+          }
+          Selection? local = editor.localSelection;
+          if (local != null) {
+            final editorData = CanvasEditorWidgetData.find(context);
+            editor.startControlSession(
+                SelectionMoveControlSession(selection: local),
+                editorData.globalToLocal(details.globalPosition),
+                editorData.viewportSize);
+          }
+        },
+        onPanUpdate: (details) {
           final editorData = CanvasEditorWidgetData.find(context);
-          editor.startControlSession(
-              SelectionMoveControlSession(selection: local),
+          editor.updateControlSession(
               editorData.globalToLocal(details.globalPosition),
               editorData.viewportSize);
-        }
-      },
-      onPanUpdate: (details) {
-        final editorData = CanvasEditorWidgetData.find(context);
-        editor.updateControlSession(
-            editorData.globalToLocal(details.globalPosition),
-            editorData.viewportSize);
-      },
-      onPanEnd: (details) {
-        editor.endControlSession();
-      },
-      onPanCancel: () {
-        editor.cancelControlSession();
-      },
-      child: child,
+        },
+        onPanEnd: (details) {
+          editor.endControlSession();
+        },
+        onPanCancel: () {
+          editor.cancelControlSession();
+        },
+        child: child,
+      ),
     );
   }
 }

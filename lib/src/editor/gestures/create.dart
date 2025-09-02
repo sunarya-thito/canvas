@@ -5,10 +5,10 @@ import 'package:canvas/src/layout/flex.dart';
 import 'package:flutter/widgets.dart';
 import 'package:vector_math/vector_math_64.dart';
 
-typedef CanvasItemFactory = CanvasItem Function(CanvasEditor editor);
+typedef CanvasItemProvider = CanvasItem Function(CanvasEditor editor);
 
 class EditorCreateObjectDragGesture extends EditorGesture {
-  final CanvasItemFactory itemFactory;
+  final CanvasItemProvider itemFactory;
   const EditorCreateObjectDragGesture(this.itemFactory);
 
   @override
@@ -27,7 +27,7 @@ class EditorCreateObjectDragGesture extends EditorGesture {
 }
 
 class EditorCreateObjectDragGestureSession extends EditorGestureSession {
-  final CanvasItemFactory itemFactory;
+  final CanvasItemProvider itemFactory;
 
   EditorCreateObjectDragGestureSession(
     super.editor,
